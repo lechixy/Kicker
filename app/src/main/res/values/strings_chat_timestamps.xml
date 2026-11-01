@@ -1,0 +1,7 @@
+<resources>
+    <string name="chat_show_timestamps">Show timestamps</string>
+    <string name="chat_timestamps_live_and_video">Live and video</string>
+    <string name="chat_timestamps_only_live">Only live</string>
+    <string name="chat_timestamps_only_video">Only video</string>
+    <string name="chat_timestamps_dont_show">Don’t show</string>
+</resources>

@@ -8,7 +8,7 @@
     <string name="developer_unlocked">Geliştirici araçları etkinleştirildi</string>
     <string name="developer_floating_menu">Yüzen geliştirici menüsü</string>
     <string name="developer_trigger_live">Yayın başladı animasyonunu tetikle</string>
-    <string name="developer_live_required">Animasyonu denemek için canlı yayın aç.</string>
+    <string name="developer_live_required">Animasyonu denemek için canlı yayın aç</string>
     <string name="developer_viewer_socket">İzleyici websocket bağlantısı</string>
     <string name="developer_status_idle">Beklemede · aktif canlı oynatma yok</string>
     <string name="developer_status_token">Token alınıyor</string>
@@ -16,7 +16,7 @@
     <string name="developer_status_connected">Bağlandı</string>
     <string name="developer_status_retrying">Bağlantı sorunu · yeniden deneniyor</string>
     <string name="developer_socket_times">Bağlantı: %1$s\nSon ping: %2$s\nSon pong: %3$s\nGecikme: %4$s ms\nHandshake: %5$s\nİzleme eventi: %6$s\nYeniden bağlantı: %7$d</string>
-    <string name="developer_missing_vod">Kanal API yanıtında VOD kimliği yok; izleme eventinde vod_id gönderilmiyor.</string>
+    <string name="developer_missing_vod">Kanal API yanıtında VOD kimliği yok; izleme eventinde vod_id gönderilmiyor</string>
     <string name="settings_made_by">lechixy tarafından geliştirildi</string>
     <string name="settings_for_you">Sadece senin için 💖</string>
     <string name="settings_version">Sürüm %1$s</string>
@@ -44,7 +44,7 @@
     <string name="settings_recommended_language">Önerilen yayın dili</string>
     <string name="settings_recommended_language_description">Tercih edilen dil kodu, örneğin tr veya en</string>
     <string name="settings_volume_sync">Oynatıcı sesini cihazla eşitle</string>
-    <string name="settings_volume_sync_description">Yakında</string>
+    <string name="settings_volume_sync_description">Oynatıcı ses çubuğu ve sessize alma için cihazın medya sesini kullanır, ses tuşları ve dışarıdan yapılan değişiklikler eşitlenir</string>
     <string name="developer_player">Player tanılama</string>
     <string name="developer_player_idle">Aktif player yok</string>
     <string name="developer_player_buffering">Buffer bekleniyor</string>
@@ -56,7 +56,7 @@
     <string name="developer_player_steady">Normal hızda oynatılıyor</string>
     <string name="developer_player_speed">Şu anki hız: %1$s×\nİstenen hız: %2$s×</string>
     <string name="developer_player_offsets">Canlı yayın gecikmesi: %1$s sn\nUyarlanan hedef gecikme: %2$s sn\nManifest hedefinin gerisinde: %3$s sn</string>
-    <string name="developer_player_offset_note">Gecikmeler medya zaman çizelgesine göredir; kameradan ekrana toplam gecikmeyi ölçmez.</string>
+    <string name="developer_player_offset_note">Gecikmeler medya zaman çizelgesine göredir; kameradan ekrana toplam gecikmeyi ölçmez</string>
     <string name="developer_player_buffer">Hazır buffer: %1$s sn\nYeniden buffer (açılış / sarma hariç): %2$d\nToplam buffer bekleme (açılış / sarma dahil): %3$s sn</string>
     <string name="developer_player_frames">Decoder sayaçları · düşen: %1$d · atlanan: %2$d · çizilen: %3$d</string>
     <string name="developer_player_last_drop">Son düşen kare raporu: %1$d kare · %2$s sn önce</string>

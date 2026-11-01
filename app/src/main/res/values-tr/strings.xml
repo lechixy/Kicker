@@ -1,7 +1,7 @@
 <resources>
     <string name="active_chatters_partial_notice">Burada aktif sohbetçilerin yalnızca bir kısmı gösterilir</string>
     <string name="offline_banner_expand">Çevrimdışı afişini genişlet</string>
-    <string name="channel_follow_failed">Takip durumu yüklenemedi veya güncellenemedi. Tekrar deneyin.</string>
+    <string name="channel_follow_failed">Takip durumu yüklenemedi veya güncellenemedi, tekrar deneyin</string>
     <string name="favorite_user_add">Favorilere ekle</string>
     <string name="favorite_user_remove">Favorilerden Ã§Ä±kar</string>
     <string name="section_categories">Kategoriler</string>
@@ -21,7 +21,7 @@
     </plurals>
     <string name="live_badge">CANLI</string>
     <string name="home">Ana</string>
-    <string name="following">Takipte</string>
+    <string name="following">Takip</string>
     <string name="browse">Ara</string>
     <string name="settings">Ayarlar</string>
     <string name="anonymous">İsimsiz biri</string>
@@ -35,7 +35,7 @@
     <string name="player_pip">Resim İçinde Resim (PiP)</string>
     <string name="player_pip_description">Uygulamadan çıkıldığında yayını küçük ekranda oynat</string>
     <string name="player_low_latency">Düşük gecikme modu</string>
-    <string name="player_low_latency_description">Canlı yayını düşük gecikmeyle izle (~2 sn). Kararlı bir bağlantı gerektirir.</string>
+    <string name="player_low_latency_description">Canlı yayını düşük gecikmeyle izle (~2 sn - stabil bir bağlantı gerektirir)</string>
     <string name="player_auto_fullscreen">Otomatik tam ekran</string>
     <string name="player_auto_fullscreen_description">Canlı kanal yüklendiğinde tam ekrana geç</string>
     <string name="account_title">Kick hesabı</string>

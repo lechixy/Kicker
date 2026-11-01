@@ -1,12 +1,14 @@
 package com.lechixy.kick.util.player
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.res.Resources
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -17,17 +19,20 @@ import com.lechixy.kick.MainActivity
 import com.lechixy.kick.R
 import com.lechixy.kick.service.player.sleepTimerDisplayMinutes
 
-fun sleepTimerRemainingText(context: Context, seconds: Int, compact: Boolean = false): String {
+fun sleepTimerRemainingText(context: Context, seconds: Int, compact: Boolean = false): String =
+    sleepTimerRemainingText(context.resources, seconds, compact)
+
+fun sleepTimerRemainingText(resources: Resources, seconds: Int, compact: Boolean = false): String {
     val totalMinutes = sleepTimerDisplayMinutes(seconds)
     val hours = totalMinutes / 60
     val minutes = totalMinutes % 60
     val parts = buildList {
-        if (hours > 0) add(if (compact) context.getString(R.string.sleep_timer_short_hours, hours)
-            else context.resources.getQuantityString(R.plurals.sleep_timer_hours, hours, hours))
-        if (minutes > 0 || hours == 0) add(if (compact) context.getString(R.string.sleep_timer_short_minutes, minutes)
-            else context.resources.getQuantityString(R.plurals.sleep_timer_minutes, minutes, minutes))
+        if (hours > 0) add(if (compact) resources.getString(R.string.sleep_timer_short_hours, hours)
+            else resources.getQuantityString(R.plurals.sleep_timer_hours, hours, hours))
+        if (minutes > 0 || hours == 0) add(if (compact) resources.getString(R.string.sleep_timer_short_minutes, minutes)
+            else resources.getQuantityString(R.plurals.sleep_timer_minutes, minutes, minutes))
     }
-    return context.getString(R.string.sleep_timer_time_left, parts.joinToString(" "))
+    return resources.getString(R.string.sleep_timer_time_left, parts.joinToString(" "))
 }
 
 object NotificationUtils {
@@ -68,12 +73,14 @@ object NotificationUtils {
         }.onFailure { Log.w("SleepTimer", "Unable to update timer notification", it) }
     }
 
+    @SuppressLint("MissingPermission")
     fun updateTimerNotification(context: Context, remainingSeconds: Int) = safely(context) {
         val text = sleepTimerRemainingText(context, remainingSeconds)
         NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, builder(context)
             .setContentText(text).setStyle(NotificationCompat.BigTextStyle().bigText(text)).setOngoing(true).build())
     }
 
+    @SuppressLint("MissingPermission")
     fun showTimerEndedNotification(context: Context) = safely(context) {
         NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, builder(context)
             .setContentText(context.getString(R.string.sleep_timer_ended)).setOngoing(false).setAutoCancel(true).build())

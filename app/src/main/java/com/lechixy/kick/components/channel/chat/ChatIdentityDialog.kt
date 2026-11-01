@@ -1,7 +1,5 @@
 package com.lechixy.kick.components.channel.chat
 
-import androidx.compose.animation.animateContentSize
-
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -37,11 +35,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import coil3.compose.AsyncImage
-
 import com.lechixy.kick.R
+import com.lechixy.kick.components.dialogEntrance
 import com.lechixy.kick.data.channel.model.SubscriberBadge
 import com.lechixy.kick.data.chat.model.ChatIdentity
 
@@ -77,14 +74,15 @@ internal fun ChatIdentityDialog(
     }
     val context = androidx.compose.ui.platform.LocalContext.current
     val selected = pending.badges.count { it.active != false } + pending.badgesV2.count { it.selected }
-    val preview = ChatTextParser.resolveBadges(pending, subscriberBadges, context = context).take(4)
-    Dialog(onDismissRequest = dismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.padding(16.dp).widthIn(max = 560.dp).fillMaxWidth().heightIn(max = 640.dp),
+    val preview = remember(pending, subscriberBadges, context) {
+        ChatTextParser.resolveBadges(pending, subscriberBadges, context = context).take(4)
+    }
+    com.lechixy.kick.components.PredictiveDialog(onDismissRequest = dismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.padding(16.dp).widthIn(max = 560.dp).fillMaxWidth().heightIn(max = 640.dp).dialogEntrance(),
             shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
-            Column(Modifier.animateContentSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(R.string.chat_identity), Modifier.weight(1f), style = MaterialTheme.typography.titleLarge)
-//                    IconButton(onClick = dismiss) { Icon(painterResource(R.drawable.close_24dp_e3e3e3_fill0_wght400_grad0_opsz24), stringResource(R.string.account_close)) }
+                    Text(stringResource(R.string.chat_identity), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                 }
                 Surface(modifier = Modifier.clickable(enabled = onPreviewClick != null,
                     onClickLabel = stringResource(R.string.identity_open_profile)) {

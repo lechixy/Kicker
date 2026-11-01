@@ -18,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -49,7 +50,7 @@ fun EmotePickerSheet(
     onRetry: () -> Unit = {},
     canUseSubscriberEmotes: Boolean = true
 ) {
-    BackHandler(onBack = onCloseClick)
+    val backProgress by com.lechixy.kick.components.rememberPredictiveBackProgress(onBack = onCloseClick)
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
     var tabTarget by remember { mutableStateOf<Int?>(null) }
@@ -67,7 +68,11 @@ fun EmotePickerSheet(
             starts.indexOfLast { it <= gridState.firstVisibleItemIndex }.coerceAtLeast(0)
         }
     }
-    Surface(modifier.fillMaxWidth().heightIn(max = 300.dp), shape = RoundedCornerShape(12.dp),
+    Surface(modifier.fillMaxWidth().heightIn(max = 300.dp).graphicsLayer {
+        scaleX = 1f - .06f * backProgress; scaleY = scaleX
+        translationY = size.height * .25f * backProgress
+        alpha = 1f - .3f * backProgress
+    }, shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceContainerLowest) {
         Column {
             Row(Modifier.fillMaxWidth().padding(start = 10.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {

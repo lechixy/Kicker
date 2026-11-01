@@ -55,6 +55,22 @@ private fun JsonObject.obj(key: String) = this[key] as? JsonObject
 private fun JsonObject.value(key: String) = (this[key] as? JsonPrimitive)?.contentOrNull
 private fun JsonObject.data() = obj("data") ?: this
 
+internal fun resolveProfileBadges(
+    identity: ChatIdentity?, months: Int?, subscriberBadges: List<com.lechixy.kick.data.channel.model.SubscriberBadge>,
+    isSubscribed: Boolean? = null
+): List<ResolvedChatBadge> {
+    val source = identity ?: ChatIdentity()
+    val subscriber = source.badges.firstOrNull { it.type.equals("subscriber", ignoreCase = true) }
+    val active = isSubscribed != false && subscriber?.active != false
+    val resolvedMonths = months?.takeIf { it > 0 } ?: subscriber?.count?.takeIf { it > 0 }
+    val badges = source.badges.map { badge ->
+        if (badge.type.equals("subscriber", true) && badge.active != false && resolvedMonths != null)
+            badge.copy(count = resolvedMonths) else badge
+    }.toMutableList()
+    if (active && subscriber == null && resolvedMonths != null) badges.add(ChatSenderBadge("subscriber", count = resolvedMonths, active = true))
+    return ChatTextParser.resolveBadges(source.copy(badges = badges), subscriberBadges)
+}
+
 class ChatCommunityViewModel : ViewModel() {
     private val api = KickNetwork.api
     private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
@@ -95,12 +111,13 @@ class ChatCommunityViewModel : ViewModel() {
 
     fun closeProfile() { profileJob?.cancel(); _profile.value = null }
 
-    fun openProfile(channelSlug: String, chatter: ActiveChatter, sender: ChatSender? = null) {
+    fun openProfile(channelSlug: String, chatter: ActiveChatter, sender: ChatSender? = null,
+        subscriberBadges: List<com.lechixy.kick.data.channel.model.SubscriberBadge> = emptyList()) {
         profileJob?.cancel()
         val slug = chatter.slug.ifBlank { chatter.username.lowercase(Locale.ROOT) }
         val initial = UserProfileCardUiState(userId = sender?.id, username = chatter.username,
             slug = slug, profilePicUrl = chatter.profilePicture, isMuted = chatter.username.lowercase(Locale.ROOT) in _mutedUsers.value,
-            badges = ChatTextParser.resolveBadges(sender?.identity, emptyList()))
+            badges = resolveProfileBadges(sender?.identity, null, subscriberBadges))
         _profile.value = initial
         profileJob = viewModelScope.launch {
             supervisorScope {
@@ -138,9 +155,13 @@ class ChatCommunityViewModel : ViewModel() {
                 val roles = listOf("moderator", "founder", "verified").filter { role ->
                     user?.value("is_$role") == "true" && identity?.badges?.none { it.type == role && it.active != false } != false
                 }.map { ChatSenderBadge(type = it, active = true) }
-                val badges = ChatTextParser.resolveBadges((identity ?: ChatIdentity()).let {
+                val subscribedMonths = user?.value("subscribed_for")?.toIntOrNull()
+                    ?: user?.obj("subscription")?.value("months")?.toIntOrNull()
+                    ?: identity?.badges?.firstOrNull { it.type.equals("subscriber", true) && it.active != false }?.count
+                    ?: sender?.identity?.badges?.firstOrNull { it.type.equals("subscriber", true) && it.active != false }?.count
+                val badges = resolveProfileBadges((identity ?: ChatIdentity()).let {
                     it.copy(badges = it.badges + roles)
-                }, emptyList()).toMutableList()
+                }, subscribedMonths, subscriberBadges, user?.value("is_subscribed")?.toBooleanStrictOrNull()).toMutableList()
                 if (channel?.value("verified") == "true" && badges.none { it.drawableRes == com.lechixy.kick.R.drawable.verified_badge }) {
                     badges.add(ResolvedChatBadge("verified", "Verified", drawableRes = com.lechixy.kick.R.drawable.verified_badge, sortOrder = 99))
                 }
@@ -152,7 +173,7 @@ class ChatCommunityViewModel : ViewModel() {
                     level = level, streakDays = streak?.value("length_days")?.toIntOrNull(),
                     createdAt = user?.value("created_at") ?: channelUser?.value("created_at"),
                     followingSince = user?.value("following_since"),
-                    subscribedMonths = user?.value("subscribed_for")?.toIntOrNull() ?: user?.obj("subscription")?.value("months")?.toIntOrNull(),
+                    subscribedMonths = subscribedMonths,
                     isFollowing = me?.value("is_following")?.toBooleanStrictOrNull(),
                     badges = badges.sortedBy { it.sortOrder }, isLoading = false,
                     isMuted = chatter.username.lowercase(Locale.ROOT) in _mutedUsers.value,

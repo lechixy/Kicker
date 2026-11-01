@@ -88,6 +88,7 @@ dependencies {
     implementation(libs.androidx.core.splashscreen)
     // Retrofit
     implementation(libs.retrofit)
+    implementation("io.noties.markwon:core:4.6.2")
     implementation(libs.converter.kotlinx.serialization)
     // Settings
     implementation(libs.androidx.datastore.preferences)

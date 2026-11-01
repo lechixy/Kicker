@@ -1,7 +1,7 @@
 package com.lechixy.kick.service.player
 
 import java.util.Locale
-import kotlin.math.ceil
+import kotlin.math.roundToLong
 
 /** Adapt IVS prefetch playlists without changing native LL-HLS, VOD, or upstream start policy. */
 internal fun transformKickLivePlaylist(text: String, lowLatency: Boolean): String {
@@ -17,9 +17,14 @@ internal fun transformKickLivePlaylist(text: String, lowLatency: Boolean): Strin
     if (durations.isEmpty()) return text
 
     val lastDuration = durations.last()
-    // The refresh interval must remain valid for *all* segments, including a longer earlier one.
-    val targetDuration = ceil(durations.max()).toLong().coerceAtLeast(1L)
-    val startOffset = lastDuration * if (lowLatency) 1.5 else 2.5
+    // RFC 8216 compares rounded EXTINF durations with TARGETDURATION. Ceiling a
+    // 2.001s segment to 3s unnecessarily postpones discovery of the next segment.
+    val targetDuration = durations.max().roundToLong().coerceAtLeast(1L)
+    // PREFETCH advertises a full segment that is still being produced. Keep an
+    // two-second reserve, including when an earlier long segment slows reloads.
+    val startOffset = if (lowLatency) {
+        maxOf(lastDuration * 1.5, targetDuration.toDouble()) + 2.0
+    } else lastDuration * 2.5
     val hasStart = lines.any { it.startsWith("#EXT-X-START:") }
     var convertedPrefetch = false
     return buildString(text.length + 256) {

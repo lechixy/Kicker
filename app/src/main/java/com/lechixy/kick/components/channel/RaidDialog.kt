@@ -47,7 +47,7 @@ internal fun RaidDialog(sourceName: String, raid: ChannelRaid, onStay: () -> Uni
         } catch (cancelled: CancellationException) { throw cancelled }
         catch (_: Exception) { /* Keep the event's preview when metadata is unavailable. */ }
     }
-    Dialog(onDismissRequest = stay, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    com.lechixy.kick.components.PredictiveDialog(onDismissRequest = stay, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.padding(16.dp).widthIn(max = 560.dp).fillMaxWidth(),
             shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {

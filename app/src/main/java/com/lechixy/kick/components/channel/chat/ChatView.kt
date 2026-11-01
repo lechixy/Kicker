@@ -44,7 +44,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.Button
-import com.lechixy.kick.components.AppLoadingIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -53,7 +52,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -91,13 +91,8 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.emptyFlow
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
-
 import com.lechixy.kick.R
+import com.lechixy.kick.components.AppLoadingIndicator
 import com.lechixy.kick.components.settings.SettingCard
 import com.lechixy.kick.components.settings.SettingSlider
 import com.lechixy.kick.components.settings.SettingSwitch
@@ -111,6 +106,12 @@ import com.lechixy.kick.data.chat.model.PinnedMessageInfo
 import com.lechixy.kick.data.chat.remote.ChatConnectionState
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -131,7 +132,8 @@ fun ChatView(
     composer: @Composable () -> Unit = {},
     onOpenChannel: (String) -> Unit = {},
     onReplyTo: (ChatMessage) -> Unit = {},
-    isReplay: Boolean = false
+    isReplay: Boolean = false,
+    highTraffic: Boolean = false
 ) {
     val repository = LocalSettingsRepository.current
     val fontSize by repository
@@ -143,6 +145,11 @@ fun ChatView(
     val messageSpacing by repository
         .get(SettingsKeys.CHAT_MESSAGE_SPACING)
         .collectAsStateWithLifecycle(initialValue = SettingsKeys.CHAT_MESSAGE_SPACING.defaultValue)
+
+    val timestampPreference by repository.get(SettingsKeys.CHAT_TIMESTAMPS)
+        .collectAsStateWithLifecycle(initialValue = SettingsKeys.CHAT_TIMESTAMPS.defaultValue)
+    val timestampMode = com.lechixy.kick.data.chat.model.ChatTimestampMode.fromValue(timestampPreference)
+    val timestampZone = java.time.ZoneId.systemDefault()
 
     var showOptions by remember { mutableStateOf(false) }
     var showChatters by androidx.compose.runtime.saveable.rememberSaveable(streamerSlug) { mutableStateOf(false) }
@@ -157,7 +164,8 @@ fun ChatView(
     val firstNewMessageId = remember(visibleMessages) {
         if (visibleMessages.any { it.isHistory }) visibleMessages.firstOrNull { !it.isHistory }?.id else null
     }
-    androidx.activity.compose.BackHandler(enabled = showChatters && selectedProfile == null) { showChatters = false }
+    val chattersBackProgress by com.lechixy.kick.components.rememberPredictiveBackProgress(
+        enabled = showChatters && selectedProfile == null, onBack = { showChatters = false })
     LaunchedEffect(showChatters, channelId) {
         if (showChatters && channelId != null) community.loadChatters(channelId)
     }
@@ -185,7 +193,7 @@ fun ChatView(
     var unreadCount by remember { mutableIntStateOf(0) }
     LaunchedEffect(highlightSequence) {
         if (highlightedReply != null) {
-            kotlinx.coroutines.delay(1400)
+            kotlinx.coroutines.delay(1400.milliseconds)
             highlightedReply = null
         }
     }
@@ -212,19 +220,21 @@ fun ChatView(
 
     val lastMessageId = visibleMessages.lastOrNull()?.id
 
+    var previousMessageId by remember(streamerSlug) { mutableStateOf(lastMessageId) }
     LaunchedEffect(lastMessageId) {
         if (lastMessageId != null && visibleMessages.isNotEmpty()) {
             if (autoScrollEnabled && !isUserDragging) {
                 listState.scrollToItem(visibleMessages.lastIndex)
-                withFrameNanos { }
-                listState.scrollToItem(currentVisibleMessages.lastIndex.coerceAtLeast(0))
                 unreadCount = 0
             } else {
-                unreadCount++
+                val previousIndex = visibleMessages.indexOfLast { it.id == previousMessageId }
+                unreadCount += if (previousIndex >= 0) visibleMessages.lastIndex - previousIndex else visibleMessages.size
             }
         }
+        previousMessageId = lastMessageId
     }
 
+    androidx.compose.runtime.CompositionLocalProvider(LocalChatAnimationsEnabled provides true) {
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -244,7 +254,7 @@ fun ChatView(
 
         // Chat Options Modal BottomSheet
         if (showOptions) {
-            val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
             ModalBottomSheet(
                 onDismissRequest = { showOptions = false },
                 sheetState = sheetState,
@@ -302,6 +312,8 @@ fun ChatView(
 
                         }
 
+                        com.lechixy.kick.components.settings.ChatTimestampSetting()
+
                         SettingSlider(
                             key = SettingsKeys.CHAT_FONT_SIZE,
                             title = stringResource(R.string.chat_font_size_title),
@@ -329,8 +341,11 @@ fun ChatView(
         if (showChatters) {
             ActiveChattersContent(activeChatters, activeChattersError,
                 onRetry = { channelId?.let(community::loadChatters) },
-                onUserClick = { user -> streamerSlug?.let { community.openProfile(it, user) } },
-                modifier = Modifier.fillMaxWidth().weight(1f))
+                onUserClick = { user -> streamerSlug?.let { community.openProfile(it, user, subscriberBadges = subscriberBadges) } },
+                modifier = Modifier.fillMaxWidth().weight(1f).graphicsLayer {
+                    translationX = size.width * .2f * chattersBackProgress
+                    alpha = 1f - chattersBackProgress
+                })
         } else {
         // Chat Message List
         Box(
@@ -425,6 +440,9 @@ fun ChatView(
                             ChatMessageItem(
                                 message = message,
                                 fontSizeSp = fontSize,
+                                timestamp = remember(message.createdAt, message.recordingOffsetMs, timestampMode, isReplay, timestampZone) {
+                                    com.lechixy.kick.data.chat.model.chatTimestamp(message, timestampMode, isReplay, timestampZone)
+                                },
                                 subscriberBadges = subscriberBadges,
                                 userColors = userColors,
                                 streamerUsername = streamerUsername,
@@ -461,7 +479,7 @@ fun ChatView(
                                 },
                                 onUserClick = { sender -> streamerSlug?.let { slug ->
                                     community.openProfile(slug, com.lechixy.kick.data.chat.model.ActiveChatter(
-                                        username = sender.username, slug = sender.slug.orEmpty()), sender)
+                                        username = sender.username, slug = sender.slug.orEmpty()), sender, subscriberBadges)
                                 } }
                             )
                             }
@@ -566,7 +584,7 @@ fun ChatView(
                 fontSizeSp = fontSize,
                 onActiveHeightChanged = { tickerOverlayHeightPx = it },
                 onUsernameClick = { username -> streamerSlug?.let { slug ->
-                    community.openProfile(slug, com.lechixy.kick.data.chat.model.ActiveChatter(username = username))
+                    community.openProfile(slug, com.lechixy.kick.data.chat.model.ActiveChatter(username = username), subscriberBadges = subscriberBadges)
                 } },
                 modifier = Modifier
                     .align(Alignment.TopCenter)
@@ -607,13 +625,20 @@ fun ChatView(
                 }
             }
         }
+        if (highTraffic) {
+            Text(stringResource(R.string.chat_high_traffic),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp))
+        }
         composer()
         }
+    }
     }
 }
 
 @Composable
-private fun PinnedMessageOverlay(
+internal fun PinnedMessageOverlay(
     pinnedMessage: PinnedMessageInfo?,
     fontSizeSp: Int,
     subscriberBadges: List<SubscriberBadge>,
@@ -625,6 +650,8 @@ private fun PinnedMessageOverlay(
     var isHidden by remember { mutableStateOf(false) }
     var enterFromHide by remember { mutableStateOf(false) }
     var isExpanded by remember { mutableStateOf(false) }
+    var restoreSequence by remember { mutableIntStateOf(0) }
+    var hideSide by androidx.compose.runtime.saveable.rememberSaveable(streamerSlug) { mutableIntStateOf(1) }
     val scaleAnim = remember { Animatable(0f) }
 
     if (pinnedMessage != null) {
@@ -660,14 +687,14 @@ private fun PinnedMessageOverlay(
             enter = if (enterFromHide) {
                 slideInHorizontally(
                     animationSpec = tween(durationMillis = 280, delayMillis = 140),
-                    initialOffsetX = { fullWidth -> fullWidth + 40 }
+                    initialOffsetX = { fullWidth -> hideSide * (fullWidth + 40) }
                 ) + fadeIn(animationSpec = tween(durationMillis = 220, delayMillis = 140))
             } else {
                 fadeIn(animationSpec = tween(durationMillis = 120))
             },
             exit = slideOutHorizontally(
                 animationSpec = tween(durationMillis = 260),
-                targetOffsetX = { fullWidth -> fullWidth + 40 }
+                targetOffsetX = { fullWidth -> hideSide * (fullWidth + 40) }
             ) + fadeOut(animationSpec = tween(durationMillis = 200)),
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -708,9 +735,18 @@ private fun PinnedMessageOverlay(
                 streamerSlug = streamerSlug
             )
 
+            key(currentMessageId, restoreSequence) {
+            com.lechixy.kick.components.SwipeDismissBox(
+                allowUp = false,
+                onDismiss = { direction ->
+                    hideSide = if (direction == com.lechixy.kick.components.SwipeDismissDirection.Left) -1 else 1
+                    enterFromHide = true
+                    isHidden = true
+                }, modifier = Modifier.fillMaxWidth()
+            ) {
             Surface(
                 shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
+                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.95f),
                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
                 shadowElevation = 4.dp,
                 modifier = Modifier
@@ -856,20 +892,22 @@ private fun PinnedMessageOverlay(
             }
         }
 
-        // Small Pin Icon Button on the top-right when hidden
+        }
+        }
+        // Restore the pin on the side most recently used to dismiss it.
         AnimatedVisibility(
             visible = showUnhidePin,
             enter = slideInHorizontally(
                 animationSpec = tween(durationMillis = 250, delayMillis = 200),
-                initialOffsetX = { fullWidth -> fullWidth + 40 }
+                initialOffsetX = { fullWidth -> hideSide * (fullWidth + 40) }
             ) + fadeIn(animationSpec = tween(durationMillis = 200, delayMillis = 200)),
             exit = slideOutHorizontally(
                 animationSpec = tween(durationMillis = 180),
-                targetOffsetX = { fullWidth -> fullWidth + 40 }
+                targetOffsetX = { fullWidth -> hideSide * (fullWidth + 40) }
             ) + fadeOut(animationSpec = tween(durationMillis = 150)),
             modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 6.dp, end = 10.dp)
+                .align(if (hideSide < 0) androidx.compose.ui.AbsoluteAlignment.TopLeft else androidx.compose.ui.AbsoluteAlignment.TopRight)
+                .padding(top = 6.dp, start = 10.dp, end = 10.dp)
         ) {
             Surface(
                 shape = RoundedCornerShape(10.dp),
@@ -878,7 +916,7 @@ private fun PinnedMessageOverlay(
                 shadowElevation = 4.dp,
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
-                    .clickable { isHidden = false }
+                    .clickable { restoreSequence++; isHidden = false }
             ) {
                 Box(
                     modifier = Modifier.padding(8.dp),

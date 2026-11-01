@@ -18,10 +18,14 @@ data class SettingKey<T>(
     val defaultValue: T,
     val type: SettingType,
     val isExportable: Boolean = true,
-    val validator: ((T) -> Boolean)? = null
+    val validator: ((T) -> Boolean)? = null,
+    val defaultProvider: (() -> T)? = null
 )
 
 object SettingsKeys {
+    val IS_FIRST_RUN = SettingKey(booleanPreferencesKey("is_first_run"), true, SettingType.BooleanType, isExportable = false)
+    val LAST_USED_VERSION = SettingKey(stringPreferencesKey("last_used_version"), "", SettingType.StringType, isExportable = false)
+    val NAVIGATION_RAIL_EXPANDED = SettingKey(booleanPreferencesKey("navigation_rail_expanded"), false, SettingType.BooleanType)
     val DEVELOPER_ENABLED = SettingKey(booleanPreferencesKey("developer_enabled"), false, SettingType.BooleanType, isExportable = false)
     val DEVELOPER_FLOATING_MENU = SettingKey(booleanPreferencesKey("developer_floating_menu"), true, SettingType.BooleanType, isExportable = false)
     val DEVELOPER_MENU_X = SettingKey(floatPreferencesKey("developer_menu_x"), 0.5f, SettingType.FloatType, isExportable = false)
@@ -63,7 +67,6 @@ object SettingsKeys {
         defaultValue = true,
         type = SettingType.BooleanType
     )
-    // Reserved preference: deliberately does not control AudioManager or player volume yet.
     val SYNC_PLAYER_VOLUME_WITH_DEVICE = SettingKey(
         key = booleanPreferencesKey("sync_player_volume_with_device"),
         defaultValue = false,
@@ -78,6 +81,12 @@ object SettingsKeys {
         key = intPreferencesKey("video_quality"),
         defaultValue = 720,
         type = SettingType.IntType
+    )
+    val CHAT_TIMESTAMPS = SettingKey(
+        key = stringPreferencesKey("chat_timestamps"),
+        defaultValue = "only_video",
+        type = SettingType.StringType,
+        validator = { value -> com.lechixy.kick.data.chat.model.ChatTimestampMode.entries.any { it.value == value } }
     )
     val CHAT_FONT_SIZE = SettingKey(
         key = intPreferencesKey("chat_font_size"),
@@ -111,14 +120,16 @@ object SettingsKeys {
 
     val RECOMMENDED_LIVESTREAM_LANGUAGE = SettingKey(
         key = stringPreferencesKey("recommended_livestream_language"),
-        defaultValue = "en",
-        type = SettingType.StringType
+        defaultValue = com.lechixy.kick.util.recommendedStreamLanguage(java.util.Locale.getDefault()),
+        type = SettingType.StringType,
+        defaultProvider = { com.lechixy.kick.util.systemRecommendedStreamLanguage() }
     )
     /*
      * Exportable Keys
      */
     val ALL_KEYS: List<SettingKey<*>> by lazy {
         listOf(
+            NAVIGATION_RAIL_EXPANDED,
             APP_LANGUAGE,
             THEME,
             DYNAMIC_COLOR,
@@ -129,6 +140,7 @@ object SettingsKeys {
             AUTO_FULLSCREEN_LIVE,
             VIDEO_QUALITY,
             RECOMMENDED_LIVESTREAM_LANGUAGE,
+            CHAT_TIMESTAMPS,
             CHAT_FONT_SIZE,
             AUTO_CONNECT_CHAT,
             CHAT_MESSAGE_SPACING,

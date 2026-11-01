@@ -28,16 +28,36 @@ class SettingsRepository @Inject constructor(
                 }
             }
             .map { preferences ->
-                preferences[settingKey.key] ?: settingKey.defaultValue
+                preferences[settingKey.key] ?: settingKey.defaultProvider?.invoke() ?: settingKey.defaultValue
             }
             .distinctUntilChanged()
     }
 
     suspend fun <T> set(settingKey: SettingKey<T>, value: T) {
+        if (settingKey.key == com.lechixy.kick.data.settings.model.SettingsKeys.RECOMMENDED_LIVESTREAM_LANGUAGE.key && value is String) {
+            val code = com.lechixy.kick.util.kickLanguageCode(value) ?: return
+            dataStore.edit { it[com.lechixy.kick.data.settings.model.SettingsKeys.RECOMMENDED_LIVESTREAM_LANGUAGE.key] = code }
+            return
+        }
         if (settingKey.validator?.invoke(value) == false) return
         dataStore.edit { preferences ->
             preferences[settingKey.key] = value
         }
+    }
+
+    /** Persist the launch marker atomically before any release network request. */
+    suspend fun recordStartupVersion(version: String): Boolean {
+        val keys = com.lechixy.kick.data.settings.model.SettingsKeys
+        fun normalize(value: String) = value.trim().trimStart('v', 'V')
+        var show = false
+        dataStore.edit { preferences ->
+            val previous = preferences[keys.LAST_USED_VERSION.key].orEmpty()
+            show = preferences[keys.IS_FIRST_RUN.key] != false || previous.isBlank() ||
+                !normalize(previous).equals(normalize(version), ignoreCase = true)
+            preferences[keys.IS_FIRST_RUN.key] = false
+            preferences[keys.LAST_USED_VERSION.key] = version
+        }
+        return show
     }
 
     suspend fun <T> reset(settingKey: SettingKey<T>) {

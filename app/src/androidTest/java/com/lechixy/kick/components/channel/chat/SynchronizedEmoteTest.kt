@@ -63,4 +63,36 @@ class SynchronizedEmoteTest {
             fixture.delete()
         }
     }
+    @Test fun busyChatEmotesStayStillAndShareTheirDrawable() = runBlocking {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val fixture = File(context.cacheDir, "paused-emote-test.gif")
+        instrumentation.context.assets.open("synchronized-emote.gif").use { input ->
+            fixture.outputStream().use { input.copyTo(it) }
+        }
+        val url = fixture.toURI().toString()
+        val first = withContext(Dispatchers.Main) { VisibleEmotes.acquire(context, url, animated = false) }
+        val second = withContext(Dispatchers.Main) { VisibleEmotes.acquire(context, url, animated = false) }
+        try {
+            assertSame(first, second)
+            withTimeout(10000) {
+                while (withContext(Dispatchers.Main) { first.drawable == null && !first.failed }) delay(10)
+            }
+            val initialFrame = withContext(Dispatchers.Main) {
+                assertFalse(first.failed)
+                assertNotNull(first.drawable)
+                assertFalse((first.drawable as? Animatable)?.isRunning == true)
+                first.frame
+            }
+            delay(300)
+            withContext(Dispatchers.Main) { assertEquals(initialFrame, first.frame) }
+        } finally {
+            withContext(Dispatchers.Main) {
+                VisibleEmotes.release(url, first, animated = false)
+                VisibleEmotes.release(url, second, animated = false)
+            }
+            fixture.delete()
+        }
+    }
+
 }

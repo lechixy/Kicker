@@ -4,5 +4,5 @@
     <string name="search_clear">Aramayı temizle</string>
     <string name="search_hint">Kanal veya kategori ara</string>
     <string name="search_empty">Sonuç bulunamadı</string>
-    <string name="search_failed">Arama yüklenemedi. Lütfen tekrar dene.</string>
+    <string name="search_failed">Arama yüklenemedi, lütfen tekrar dene</string>
 </resources>

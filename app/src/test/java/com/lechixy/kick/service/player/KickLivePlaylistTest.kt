@@ -17,9 +17,9 @@ class KickLivePlaylistTest {
         #EXT-X-PREFETCH:future-45.ts
     """.trimIndent()
 
-    @Test fun ivsLowLatencyTargetsThreeSecondsPreciselyAndLoadsOnlyActivePrefetch() {
+    @Test fun ivsLowLatencyKeepsReserveAndLoadsOnlyActivePrefetch() {
         val result = transformKickLivePlaylist(live, true)
-        assertTrue(result.contains("#EXT-X-START:TIME-OFFSET=-3.000,PRECISE=YES\n"))
+        assertTrue(result.contains("#EXT-X-START:TIME-OFFSET=-5.000,PRECISE=YES\n"))
         assertTrue(result.contains("#EXT-X-TARGETDURATION:2\n"))
         assertTrue(result.contains("#EXT-X-MEDIA-SEQUENCE:42\n"))
         assertTrue(result.contains("#EXT-X-PROGRAM-DATE-TIME:2026-10-29T19:49:11.770Z"))
@@ -40,14 +40,17 @@ class KickLivePlaylistTest {
     @Test fun targetDurationAccommodatesLongestSegmentRatherThanOnlyLast() {
         val mixed = live.replace("#EXTINF:2.000,live\ncomplete-42.ts", "#EXTINF:4.167,live\ncomplete-42.ts")
         val result = transformKickLivePlaylist(mixed, true)
-        assertTrue(result.contains("#EXT-X-TARGETDURATION:5\n"))
-        assertTrue(result.contains("#EXT-X-START:TIME-OFFSET=-3.000,PRECISE=YES\n"))
+        assertTrue(result.contains("#EXT-X-TARGETDURATION:4\n"))
+        assertTrue(result.contains("#EXT-X-START:TIME-OFFSET=-6.000,PRECISE=YES\n"))
     }
 
     @Test fun longSegmentHasPreciseTargetWithoutInvalidThreeSecondDuration() {
         val result = transformKickLivePlaylist(live.replace("2.000", "4.167"), true)
-        assertTrue(result.contains("#EXT-X-TARGETDURATION:5\n"))
-        assertTrue(result.contains("#EXT-X-START:TIME-OFFSET=-6.251,PRECISE=YES\n"))
+        assertTrue(result.contains("#EXT-X-TARGETDURATION:4\n"))
+        val offset = result.lineSequence().first { it.startsWith("#EXT-X-START:") }
+            .substringAfter("TIME-OFFSET=").substringBefore(',').toDouble()
+        assertEquals(-8.2505, offset, 0.001)
+        assertTrue(result.contains(",PRECISE=YES\n"))
     }
 
     @Test fun existingStartIsPreservedWithoutAddingSecondPolicy() {
@@ -69,6 +72,18 @@ class KickLivePlaylistTest {
 
     @Test fun windowsLineEndingsDoNotDisablePreciseStart() {
         val result = transformKickLivePlaylist(live.replace("\n", "\r\n"), true)
-        assertTrue(result.contains("#EXT-X-START:TIME-OFFSET=-3.000,PRECISE=YES\n"))
+        assertTrue(result.contains("#EXT-X-START:TIME-OFFSET=-5.000,PRECISE=YES\n"))
+    }
+
+    @Test fun smallEncoderTimingDriftDoesNotAddASecondToReloadInterval() {
+        val result = transformKickLivePlaylist(live.replace("2.000", "2.001"), true)
+        assertTrue(result.contains("#EXT-X-TARGETDURATION:2\n"))
+    }
+
+    @Test fun longerEarlierSegmentKeepsReloadAndStartupReserveConsistent() {
+        val mixed = live.replace("#EXTINF:2.000,live\ncomplete-42.ts", "#EXTINF:2.783,live\ncomplete-42.ts")
+        val result = transformKickLivePlaylist(mixed, true)
+        assertTrue(result.contains("#EXT-X-TARGETDURATION:3\n"))
+        assertTrue(result.contains("#EXT-X-START:TIME-OFFSET=-5.000,PRECISE=YES\n"))
     }
 }

@@ -639,6 +639,7 @@ private fun ChannelChatSection(
 ) {
     val community: com.lechixy.kick.components.channel.chat.ChatCommunityViewModel =
         androidx.lifecycle.viewmodel.compose.viewModel(key = "community-${channel.slug}")
+    val highTraffic by viewModel.highTraffic.collectAsState()
     val chatMessages by viewModel.chatMessages.collectAsState()
     val chatConnectionState by viewModel.chatConnectionState.collectAsState()
     val pinnedMessage by viewModel.pinnedMessage.collectAsState()
@@ -654,6 +655,7 @@ private fun ChannelChatSection(
 
     ChatView(
         messages = chatMessages,
+        highTraffic = highTraffic,
         onReplyTo = { replyTarget = it },
         connectionState = chatConnectionState,
         subscriberBadges = channel.subscriberBadges,
@@ -673,13 +675,13 @@ private fun ChannelChatSection(
             markRulesSeen = { generation -> viewModel.markRulesSeen(generation, channel.id) },
             replyTo = replyTarget, onCancelReply = { replyTarget = null }, recentMessages = chatMessages, userColors = userColors,
             onUserCommand = { username -> community.openProfile(channel.slug,
-                com.lechixy.kick.data.chat.model.ActiveChatter(username = username)) },
+                com.lechixy.kick.data.chat.model.ActiveChatter(username = username), subscriberBadges = channel.subscriberBadges) },
             emotes = emotes, onRetryEmotes = { viewModel.loadEmotes(retry = true) },
             onIdentityPreviewClick = { identity ->
                 val account = com.lechixy.kick.data.account.AccountGraph.auth.session.value.profile
                 if (account != null) community.openProfile(channel.slug,
                     com.lechixy.kick.data.chat.model.ActiveChatter(username = account.name, profilePicture = account.avatar),
-                    com.lechixy.kick.data.chat.model.ChatSender(id = account.userId, username = account.name, identity = identity))
+                    com.lechixy.kick.data.chat.model.ChatSender(id = account.userId, username = account.name, identity = identity), channel.subscriberBadges)
             }) },
         modifier = modifier
     )
@@ -890,7 +892,7 @@ private fun ChannelHeaderInfo(
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(4.dp), itemVerticalAlignment = Alignment.CenterVertically) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(text = channel.user?.username ?: channel.slug, style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            modifier = Modifier.weight(1f, fill = false), fontWeight = FontWeight.Bold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                         if (channel.verified) VerifiedBadge(modifier = Modifier.size(16.dp), colors = listOf(
                             MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.onPrimaryContainer))
                     }

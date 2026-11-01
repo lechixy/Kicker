@@ -1,0 +1,7 @@
+<resources>
+    <string name="chat_show_timestamps">Zaman damgalarını göster</string>
+    <string name="chat_timestamps_live_and_video">Canlı yayın ve video</string>
+    <string name="chat_timestamps_only_live">Yalnızca canlı yayın</string>
+    <string name="chat_timestamps_only_video">Yalnızca video</string>
+    <string name="chat_timestamps_dont_show">Gösterme</string>
+</resources>

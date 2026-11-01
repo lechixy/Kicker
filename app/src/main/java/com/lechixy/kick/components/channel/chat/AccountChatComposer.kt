@@ -29,6 +29,10 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -120,6 +124,12 @@ private fun ComposerContent(
     var emoteQuery by rememberSaveable { mutableStateOf("") }
     var emoteCategory by remember { mutableIntStateOf(0) }
     var selection by remember { mutableStateOf(androidx.compose.ui.text.TextRange.Zero) }
+    val compact = LocalConfiguration.current.smallestScreenWidthDp < 600 && channel.livestream != null
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    var inputFocused by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(replyTo?.id) { if (replyTo != null) expanded = true }
     val usagePreferences = remember(context) { context.getSharedPreferences("chat_emote_usage", android.content.Context.MODE_PRIVATE) }
     var usage by remember { mutableStateOf<Map<Long, Int>>(emptyMap()) }
     LaunchedEffect(Unit) {
@@ -210,14 +220,16 @@ private fun ComposerContent(
                 points = it.balance.toLong()
             }
     }
-    LaunchedEffect(session.signedIn) {
+    LaunchedEffect(session.signedIn, compact, expanded) {
         if (session.signedIn) lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            while (true) { delay(100); tick++ }
+            while (true) { delay(if (compact && !expanded) 1_000 else 250); tick++ }
         }
     }
     val currentReply by rememberUpdatedState(replyTo)
     val requester = remember { FocusRequester() }
-    LaunchedEffect(replyTo?.id) { if (replyTo != null && session.signedIn) requester.requestFocus() }
+    LaunchedEffect(replyTo?.id, expanded) {
+        if (replyTo != null && session.signedIn && (!compact || expanded)) requester.requestFocus()
+    }
     LaunchedEffect(showEmotes) { if (showEmotes) onRetryEmotes() }
     val community: com.lechixy.kick.components.channel.chat.ChatCommunityViewModel =
         androidx.lifecycle.viewmodel.compose.viewModel(key = "community-${channel.slug}")
@@ -260,134 +272,147 @@ private fun ComposerContent(
     val cooldown = remember(effectiveAccess, tick) {
         effectiveAccess?.let { AccountGraph.chat.cooldown(channel.id, it) }
     }
-    Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = 10.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        if (!session.signedIn) {
-            AccountSignInState(compact = true)
-            return@Column
+    ChatComposerPanel(
+        compact = compact,
+        expanded = expanded,
+        allowAutoHide = content.isBlank() && !inputFocused && !showEmotes && !showPointsDialog &&
+            !showIdentityDialog && replyTo == null && !sending,
+        onExpandedChange = { expanded = it },
+        onHide = {
+            focusManager.clearFocus()
+            keyboard?.hide()
+            showEmotes = false
         }
-        ChatRulesCard(effectiveAccess?.settings?.rules.orEmpty(), session.generation, rulesSeen, markRulesSeen)
-        effectiveAccess?.settings?.let { settings ->
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                // Chat is open no need for any status
-//                if (presentation?.hasModes == false && inputBlock == null)
-//                    ChatMode(R.drawable.chat_24dp_e3e3e3_fill0_wght400_grad0_opsz24, stringResource(R.string.chat_available))
-                if (presentation?.slowMode == true) ChatMode(R.drawable.snail_24dp_e3e3e3_fill1_wght400_grad0_opsz24,
-                    stringResource(R.string.chat_slow_mode, settings.slowMode.durationSeconds))
-                if (presentation?.emotesOnly == true) ChatMode(R.drawable.mood_24dp_e3e3e3_fill0_wght400_grad0_opsz24, stringResource(R.string.chat_emotes_only))
-                if (presentation?.subscribersOnly == true) ChatMode(R.drawable.stars_2_24dp_e3e3e3_fill0_wght400_grad0_opsz24, stringResource(R.string.chat_subscribers_only))
-                if (presentation?.followersOnly == true) ChatMode(R.drawable.group_24dp_e3e3e3_fill0_wght400_grad0_opsz24, stringResource(R.string.chat_followers_only))
-                if (presentation?.accountAge == true) ChatMode(R.drawable.timer_24dp_e3e3e3_fill0_wght400_grad0_opsz24, stringResource(R.string.chat_account_age))
+    ) {
+        Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (!session.signedIn) {
+                AccountSignInState(compact = true)
+                return@Column
             }
-        }
-        if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-        val disabledReason = when {
-            connectionState != ChatConnectionState.CONNECTED -> stringResource(R.string.chat_connect_to_send)
-            loading -> stringResource(R.string.chat_checking_permissions)
-            effectiveAccess == null -> stringResource(R.string.chat_permissions_failed)
-            else -> restriction
-        }
-        if (inputBlock == null && (cooldown == null || cooldown.remainingMillis == 0L)) disabledReason?.let {
-            Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        accessError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-        error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-        val validation = if (inputBlock == null && content.isNotEmpty()) ChatPolicy.messageIssue(content)?.let {
-            ChatRestriction(it).localized(context) } else null
-        ChatReplyPreview(replyTo, onCancelReply, channel.subscriberBadges, userColors, channel.user?.username, channel.slug)
-        val availableCommands = ChatCommands.available(effectiveAccess?.member?.privileged == true, ownChannel)
-        val canUseSubscriberEmotes = effectiveAccess?.member?.let { it.subscriber || it.privileged } == true
-        val completionEmotes = remember(pickerCategories, token?.kind, token?.query, canUseSubscriberEmotes) {
-            if (token?.kind != CompletionKind.EMOTE) emptyList() else filterEmotes(pickerCategories, token.query)
-                .filter { !it.subscribersOnly || canUseSubscriberEmotes }.take(20)
-        }
-        ChatCompletionPanel(token.takeIf { inputBlock == null && !sending }, mentionUsers,
-            availableCommands.filter { it.name.startsWith(token?.query.orEmpty(), ignoreCase = true) },
-            completionEmotes) { value ->
-            token?.let {
-                val updated = insertCompletion(content, it, value)
-                if (ChatPolicy.messageIssue(updated.text) == null) { content = updated.text; selection = androidx.compose.ui.text.TextRange(updated.cursor) }
-            }
-        }
-        ComposerAccessory(showEmotes) {
-            com.lechixy.kick.components.channel.chat.EmotePickerSheet(
-                uiState = emotes.copy(searchQuery = emoteQuery, selectedCategoryIndex = emoteCategory, categories = pickerCategories),
-                onSearchQueryChange = { emoteQuery = it }, onCategorySelected = { emoteCategory = it },
-                onCloseClick = { showEmotes = false }, onRetry = onRetryEmotes,
-                canUseSubscriberEmotes = effectiveAccess?.member?.let { it.subscriber || it.privileged } == true,
-                onEmoteSelected = { emote ->
-                    val updated = com.lechixy.kick.data.chat.model.insertEmote(content, selection.start, selection.end, emote)
-                    if (ChatPolicy.messageIssue(updated.text) == null) {
-                        content = updated.text
-                        selection = androidx.compose.ui.text.TextRange(updated.cursor)
-                        val count = (usage[emote.id] ?: 0) + 1
-                        usage = usage + (emote.id to count)
-                        usagePreferences.edit().putInt(emote.id.toString(), count).apply()
-                    }
-                })
-        }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            IconButton(enabled = !identitySaving && session.profile != null, onClick = { showIdentityDialog = true }) {
-                Icon(painterResource(if (showIdentityDialog) R.drawable.person_24dp_e3e3e3_fill1_wght400_grad0_opsz24 else R.drawable.person_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
-                    contentDescription = stringResource(R.string.chat_identity))
-            }
-            ChatComposerTextField(value = if (inputBlock == null) content else "", onValueChange = { content = it },
-                blockedText = inputBlockText,
-                modifier = Modifier.weight(1f).focusRequester(requester),
-                enabled = !sending && !loading && effectiveAccess != null && inputBlock == null,
-                validation = validation, selection = selection, onSelectionChange = { selection = it })
-            IconButton(enabled = !sending && !loading && effectiveAccess != null && inputBlock == null,
-                onClick = { showEmotes = !showEmotes }) {
-                Icon(painterResource(if (showEmotes) R.drawable.mood_24dp_e3e3e3_fill1_wght400_grad0_opsz24 else R.drawable.mood_24dp_e3e3e3_fill0_wght400_grad0_opsz24), stringResource(R.string.emote_picker))
-            }
-        }
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            BalanceTooltip(points, unlimited = ownChannel, unavailable = pointsEnabled == false) {
-                AnimatedPoints(points, Modifier.clip(RoundedCornerShape(8.dp))
-                    .clickable(onClickLabel = stringResource(R.string.channel_points_title)) { showPointsDialog = true }
-                    .padding(vertical = 8.dp, horizontal = 4.dp), unlimited = ownChannel, unavailable = pointsEnabled == false)
-            }
-            BalanceTooltip(kicks, isKicks = true) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Icon(painterResource(R.drawable.kicks_color), stringResource(R.string.chat_kicks_balance),
-                        tint = Color.Unspecified, modifier = Modifier.size(20.dp))
-                    Text(kicks?.let { FormatUtils.formatFollowersCount(it.toString(), androidx.compose.ui.platform.LocalConfiguration.current.locales[0]) } ?: "—", style = MaterialTheme.typography.labelMedium)
+            ChatRulesCard(effectiveAccess?.settings?.rules.orEmpty(), session.generation, rulesSeen, markRulesSeen)
+            effectiveAccess?.settings?.let { settings ->
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    // Chat is open no need for any status
+    //                if (presentation?.hasModes == false && inputBlock == null)
+    //                    ChatMode(R.drawable.chat_24dp_e3e3e3_fill0_wght400_grad0_opsz24, stringResource(R.string.chat_available))
+                    if (presentation?.slowMode == true) ChatMode(R.drawable.snail_24dp_e3e3e3_fill1_wght400_grad0_opsz24,
+                        stringResource(R.string.chat_slow_mode, settings.slowMode.durationSeconds))
+                    if (presentation?.emotesOnly == true) ChatMode(R.drawable.mood_24dp_e3e3e3_fill0_wght400_grad0_opsz24, stringResource(R.string.chat_emotes_only))
+                    if (presentation?.subscribersOnly == true) ChatMode(R.drawable.stars_2_24dp_e3e3e3_fill0_wght400_grad0_opsz24, stringResource(R.string.chat_subscribers_only))
+                    if (presentation?.followersOnly == true) ChatMode(R.drawable.group_24dp_e3e3e3_fill0_wght400_grad0_opsz24, stringResource(R.string.chat_followers_only))
+                    if (presentation?.accountAge == true) ChatMode(R.drawable.timer_24dp_e3e3e3_fill0_wght400_grad0_opsz24, stringResource(R.string.chat_account_age))
                 }
             }
-            Spacer(Modifier.weight(1f))
-            ChatSendButton(sending = sending, loading = loading,
-                cooldown = cooldown.takeIf { inputBlock == null && connectionState == ChatConnectionState.CONNECTED && effectiveAccess != null },
-                enabled = disabledReason == null && inputBlock == null && content.isNotBlank() && validation == null,
-                onClick = {
-                    sending = true; error = null
-                    val draft = content
-                    val reply = replyTo
-                    scope.launch {
-                        try {
-                            val action = if (reply == null && draft.trimStart().startsWith("/"))
-                                ChatCommands.parse(channel, draft, effectiveAccess?.member?.privileged == true, ownChannel) else null
-                            when (action) {
-                                ChatCommandAction.Help -> { content = "/"; selection = androidx.compose.ui.text.TextRange(1) }
-                                is ChatCommandAction.User -> { onUserCommand(action.username); content = ""; selection = androidx.compose.ui.text.TextRange.Zero }
-                                else -> {
-                                    AccountGraph.chat.send(channel, draft, reply)
-                                    if (content == draft) { content = ""; selection = androidx.compose.ui.text.TextRange.Zero }
-                                    if (currentReply?.id == reply?.id) onCancelReply()
+            if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+            val disabledReason = when {
+                connectionState != ChatConnectionState.CONNECTED -> stringResource(R.string.chat_connect_to_send)
+                loading -> stringResource(R.string.chat_checking_permissions)
+                effectiveAccess == null -> stringResource(R.string.chat_permissions_failed)
+                else -> restriction
+            }
+            if (inputBlock == null && (cooldown == null || cooldown.remainingMillis == 0L)) disabledReason?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            accessError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+            val validation = if (inputBlock == null && content.isNotEmpty()) ChatPolicy.messageIssue(content)?.let {
+                ChatRestriction(it).localized(context) } else null
+            ChatReplyPreview(replyTo, onCancelReply, channel.subscriberBadges, userColors, channel.user?.username, channel.slug)
+            val availableCommands = ChatCommands.available(effectiveAccess?.member?.privileged == true, ownChannel)
+            val canUseSubscriberEmotes = effectiveAccess?.member?.let { it.subscriber || it.privileged } == true
+            val completionEmotes = remember(pickerCategories, token?.kind, token?.query, canUseSubscriberEmotes) {
+                if (token?.kind != CompletionKind.EMOTE) emptyList() else filterEmotes(pickerCategories, token.query)
+                    .filter { !it.subscribersOnly || canUseSubscriberEmotes }.take(20)
+            }
+            ChatCompletionPanel(token.takeIf { inputBlock == null && !sending }, mentionUsers,
+                availableCommands.filter { it.name.startsWith(token?.query.orEmpty(), ignoreCase = true) },
+                completionEmotes) { value ->
+                token?.let {
+                    val updated = insertCompletion(content, it, value)
+                    if (ChatPolicy.messageIssue(updated.text) == null) { content = updated.text; selection = androidx.compose.ui.text.TextRange(updated.cursor) }
+                }
+            }
+            ComposerAccessory(showEmotes) {
+                com.lechixy.kick.components.channel.chat.EmotePickerSheet(
+                    uiState = emotes.copy(searchQuery = emoteQuery, selectedCategoryIndex = emoteCategory, categories = pickerCategories),
+                    onSearchQueryChange = { emoteQuery = it }, onCategorySelected = { emoteCategory = it },
+                    onCloseClick = { showEmotes = false }, onRetry = onRetryEmotes,
+                    canUseSubscriberEmotes = effectiveAccess?.member?.let { it.subscriber || it.privileged } == true,
+                    onEmoteSelected = { emote ->
+                        val updated = com.lechixy.kick.data.chat.model.insertEmote(content, selection.start, selection.end, emote)
+                        if (ChatPolicy.messageIssue(updated.text) == null) {
+                            content = updated.text
+                            selection = androidx.compose.ui.text.TextRange(updated.cursor)
+                            val count = (usage[emote.id] ?: 0) + 1
+                            usage = usage + (emote.id to count)
+                            usagePreferences.edit().putInt(emote.id.toString(), count).apply()
+                        }
+                    })
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                IconButton(enabled = !identitySaving && session.profile != null, onClick = { showIdentityDialog = true }) {
+                    Icon(painterResource(if (showIdentityDialog) R.drawable.person_24dp_e3e3e3_fill1_wght400_grad0_opsz24 else R.drawable.person_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
+                        contentDescription = stringResource(R.string.chat_identity))
+                }
+                ChatComposerTextField(value = if (inputBlock == null) content else "", onValueChange = { content = it },
+                    blockedText = inputBlockText,
+                    modifier = Modifier.weight(1f).focusRequester(requester).onFocusChanged { inputFocused = it.isFocused },
+                    enabled = !sending && !loading && effectiveAccess != null && inputBlock == null,
+                    validation = validation, selection = selection, onSelectionChange = { selection = it })
+                IconButton(enabled = !sending && !loading && effectiveAccess != null && inputBlock == null,
+                    onClick = { showEmotes = !showEmotes }) {
+                    Icon(painterResource(if (showEmotes) R.drawable.mood_24dp_e3e3e3_fill1_wght400_grad0_opsz24 else R.drawable.mood_24dp_e3e3e3_fill0_wght400_grad0_opsz24), stringResource(R.string.emote_picker))
+                }
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                BalanceTooltip(points, unlimited = ownChannel, unavailable = pointsEnabled == false) {
+                    AnimatedPoints(points, Modifier.clip(RoundedCornerShape(8.dp))
+                        .clickable(onClickLabel = stringResource(R.string.channel_points_title)) { showPointsDialog = true }
+                        .padding(vertical = 8.dp, horizontal = 4.dp), unlimited = ownChannel, unavailable = pointsEnabled == false)
+                }
+                BalanceTooltip(kicks, isKicks = true) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Icon(painterResource(R.drawable.kicks_color), stringResource(R.string.chat_kicks_balance),
+                            tint = Color.Unspecified, modifier = Modifier.size(20.dp))
+                        Text(kicks?.let { FormatUtils.formatFollowersCount(it.toString(), androidx.compose.ui.platform.LocalConfiguration.current.locales[0]) } ?: "—", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+                Spacer(Modifier.weight(1f))
+                ChatSendButton(sending = sending, loading = loading,
+                    cooldown = cooldown.takeIf { inputBlock == null && connectionState == ChatConnectionState.CONNECTED && effectiveAccess != null },
+                    enabled = disabledReason == null && inputBlock == null && content.isNotBlank() && validation == null,
+                    onClick = {
+                        sending = true; error = null
+                        val draft = content
+                        val reply = replyTo
+                        scope.launch {
+                            try {
+                                val action = if (reply == null && draft.trimStart().startsWith("/"))
+                                    ChatCommands.parse(channel, draft, effectiveAccess?.member?.privileged == true, ownChannel) else null
+                                when (action) {
+                                    ChatCommandAction.Help -> { content = "/"; selection = androidx.compose.ui.text.TextRange(1) }
+                                    is ChatCommandAction.User -> { onUserCommand(action.username); content = ""; selection = androidx.compose.ui.text.TextRange.Zero }
+                                    else -> {
+                                        AccountGraph.chat.send(channel, draft, reply)
+                                        if (content == draft) { content = ""; selection = androidx.compose.ui.text.TextRange.Zero }
+                                        if (currentReply?.id == reply?.id) onCancelReply()
+                                    }
                                 }
                             }
+                            catch (failure: Exception) {
+                                if (failure is CancellationException) throw failure
+                                error = if (failure is ChatCommandException) failure.usage?.let { context.getString(R.string.command_usage, it) }
+                                    ?: context.getString(R.string.command_not_available)
+                                    else if (failure is java.io.IOException) context.getString(R.string.chat_send_unknown)
+                                    else failure.chatUserMessage(context)
+                            } finally { sending = false; refresh++; tick++ }
                         }
-                        catch (failure: Exception) {
-                            if (failure is CancellationException) throw failure
-                            error = if (failure is ChatCommandException) failure.usage?.let { context.getString(R.string.command_usage, it) }
-                                ?: context.getString(R.string.command_not_available)
-                                else if (failure is java.io.IOException) context.getString(R.string.chat_send_unknown)
-                                else failure.chatUserMessage(context)
-                        } finally { sending = false; refresh++; tick++ }
-                    }
-                })
+                    })
+            }
+            if (access == null && !loading) TextButton(onClick = { refresh++ }) { Text(stringResource(R.string.chat_retry)) }
         }
-        if (access == null && !loading) TextButton(onClick = { refresh++ }) { Text(stringResource(R.string.chat_retry)) }
     }
     if (showIdentityDialog) {
         LoadingChatIdentityDialog(channel.id, session.profile?.name.orEmpty(), channel.subscriberBadges,
@@ -473,8 +498,7 @@ private fun ChatRulesCard(rules: String, generation: Long, seen: (Long) -> Boole
         visible = false
     }
     AnimatedVisibility(visible && rules.isNotBlank()) {
-        Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        Surface(shape = RoundedCornerShape(12.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
             modifier = Modifier.fillMaxWidth().animateContentSize().clickable { expanded = !expanded; interaction++ }) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {

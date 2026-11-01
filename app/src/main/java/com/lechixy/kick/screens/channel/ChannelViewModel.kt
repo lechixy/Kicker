@@ -66,6 +66,7 @@ class ChannelViewModel(
     private val _uiState = MutableStateFlow(ChannelUiState())
     val uiState: StateFlow<ChannelUiState> = _uiState.asStateFlow()
 
+    val highTraffic = repository.chatWebSocketClient.highTraffic
     val chatMessages: StateFlow<List<ChatMessage>> = repository.chatWebSocketClient.messages
     val pinnedMessage: StateFlow<PinnedMessageInfo?> = repository.chatWebSocketClient.pinnedMessage
     val userColors: StateFlow<Map<String, String>> = repository.chatWebSocketClient.userColors

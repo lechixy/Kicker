@@ -1,10 +1,15 @@
 <resources>
     <string name="home_live_streamers">Canlı kanal</string>
     <string name="home_total_viewers">İzleyici</string>
-    <string name="home_live_totals_description">Kick’te %1$s canlı kanal ve %2$s izleyici. En üste dön.</string>
+    <string name="home_live_totals_description">Kick’te %1$s canlı kanal ve %2$s izleyici, en üste dön</string>
     <string name="home_following_live">Takip ettiklerin canlı</string>
-    <string name="home_no_following_live">Takip ettiğin kanallardan şu an canlı yayında olan yok.</string>
+    <string name="home_no_following_live">Takip ettiğin kanallardan şu an canlı yayında olan yok</string>
     <string name="home_popular_categories">POPÜLER KATEGORİLER</string>
     <string name="home_recommended_live">Önerilen canlı yayınlar</string>
     <string name="viewers_count">%1$s izleyici</string>
+    <string name="navigation_expand">Gezinmeyi genişlet</string>
+    <string name="navigation_collapse">Gezinmeyi daralt</string>
+    <string name="home_continue_watching">İzlemeye devam et</string>
+    <string name="home_last_position">Son izlenen: %1$s</string>
+    <string name="home_recording_unavailable">Yayın kaydı henüz kullanılamıyor, daha sonra tekrar deneyin.</string>
 </resources>

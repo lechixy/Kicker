@@ -1,6 +1,8 @@
 package com.lechixy.kick.service.player
 
 import android.os.SystemClock
+import android.util.Log
+import com.lechixy.kick.BuildConfig
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -9,6 +11,9 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.LivePlaybackSpeedControl
 import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.source.LoadEventInfo
+import androidx.media3.exoplayer.source.MediaLoadData
+import java.io.IOException
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -133,6 +138,15 @@ internal class PlaybackDiagnosticTracker(
         bandwidthBps = bitrateEstimate.takeIf { it > 0 }
     }
 
+    override fun onLoadCompleted(eventTime: AnalyticsListener.EventTime, loadEventInfo: LoadEventInfo, mediaLoadData: MediaLoadData) {
+        if (BuildConfig.DEBUG) Log.d("KickLoad", "type=${mediaLoadData.dataType} durationMs=${loadEventInfo.loadDurationMs} bytes=${loadEventInfo.bytesLoaded} mediaStartMs=${mediaLoadData.mediaStartTimeMs} mediaEndMs=${mediaLoadData.mediaEndTimeMs}")
+    }
+
+    override fun onLoadError(eventTime: AnalyticsListener.EventTime, loadEventInfo: LoadEventInfo, mediaLoadData: MediaLoadData, error: IOException, wasCanceled: Boolean) {
+        // Exception messages and URLs may contain signed credentials.
+        if (BuildConfig.DEBUG) Log.d("KickLoad", "error=${error.javaClass.simpleName} type=${mediaLoadData.dataType} durationMs=${loadEventInfo.loadDurationMs} bytes=${loadEventInfo.bytesLoaded} canceled=$wasCanceled")
+    }
+
     private fun publish() {
         val now = SystemClock.elapsedRealtime()
         val buffering = player.playWhenReady && player.playbackState == Player.STATE_BUFFERING
@@ -167,6 +181,7 @@ internal class PlaybackDiagnosticTracker(
             width = format?.width?.takeIf { it > 0 }, height = format?.height?.takeIf { it > 0 },
             frameRate = format?.frameRate?.takeIf { it > 0 }, errorCode = player.playerError?.errorCodeName
         )
+        if (BuildConfig.DEBUG && live) Log.d("KickStats", "t=$now state=${player.playbackState} play=${player.playWhenReady} speed=${speedControl.adjustedSpeed} offsetMs=${player.currentLiveOffset} targetMs=$targetMs bufferMs=${player.totalBufferedDuration} rebuffers=${speedControl.rebuffers} bufferingMs=${PlaybackDiagnostics.state.value.bufferingMs} bandwidthBps=$bandwidthBps bitrate=${format?.bitrate} dropped=${counters?.droppedBufferCount} audioUnderruns=$audioUnderruns")
     }
 
     fun close() {

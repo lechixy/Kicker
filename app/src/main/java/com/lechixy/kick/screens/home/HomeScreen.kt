@@ -8,6 +8,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -64,6 +65,9 @@ fun HomeScreen(
     val wide = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 600
     val navigation = LocalContentNavigation.current
     val state by viewModel.uiState.collectAsState()
+    val history by viewModel.watchHistory.collectAsState()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var openingHistory by remember { mutableStateOf(false) }
     val pullState = rememberPullToRefreshState()
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
@@ -115,6 +119,28 @@ fun HomeScreen(
                 val streams = remember(state.streams) { state.streams.distinctBy { it.id } }
                 ContentGrid(state = gridState, modifier = Modifier.fillMaxSize().nestedScroll(totalsScrollConnection)) { columns ->
                     val loading = state.isLoading || state.isRefreshing
+                    if (history.isNotEmpty()) {
+                        item(key = "continue_header", span = { GridItemSpan(maxLineSpan) }) {
+                            SectionHeader(stringResource(R.string.home_continue_watching),
+                                leadingIcon = R.drawable.motion_play_24dp_e3e3e3_fill0_wght400_grad0_opsz24)
+                        }
+                        items(history.take(columns), key = { "history_${it.key}" }) { entry ->
+                            com.lechixy.kick.components.ContinueWatchingCard(entry, enabled = !openingHistory) { source ->
+                                scope.launch {
+                                    openingHistory = true
+                                    try {
+                                        val recording = viewModel.resolveHistoryRecording(entry)
+                                        if (recording != null) navigation.recording(entry.channelSlug, recording, source)
+                                        else android.widget.Toast.makeText(context, R.string.home_recording_unavailable, android.widget.Toast.LENGTH_SHORT).show()
+                                    } catch (error: kotlinx.coroutines.CancellationException) {
+                                        throw error
+                                    } catch (_: Exception) {
+                                        android.widget.Toast.makeText(context, R.string.home_recording_unavailable, android.widget.Toast.LENGTH_SHORT).show()
+                                    } finally { openingHistory = false }
+                                }
+                            }
+                        }
+                    }
                     if (state.following.signedIn) {
                         cardSection("following", followingTitle, state.following.streams,
                             columns, loading = state.following.loading, previewRows = if (wide) 2 else 1,

@@ -29,6 +29,7 @@ import androidx.compose.material3.RichTooltip
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberTooltipState
@@ -85,10 +86,13 @@ import com.lechixy.kick.data.account.model.rewardAnimationImageUrl
 import com.lechixy.kick.theme.KickTheme
 import com.lechixy.kick.theme.Theme
 
+val LocalOpenChallenges = androidx.compose.runtime.staticCompositionLocalOf<(() -> Unit)?> { null }
+
 @Composable
 fun ChallengesButton() {
     val session by AccountGraph.auth.session.collectAsStateWithLifecycle()
     var open by remember { mutableStateOf(false) }
+    val openFromRoot = LocalOpenChallenges.current
     if (!session.signedIn) return
     val availability by AccountGraph.challenges.state.collectAsStateWithLifecycle()
     var availabilityNow by remember { mutableStateOf(Instant.now()) }
@@ -104,14 +108,23 @@ fun ChallengesButton() {
     }
     val available = availability.challenges.any { it.canClaim(availabilityNow) }
     val accessibilityLabel = stringResource(R.string.challenges_title)
-    Surface(onClick = { open = true }, shape = CircleShape,
+    Surface(onClick = { if (openFromRoot != null) openFromRoot() else open = true }, shape = CircleShape,
         color = MaterialTheme.colorScheme.surfaceContainerHigh, tonalElevation = 2.dp,
         modifier = Modifier.size(46.dp).semantics { contentDescription = accessibilityLabel }) {
         Box(contentAlignment = Alignment.Center) {
             RewardAvailability(available)
         }
     }
-    if (open) {
+    AccountChallengeDialogHost(open, { open = false })
+}
+
+@Composable
+fun AccountChallengeDialogHost(open: Boolean, onDismiss: () -> Unit) {
+    val session by AccountGraph.auth.session.collectAsStateWithLifecycle()
+    if (open && !session.signedIn) {
+        AdaptiveModalSheet(onDismiss = onDismiss) { AccountSignInState(compact = true) }
+    }
+    if (open && session.signedIn) {
         val state by AccountGraph.challenges.state.collectAsStateWithLifecycle()
         val dashboard by AccountGraph.dashboard.state.collectAsStateWithLifecycle()
         val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -126,7 +139,7 @@ fun ChallengesButton() {
             }
         }
         ChallengeDialog(state, dashboard.streak?.days, now, onRefresh = AccountGraph.challenges::refresh,
-            onDismiss = { open = false })
+            onDismiss = onDismiss)
     }
 }
 
@@ -309,7 +322,7 @@ fun RarityIndicatorRow(table: List<DropTableEntry>) {
         table.forEach { entry ->
             RaritySwatch(entry.rarity, Modifier.padding(4.dp).size(14.dp))
         }
-        TooltipBox(positionProvider = TooltipDefaults.rememberRichTooltipPositionProvider(), state = tooltip,
+        TooltipBox(positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above), state = tooltip,
             tooltip = { RichTooltip(title = { Text(stringResource(R.string.challenges_reward_rarity)) }) { RarityDropTableTooltip(table) } }) {
             IconButton(onClick = { scope.launch { tooltip.show() } }) {
                 Icon(painterResource(R.drawable.info_24dp_e3e3e3_fill0_wght400_grad0_opsz24),

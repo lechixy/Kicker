@@ -96,6 +96,11 @@ class KickChatWebSocketClient(
     private var isIntentionallyClosed = false
     private val lastServerActivityMs = AtomicLong(0L)
 
+    private val batcher = LiveChatBatcher()
+    private var batchJob: Job? = null
+    private val _highTraffic = MutableStateFlow(false)
+    val highTraffic: StateFlow<Boolean> = _highTraffic.asStateFlow()
+
     private val _messages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val messages: StateFlow<List<ChatMessage>> = _messages.asStateFlow()
 
@@ -118,12 +123,14 @@ class KickChatWebSocketClient(
         _pinnedMessage.value = pinned?.takeIf { it.message != null }?.withSelectedBadgesOnly()
     }
 
+    @Synchronized
     fun seedHistory(channelId: Long, chatroomId: Long, messages: List<ChatMessage>) {
         if (currentChannelId != channelId || currentChatroomId != chatroomId) {
             disconnectInternal(clearMessages = true)
             currentChannelId = channelId
             currentChatroomId = chatroomId
         }
+        flushMessages(sample = false)
         _messages.update { current -> mergeChatHistory(messages, current, maxMessagesBuffer) }
         cacheUserColorsFromMessages(messages)
     }
@@ -139,6 +146,7 @@ class KickChatWebSocketClient(
                     updated[username.lowercase()] = color
                 }
             }
+            while (updated.size > 1_000) updated.remove(updated.keys.first())
             updated
         }
     }
@@ -156,6 +164,12 @@ class KickChatWebSocketClient(
         currentChatroomId = chatroomId
         isIntentionallyClosed = false
 
+        batchJob = clientScope.launch {
+            while (isActive) {
+                delay(if (_highTraffic.value) 250L else 100L)
+                flushMessages()
+            }
+        }
         _connectionState.value = ChatConnectionState.CONNECTING
         connectionJob = clientScope.launch {
             startConnectionFlow(channelId, chatroomId)
@@ -274,8 +288,6 @@ class KickChatWebSocketClient(
                 "chatrooms.$chatroomId" to 5,
                 "predictions-channel-$channelId" to 6,
                 "chatrooms.$chatroomId.v2" to 7,
-                "private-userfeed.$clientId" to 8,
-                "private-$clientId" to 9,
                 "private-channelpoints-$clientId" to 10
             )
 
@@ -371,12 +383,6 @@ class KickChatWebSocketClient(
                     val event = decodeEventPayload<com.lechixy.kick.data.chat.model.StreamHostedEvent>(data) ?: return
                     _events.tryEmit(ChatWebSocketEvent.StreamHosted(event))
                 }
-                "GamificationWatchTimeGoalReached", "App\\Events\\GamificationWatchTimeGoalReached" -> {
-                    rawData?.let { payload ->
-                        com.lechixy.kick.data.account.AccountGraph.challenges.onGoalReached(
-                            pushFrame.push?.channel ?: pushFrame.channel, payload)
-                    }
-                }
                 "App\\Events\\ChatroomUpdatedEvent", "ChatroomUpdatedEvent",
                 "App\\Events\\ChatSettingsChanged", "ChatSettingsChanged" -> {
                     val payload = rawData?.let { decodeEventPayload<JsonObject>(it) } ?: return
@@ -458,10 +464,7 @@ class KickChatWebSocketClient(
                     val data = rawData ?: return
                     val event = decodeEventPayload<GiftedSubscriptionsEvent>(data) ?: return
                     val recipientMessages = event.toRecipientMessages()
-                    _messages.update { current ->
-                        val existingIds = current.mapTo(HashSet()) { it.id }
-                        (current + recipientMessages.filterNot { it.id in existingIds }).takeLast(maxMessagesBuffer)
-                    }
+                    recipientMessages.forEach(::addMessage)
                     _events.tryEmit(ChatWebSocketEvent.GiftedSubscriptions(event))
                 }
 
@@ -537,32 +540,27 @@ class KickChatWebSocketClient(
         }
     }
 
+    @Synchronized
     private fun addMessage(message: ChatMessage) {
-        val senderUsername = message.sender?.username
-        val senderColor = message.sender?.identity?.color
-        if (!senderUsername.isNullOrBlank() && !senderColor.isNullOrBlank()) {
-            _userColors.update { current ->
-                if (current[senderUsername.lowercase()] == senderColor) {
-                    current
-                } else {
-                    current + (senderUsername.lowercase() to senderColor)
-                }
-            }
-        }
+        batcher.add(message, android.os.SystemClock.elapsedRealtime())
+    }
 
-        _messages.update { currentList ->
-            if (currentList.any { it.id == message.id }) {
-                return@update currentList
-            }
-            if (currentList.size >= maxMessagesBuffer) {
-                currentList.drop(currentList.size - maxMessagesBuffer + 1) + message
-            } else {
-                currentList + message
-            }
+    @Synchronized
+    private fun flushMessages(sample: Boolean = true) {
+        val now = android.os.SystemClock.elapsedRealtime()
+        _highTraffic.value = batcher.isBusy(now)
+        val batch = batcher.drain(now, sample)
+        if (batch.isEmpty()) return
+        cacheUserColorsFromMessages(batch)
+        _messages.update { current ->
+            val ids = current.mapTo(HashSet()) { it.id }
+            (current + batch.filter { ids.add(it.id) }).takeLast(maxMessagesBuffer)
         }
     }
 
+    @Synchronized
     private fun markMessageDeleted(event: MessageDeletedEvent) {
+        flushMessages(sample = false)
         val targetId = event.message?.id?.takeIf { it.isNotBlank() } ?: event.id
         if (targetId.isBlank()) return
 
@@ -641,7 +639,12 @@ class KickChatWebSocketClient(
         disconnectInternal(clearMessages = true)
     }
 
+    @Synchronized
     private fun disconnectInternal(clearMessages: Boolean = true) {
+        batchJob?.cancel()
+        if (!clearMessages) flushMessages(sample = false)
+        batcher.clear()
+        _highTraffic.value = false
         connectionJob?.cancel()
         reconnectJob?.cancel()
         heartbeatJob?.cancel()

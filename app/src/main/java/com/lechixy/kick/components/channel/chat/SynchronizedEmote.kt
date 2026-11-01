@@ -25,17 +25,20 @@ import coil3.request.ImageRequest
 import coil3.request.SuccessResult
 import kotlinx.coroutines.*
 
+internal val LocalChatAnimationsEnabled = staticCompositionLocalOf { true }
+
 /** One drawable and animation clock per visible emote URL, including replies and pinned messages. */
 @Composable
 internal fun SynchronizedEmote(url: String, name: String, modifier: Modifier = Modifier) {
     val context = LocalContext.current.applicationContext
-    var shared by remember(url) { mutableStateOf<SharedEmote?>(null) }
-    LifecycleStartEffect(url) {
-        val entry = VisibleEmotes.acquire(context, url)
+    val animated = LocalChatAnimationsEnabled.current
+    var shared by remember(url, animated) { mutableStateOf<SharedEmote?>(null) }
+    LifecycleStartEffect(url, animated) {
+        val entry = VisibleEmotes.acquire(context, url, animated)
         shared = entry
         onStopOrDispose {
             shared = null
-            VisibleEmotes.release(url, entry)
+            VisibleEmotes.release(url, entry, animated)
         }
     }
     val entry = shared
@@ -70,20 +73,20 @@ internal fun emoteTooltipLabel(name: String): String = ":${name.trim().trim(':')
 
 /** Accessed on the main thread; entries and their jobs disappear with the last visible copy. */
 internal object VisibleEmotes {
-    private val entries = mutableMapOf<String, SharedEmote>()
-    fun acquire(context: Context, url: String): SharedEmote = entries.getOrPut(url) {
-        SharedEmote(context, url)
+    private val entries = mutableMapOf<Pair<String, Boolean>, SharedEmote>()
+    fun acquire(context: Context, url: String, animated: Boolean = true): SharedEmote = entries.getOrPut(url to animated) {
+        SharedEmote(context, url, animated)
     }.also { it.readers++ }
 
-    fun release(url: String, entry: SharedEmote) {
+    fun release(url: String, entry: SharedEmote, animated: Boolean = true) {
         if (--entry.readers == 0) {
-            entries.remove(url)
+            entries.remove(url to animated)
             entry.close()
         }
     }
 }
 
-internal class SharedEmote(context: Context, url: String) : Drawable.Callback {
+internal class SharedEmote(context: Context, url: String, animated: Boolean) : Drawable.Callback {
     var readers = 0
     var drawable by mutableStateOf<Drawable?>(null)
         private set
@@ -108,7 +111,7 @@ internal class SharedEmote(context: Context, url: String) : Drawable.Callback {
                 decoded.setBounds(0, 0, decoded.intrinsicWidth.coerceAtLeast(1), decoded.intrinsicHeight.coerceAtLeast(1))
                 decoded.callback = this@SharedEmote
                 drawable = decoded
-                (decoded as? Animatable)?.start()
+                if (animated) (decoded as? Animatable)?.start()
             } catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { failed = true }
         }

@@ -146,6 +146,7 @@ enum class Theme {
 fun KickTheme(
     theme: Theme,
     dynamicColor: Boolean,
+    launchSplashVisible: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val colorScheme = when {
@@ -184,7 +185,7 @@ fun KickTheme(
     }
 
     val activity = LocalContext.current.findActivity() as? ComponentActivity
-    val darkBars = colorScheme.surface.luminance() < 0.5f
+    val darkBars = launchSplashVisible || colorScheme.surface.luminance() < 0.5f
     SideEffect {
         val transparent = android.graphics.Color.TRANSPARENT
         activity?.enableEdgeToEdge(

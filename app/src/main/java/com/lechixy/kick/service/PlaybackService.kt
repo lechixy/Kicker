@@ -47,6 +47,7 @@ import com.lechixy.kick.BuildConfig
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.SettingsRepository
 import com.lechixy.kick.service.player.DiagnosticLiveSpeedControl
+import com.lechixy.kick.service.player.BufferAwareLiveSpeedControl
 import com.lechixy.kick.service.player.LiveResumeListener
 import com.lechixy.kick.service.player.PlaybackDiagnosticTracker
 import com.lechixy.kick.service.player.PlaybackProgressTracker
@@ -108,13 +109,13 @@ class PlaybackService : MediaSessionService() {
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
-        val liveSpeedControl = DiagnosticLiveSpeedControl(DefaultLivePlaybackSpeedControl.Builder()
+        val liveSpeedControl = DiagnosticLiveSpeedControl(BufferAwareLiveSpeedControl(DefaultLivePlaybackSpeedControl.Builder()
             .setFallbackMinPlaybackSpeed(0.95f)
             .setFallbackMaxPlaybackSpeed(1.10f)
-            // The controller still estimates a safe offset from available buffer. Avoid
-            // adding a permanent 200ms penalty for every stall in the same broadcast.
-            .setTargetLiveOffsetIncrementOnRebufferMs(0L)
-            .build())
+            // Back off after a real stall; Media3 gradually reduces this target again
+            // when delivery improves, so this is not a permanent latency penalty.
+            .setTargetLiveOffsetIncrementOnRebufferMs(500L)
+            .build()))
 
         val hlsParserFactory = KickHlsPlaylistParserFactory {
             lowLatencyEnabled
@@ -274,6 +275,12 @@ private class KickHlsPlaylistParser(
         val text = rawBytes.toString(Charsets.UTF_8)
 
         val transformedText = transformKickLivePlaylist(text, isLowLatencyEnabled())
+        if (BuildConfig.DEBUG && text.contains("#EXT-X-PREFETCH:")) {
+            val durations = text.lineSequence().filter { it.startsWith("#EXTINF:") }
+                .mapNotNull { it.substringAfter(':').substringBefore(',').toDoubleOrNull() }.toList()
+            val target = transformedText.lineSequence().firstOrNull { it.startsWith("#EXT-X-TARGETDURATION:") }
+            Log.d("KickPlaylist", "segments=${durations.size} min=${durations.minOrNull()} max=${durations.maxOrNull()} last=${durations.lastOrNull()} $target")
+        }
         return delegate.parse(
             uri,
             ByteArrayInputStream(transformedText.toByteArray(Charsets.UTF_8))

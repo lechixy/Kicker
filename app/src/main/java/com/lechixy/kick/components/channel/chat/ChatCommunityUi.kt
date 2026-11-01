@@ -39,7 +39,8 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -181,7 +182,7 @@ internal fun LevelAvatarAnimation(level: Int?, modifier: Modifier = Modifier) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun KickUserProfileDialog(state: UserProfileCardUiState, onClose: () -> Unit, onFollow: () -> Unit, onMute: () -> Unit, onChannelClick: () -> Unit = {}) {
-    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ModalBottomSheet(onDismissRequest = onClose, sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)),
         sheetMaxWidth = 440.dp, containerColor = Color(0xFF131517), dragHandle = null) {
         KickUserProfileCard(state, onFollow, onMute, Modifier.navigationBarsPadding(), onChannelClick)
     }

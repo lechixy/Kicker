@@ -55,6 +55,18 @@ object KickNetwork {
         .addInterceptor(logging)
         .build()
 
+    /** Public services share JSON/Retrofit conventions, without Kick-specific headers or account credentials. */
+    fun <T> publicService(baseUrl: String, service: Class<T>): T {
+        val publicClient = client.newBuilder().apply { interceptors().clear() }
+            .callTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .addInterceptor { chain -> chain.proceed(chain.request().newBuilder()
+                .header("User-Agent", "Android-App/Kick")
+                .header("Accept", "application/vnd.github+json").build()) }
+            .build()
+        return Retrofit.Builder().baseUrl(baseUrl).client(publicClient)
+            .addConverterFactory(json.asConverterFactory("application/json".toMediaType())).build().create(service)
+    }
+
     val api: KickApi by lazy {
         Retrofit.Builder()
             .baseUrl(BASE_URL)

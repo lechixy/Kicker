@@ -105,7 +105,7 @@ private fun ProfilePhotoPreview(url: String, username: String?, source: Rect, pl
         Unit
     }
     LaunchedEffect(Unit) { progress.animateTo(1f, tween(320, easing = FastOutSlowInEasing)) }
-    Dialog(onDismissRequest = dismiss,
+    com.lechixy.kick.components.PredictiveDialog(onDismissRequest = dismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         val view = LocalView.current
         DisposableEffect(view) {

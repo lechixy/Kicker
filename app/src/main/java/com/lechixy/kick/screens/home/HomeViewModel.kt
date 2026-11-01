@@ -12,6 +12,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromJsonElement
 import javax.inject.Inject
 
+import com.lechixy.kick.data.player.model.toRecording
 import com.lechixy.kick.data.account.AccountGraph
 import com.lechixy.kick.data.account.remote.userMessage
 import com.lechixy.kick.data.common.model.FollowedLivestream
@@ -42,6 +43,21 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    val watchHistory = com.lechixy.kick.data.player.local.WatchHistoryStore.entries
+
+    suspend fun resolveHistoryRecording(entry: com.lechixy.kick.data.player.local.WatchHistoryEntry): com.lechixy.kick.data.player.model.RecordedPlayback? {
+        val recording = entry.recording ?: run {
+            entry.vodId?.takeIf { it.isNotBlank() }?.let {
+                com.lechixy.kick.data.player.model.RecordedPlayback(id = it, title = entry.title,
+                    durationMs = 0, thumbnail = entry.thumbnail, startTime = entry.startTime)
+            } ?: kickRepository.getChannelVideos(entry.channelSlug)
+                .firstOrNull { it.id == entry.livestreamId }?.toRecording()
+        } ?: return null
+        com.lechixy.kick.data.player.local.PlaybackProgressStore.save(
+            recording.progressId, entry.positionMs, recording.durationMs)
+        return recording
+    }
+
     fun loadStreams() = loadHome(refreshing = false)
 
     fun refresh() {
@@ -66,7 +82,7 @@ class HomeViewModel @Inject constructor(
                 launch {
                     try {
                         val language = settingsRepository.get(SettingsKeys.RECOMMENDED_LIVESTREAM_LANGUAGE).first()
-                        val streams = kickRepository.getRecommendedLivestreams(language)
+                        val streams = kickRepository.getRecommendedLivestreams(com.lechixy.kick.util.kickLanguageCode(language) ?: "en")
                         _uiState.update { it.copy(streams = streams) }
                     } catch (error: Exception) {
                         if (error is CancellationException) throw error

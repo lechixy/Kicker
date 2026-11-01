@@ -8,7 +8,7 @@
     <string name="developer_unlocked">Developer tools enabled</string>
     <string name="developer_floating_menu">Floating developer menu</string>
     <string name="developer_trigger_live">Trigger stream started animation</string>
-    <string name="developer_live_required">Open a live stream to preview the animation.</string>
+    <string name="developer_live_required">Open a live stream to preview the animation</string>
     <string name="developer_viewer_socket">Viewer websocket</string>
     <string name="developer_status_idle">Idle · no active live playback</string>
     <string name="developer_status_token">Requesting token</string>
@@ -16,7 +16,7 @@
     <string name="developer_status_connected">Connected</string>
     <string name="developer_status_retrying">Connection issue · retrying</string>
     <string name="developer_socket_times">Connected: %1$s\nLast ping: %2$s\nLast pong: %3$s\nRTT: %4$s ms\nHandshake: %5$s\nWatch event: %6$s\nReconnects: %7$d</string>
-    <string name="developer_missing_vod">Channel API did not return a VOD ID; watch events omit vod_id.</string>
+    <string name="developer_missing_vod">Channel API did not return a VOD ID; watch events omit vod_id</string>
     <string name="settings_made_by">Made by lechixy</string>
     <string name="settings_for_you">Just for you 💖</string>
     <string name="settings_version">Version %1$s</string>
@@ -44,7 +44,7 @@
     <string name="settings_recommended_language">Recommended livestream language</string>
     <string name="settings_recommended_language_description">Preferred language code, such as tr or en</string>
     <string name="settings_volume_sync">Sync player volume with device</string>
-    <string name="settings_volume_sync_description">Coming soon</string>
+    <string name="settings_volume_sync_description">Use the device media volume for the player slider and mute control, volume keys and external changes stay in sync</string>
     <string name="developer_player">Player diagnostics</string>
     <string name="developer_player_idle">No active player</string>
     <string name="developer_player_buffering">Buffering</string>
@@ -56,7 +56,7 @@
     <string name="developer_player_steady">Playing at normal speed</string>
     <string name="developer_player_speed">Current speed: %1$s×\nRequested speed: %2$s×</string>
     <string name="developer_player_offsets">Live offset: %1$s s\nAdaptive target offset: %2$s s\nBehind manifest target: %3$s s</string>
-    <string name="developer_player_offset_note">Offsets use the media timeline; they do not measure camera-to-screen latency.</string>
+    <string name="developer_player_offset_note">Offsets use the media timeline; they do not measure camera-to-screen latency</string>
     <string name="developer_player_buffer">Buffered: %1$s s\nRebuffers (excluding startup / seeks): %2$d\nTotal buffering (including startup / seeks): %3$s s</string>
     <string name="developer_player_frames">Decoder counters · dropped: %1$d · skipped: %2$d · rendered: %3$d</string>
     <string name="developer_player_last_drop">Last drop report: %1$d frames · %2$s s ago</string>

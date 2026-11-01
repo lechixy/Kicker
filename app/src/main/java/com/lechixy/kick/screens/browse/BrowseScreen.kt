@@ -1,16 +1,20 @@
 package com.lechixy.kick.screens.browse
 
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Scaffold
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-
 import com.lechixy.kick.R
 import com.lechixy.kick.components.CategoryRow
 import com.lechixy.kick.components.ChannelCard
@@ -19,7 +23,6 @@ import com.lechixy.kick.components.ContentGrid
 import com.lechixy.kick.components.ContentState
 import com.lechixy.kick.components.ExpansionSource
 import com.lechixy.kick.components.HomeTopBar
-import com.lechixy.kick.components.LocalContentNavigation
 import com.lechixy.kick.components.SectionHeader
 import com.lechixy.kick.components.SkeletonLoadingScope
 import com.lechixy.kick.components.StreamCard
@@ -78,7 +81,7 @@ fun BrowseScreen(viewModel: BrowseViewModel = viewModel(), onCategoryClick: (Str
                 if (!state.isLoading) item(span = { GridItemSpan(maxLineSpan) }) {
                     when {
                         state.error != null -> ContentState(stringResource(R.string.search_failed), { viewModel.onQueryChange(state.query) })
-                        data == null -> ContentState(stringResource(R.string.search_hint))
+                        data == null -> ContentState(stringResource(R.string.search_hint), icon = R.drawable.search_24dp_e3e3e3_fill0_wght400_grad0_opsz24)
                         data.channels.isEmpty() && data.categories.isEmpty() && data.livestreams.isEmpty() -> ContentState(stringResource(R.string.search_empty))
                     }
                 }
@@ -91,15 +94,5 @@ fun BrowseScreen(viewModel: BrowseViewModel = viewModel(), onCategoryClick: (Str
 @Composable
 fun BrowseSearchBar(viewModel: BrowseViewModel) {
     val state by viewModel.uiState.collectAsState()
-    Surface(modifier = Modifier.widthIn(max = 400.dp).fillMaxWidth().height(56.dp),
-        shape = androidx.compose.foundation.shape.CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-            SearchBarDefaults.InputField(query = state.query, onQueryChange = viewModel::onQueryChange,
-                onSearch = {}, expanded = false, onExpandedChange = {},
-                placeholder = { Text(stringResource(R.string.search_placeholder)) },
-                leadingIcon = { Icon(painterResource(R.drawable.search_24dp_e3e3e3_fill0_wght400_grad0_opsz24), null) },
-                trailingIcon = { if (state.query.isNotEmpty()) IconButton(onClick = { viewModel.onQueryChange("") }) {
-                    Icon(painterResource(R.drawable.close_24dp_e3e3e3_fill0_wght400_grad0_opsz24), stringResource(R.string.search_clear))
-                } })
-    }
-    }
+    com.lechixy.kick.components.TopBarSearchField(query = state.query, onQueryChange = viewModel::onQueryChange)
+}

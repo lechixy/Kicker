@@ -66,7 +66,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
@@ -78,7 +77,8 @@ import androidx.compose.material3.SliderState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.SheetValue
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -106,6 +106,7 @@ import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -187,6 +188,8 @@ fun KickPlayerView(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
+    val viewersLocale = LocalConfiguration.current.locales[0]
     val activity = remember(context) { context.findActivity() }
 
     val player by rememberMediaController()
@@ -202,8 +205,7 @@ fun KickPlayerView(
     var isPlayerReady by remember { mutableStateOf(false) }
     var loadedMediaId by remember { mutableStateOf<String?>(null) }
     var isPlaying by remember { mutableStateOf(true) }
-    var isMuted by remember { mutableStateOf(false) }
-    var volume by remember { mutableFloatStateOf(1f) }
+    var playRequested by remember(stableId) { mutableStateOf(true) }
     var playbackError by remember(stableId) { mutableStateOf<String?>(null) }
     var liveRetryTrigger by remember(stableId) { mutableIntStateOf(0) }
     var isSeeking by remember(stableId) { mutableStateOf(false) }
@@ -217,6 +219,12 @@ fun KickPlayerView(
     val remainingTimerSeconds = sleepTimer.remainingSeconds
 
     val settingsRepository = LocalSettingsRepository.current
+    val syncVolume by settingsRepository.get(SettingsKeys.SYNC_PLAYER_VOLUME_WITH_DEVICE)
+        .collectAsStateWithLifecycle(initialValue = SettingsKeys.SYNC_PLAYER_VOLUME_WITH_DEVICE.defaultValue)
+    val playerVolume = rememberPlayerVolume(syncVolume)
+    val isMuted = playerVolume.muted
+    val volume = playerVolume.volume
+    val playerGain = playerVolume.playerGain
     val coroutineScope = rememberCoroutineScope()
     val preferredQuality by settingsRepository
         .get(SettingsKeys.VIDEO_QUALITY)
@@ -311,8 +319,8 @@ fun KickPlayerView(
         onDispose { activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
     }
 
-    LaunchedEffect(player, isMuted, volume) {
-        player?.volume = if (isMuted) 0f else volume
+    LaunchedEffect(player, playerGain) {
+        player?.volume = playerGain
     }
 
     LaunchedEffect(showControls, isAdjustingVolume, isSeeking) {
@@ -343,7 +351,7 @@ fun KickPlayerView(
                 positionCallback(positionMs)
                 if (current.duration > 0 && current.duration != C.TIME_UNSET) durationMs = current.duration
             }
-            delay(250)
+            delay(250.milliseconds)
         }
     }
 
@@ -406,6 +414,10 @@ fun KickPlayerView(
                     loadedMediaId = p.currentMediaItem?.mediaId
                 }
 
+                override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                    if (p.currentMediaItem?.mediaId == stableId) playRequested = playWhenReady
+                }
+
                 override fun onIsPlayingChanged(playing: Boolean) {
                     if (p.currentMediaItem?.mediaId != stableId) return
                     isPlaying = playing
@@ -440,6 +452,7 @@ fun KickPlayerView(
 
             val isSameMedia = p.currentMediaItem?.mediaId == stableId
             isPlaying = isSameMedia && p.isPlaying
+            playRequested = isSameMedia && p.playWhenReady
             isBuffering = !isSameMedia || p.playbackState == Player.STATE_BUFFERING
             isPlayerReady = isSameMedia && p.playbackState == Player.STATE_READY
             loadedMediaId = p.currentMediaItem?.mediaId
@@ -502,7 +515,17 @@ fun KickPlayerView(
         ?: "https://placehold.co/600x400/EEE/31343C?font=open-sans&text=No%20banner")
 
         val isLive = isLiveStream
-        val mediaItem = buildPlaybackMediaItem(
+        val historyEntry = channel?.let { detail ->
+            com.lechixy.kick.data.player.local.WatchHistoryEntry(
+                key = recording?.let { "recording:${it.progressId}" } ?: "live:${detail.slug}:${detail.livestream?.id}",
+                channelSlug = detail.slug, channelName = channelName, title = streamTitle,
+                thumbnail = recording?.thumbnail ?: detail.livestream?.thumbnail?.url ?: pic,
+                recording = recording?.copy(directUrl = null),
+                livestreamId = if (recording == null) detail.livestream?.id else null,
+                vodId = if (recording == null) detail.livestream?.vodId else null,
+                startTime = recording?.startTime ?: detail.livestream?.startTime ?: detail.livestream?.createdAt)
+        }
+        val baseMediaItem = buildPlaybackMediaItem(
             playbackUrl = playbackUrl,
             mediaId = stableId,
             isLive = isLive,
@@ -510,14 +533,14 @@ fun KickPlayerView(
             channelName = channelName.ifBlank { "Kick" },
             viewersText = (if (isLiveStream) channel?.livestream?.viewerCount else null)
                 ?.let {
-                    "${FormatUtils.formatViewersCount(it, context.resources.configuration.locales[0])} ${
-                        context.applicationContext.getString(
+                    "${FormatUtils.formatViewersCount(it, viewersLocale)} ${
+                        resources.getString(
                             R.string.viewers
                         )
                     }"
                 },
             artwork = pic.toUri(),
-            startTimeMs = parseUtcStartTimeToMillis(if (recording != null) recording.startTime else channel?.livestream?.startTime),
+            startTimeMs = parseUtcStartTimeToMillis(if (recording != null) recording.startTime else channel?.livestream?.startTime ?: channel?.livestream?.createdAt),
             vodDurationMs = recording?.durationMs,
             recordingId = recording?.progressId,
             viewerSession = if (isLive && channel?.livestream != null)
@@ -525,6 +548,13 @@ fun KickPlayerView(
                 else null,
             isLowLatency = lowLatencyEnabled
         )
+
+        val extras = android.os.Bundle(baseMediaItem.mediaMetadata.extras ?: android.os.Bundle()).apply {
+            historyEntry?.let { putString(com.lechixy.kick.data.player.local.EXTRA_WATCH_HISTORY,
+                kotlinx.serialization.json.Json.encodeToString(it)) }
+        }
+        val mediaItem = baseMediaItem.buildUpon().setMediaMetadata(
+            baseMediaItem.mediaMetadata.buildUpon().setExtras(extras).build()).build()
 
         if (recording != null) {
             val resumePosition = PlaybackProgressStore.get(recording.progressId)?.let { saved ->
@@ -641,10 +671,10 @@ fun KickPlayerView(
                 else -> autoQualityLabel
             }
         }
-        val viewersLocale = LocalConfiguration.current.locales[0]
-        val viewersText = remember(channel?.livestream?.viewerCount, viewersLocale) {
+
+        val viewersText = remember(channel?.livestream?.viewerCount, viewersLocale, resources) {
             "${FormatUtils.formatViewersCount(channel?.livestream?.viewerCount, viewersLocale)} ${
-                context.applicationContext.getString(
+                resources.getString(
                     R.string.viewers
                 )
             }"
@@ -653,7 +683,9 @@ fun KickPlayerView(
         val handleTogglePlay = {
             val p = player
             if (p != null) {
-                if (p.playWhenReady) {
+                val shouldPlay = !playRequested
+                playRequested = shouldPlay
+                if (!shouldPlay) {
                     p.pause()
                 } else {
                     // Live resumes are handled once in the playback service, including
@@ -686,7 +718,7 @@ fun KickPlayerView(
                 isTheaterMode = isTheaterMode,
                 isChatVisible = isChatVisible,
                 onToggleChat = onToggleChat,
-                isPlaying = isPlaying,
+                isPlaying = playRequested,
                 isMuted = isMuted,
                 volume = volume,
                 isSettingsDialogVisible = showSettingsDialog,
@@ -708,15 +740,11 @@ fun KickPlayerView(
                 onGoToLive = handleGoToLive,
                 onTogglePlay = handleTogglePlay,
                 onToggleMute = {
-                    if (volume == 0f) {
-                        volume = 1f
-                        isMuted = false
-                    } else isMuted = !isMuted
+                    playerVolume.toggleMute()
                 },
                 onVolumeChange = { newVol ->
                     isAdjustingVolume = true
-                    volume = newVol
-                    isMuted = false
+                    playerVolume.setVolume(newVol)
                 },
                 onVolumeChangeFinished = {
                     isAdjustingVolume = false
@@ -732,7 +760,7 @@ fun KickPlayerView(
 
         if (isMini && !isInPipMode) {
             MiniControlsOverlay(
-                isPlaying = isPlaying,
+                isPlaying = playRequested,
                 onTogglePlay = handleTogglePlay,
                 onClose = onClose
             )
@@ -754,7 +782,7 @@ fun KickPlayerView(
                 }
             }
 
-            val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+            val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
             ModalBottomSheet(
                 onDismissRequest = closeSettings,
                 sheetState = sheetState,
@@ -996,67 +1024,22 @@ fun KickPlayerView(
         }
 
         if (showCastDialog) {
-            AlertDialog(
-                onDismissRequest = { showCastDialog = false },
-                modifier = Modifier.fillMaxWidth(0.95f),
-                title = {
-                    Text(stringResource(R.string.player_cast))
-                },
-                containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
-                text = {
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        /*
-                         * Google Cast / Chromecast
-                         */
-                        item {
-                            SettingCard(
-                                title = "Google Cast / Chromecast",
-                                description = stringResource(R.string.player_cast_google_description),
-                                icon = R.drawable.cast_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
-                                onClick = {
-                                    showCastDialog = false
-                                    runCatching {
-                                        val castIntent =
-                                            android.content.Intent("android.settings.CAST_SETTINGS")
-                                                .apply {
-                                                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                                                }
-                                        context.startActivity(castIntent)
-                                    }
-                                }
-                            )
-                        }
-                        /**
-                         * Web Video Caster
-                         */
-                        item {
-                            SettingCard(
-                                title = "Web Video Caster",
-                                description = stringResource(R.string.player_cast_web_description),
-                                image = R.drawable.webvideocasterlogo,
-                                onClick = {
-                                    showCastDialog = false
-                                    val poster =
-                                        channel?.getBannerUrl() ?: channel?.user?.profilePic
-                                    CastUtils.launchWebVideoCaster(
-                                        context = context,
-                                        playbackUrl = playbackUrl,
-                                        streamTitle = streamTitle,
-                                        channelName = channelName,
-                                        posterUrl = poster
-                                    )
-                                }
-                            )
-                        }
+            PlayerCastDialog(
+                onDismiss = { showCastDialog = false },
+                onGoogleCast = {
+                    showCastDialog = false
+                    runCatching {
+                        context.startActivity(android.content.Intent(android.provider.Settings.ACTION_CAST_SETTINGS)
+                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                    }.onFailure {
+                        android.widget.Toast.makeText(context, R.string.player_cast_unavailable, android.widget.Toast.LENGTH_SHORT).show()
                     }
                 },
-                confirmButton = {
-                    TextButton(onClick = { showCastDialog = false }) {
-                        Text(stringResource(R.string.player_close))
-                    }
+                onWebVideoCaster = {
+                    showCastDialog = false
+                    CastUtils.launchWebVideoCaster(context = context, playbackUrl = playbackUrl,
+                        streamTitle = streamTitle, channelName = channelName,
+                        posterUrl = recording?.thumbnail ?: channel?.getBannerUrl() ?: channel?.user?.profilePic)
                 }
             )
         }
@@ -1297,13 +1280,20 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Icon(painterResource(R.drawable.bedtime_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
                     stringResource(R.string.player_sleep_timer), Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
-                Text(com.lechixy.kick.util.player.sleepTimerRemainingText(LocalContext.current, sleepRemainingSeconds),
+                Text(com.lechixy.kick.util.player.sleepTimerRemainingText(LocalResources.current, sleepRemainingSeconds),
                     color = Color.White, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium)
             }
         }
         val isCompact = !isFullScreen
         val configuration = LocalConfiguration.current
         val isWide = configuration.screenWidthDp >= WIDE_BREAKPOINT_DP
+        val largeControls = configuration.smallestScreenWidthDp >= 600 && maxWidth >= 480.dp
+        val chromeButtonModifier = when {
+            largeControls -> Modifier.size(48.dp)
+            isCompact -> Modifier.size(36.dp)
+            else -> Modifier
+        }
+        val chromeIconModifier = if (largeControls) Modifier.size(28.dp) else Modifier
         val showChatButton = isFullScreen || isTheaterMode || isWide
 
         /**
@@ -1335,11 +1325,12 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
             ) {
                 IconButton(
                     onClick = onMinimize,
-                    modifier = if (isCompact) Modifier.size(36.dp) else Modifier
+                    modifier = chromeButtonModifier
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.keyboard_arrow_down_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
                         contentDescription = "Minimize",
+                        modifier = chromeIconModifier,
                         tint = Color.White,
                     )
                 }
@@ -1369,21 +1360,23 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                 ) {
                     IconButton(
                         onClick = onOpenCastDialog,
-                        modifier = if (isCompact) Modifier.size(36.dp) else Modifier
+                        modifier = chromeButtonModifier
                     ) {
                         Icon(
                             painter = painterResource(id = if (isCastDialogVisible) R.drawable.cast_24dp_e3e3e3_fill1_wght400_grad0_opsz24 else R.drawable.cast_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
                             contentDescription = stringResource(R.string.player_cast),
+                            modifier = chromeIconModifier,
                             tint = Color.White
                         )
                     }
                     IconButton(
                         onClick = onOpenSettings,
-                        modifier = if (isCompact) Modifier.size(36.dp) else Modifier
+                        modifier = chromeButtonModifier
                     ) {
                         Icon(
                             painter = painterResource(id = if (isSettingsDialogVisible) R.drawable.settings_24dp_e3e3e3_fill1_wght400_grad0_opsz24 else R.drawable.settings_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
                             contentDescription = "Settings",
+                            modifier = chromeIconModifier,
                             tint = Color.White
                         )
                     }
@@ -1397,15 +1390,19 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
          */
         Row(
             modifier = Modifier.align(Alignment.Center).animateEnterExit(
-                enter = scaleIn(spring(dampingRatio = Spring.DampingRatioHighBouncy,
-                    stiffness = Spring.StiffnessHigh), initialScale = 0.5f),
+                enter = scaleIn(spring(dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMedium), initialScale = 0.5f),
                 exit = scaleOut(tween(160), targetScale = 0.65f)
             ),
             horizontalArrangement = Arrangement.spacedBy(28.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (!isLive) {
-                IconButton(onClick = onSeekBack) {
+                IconButton(
+                    onClick = onSeekBack,
+                    modifier = Modifier
+                        .size(48.dp)
+                ) {
                     Icon(painterResource(R.drawable.replay_10_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
                         contentDescription = "10 saniye geri", tint = MaterialTheme.colorScheme.primary)
                 }
@@ -1413,22 +1410,20 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
             IconButton(
                 onClick = onTogglePlay,
                 modifier = Modifier
-                    .size(76.dp)
+                    .size(60.dp)
 //                    .background(Color.Black.copy(alpha = 0.25f), CircleShape)
             ) {
                 Icon(
-                    painter = painterResource(
-                        id = if (isPlaying) R.drawable.pause_24dp_e3e3e3_fill1_wght400_grad0_opsz24
-                        else R.drawable.play_arrow_24dp_e3e3e3_fill1_wght400_grad0_opsz24
-                    ),
+                    painter = rememberPlayPausePainter(isPlaying),
                     contentDescription = "Play/Pause",
                     tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(32.dp)
+                    modifier = Modifier
+                        .size(60.dp)
                 )
             }
 
             if (!isLive) {
-                IconButton(onClick = onSeekForward) {
+                IconButton(onClick = onSeekForward, modifier = Modifier.size(48.dp)) {
                     Icon(painterResource(R.drawable.forward_10_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
                         contentDescription = "10 saniye ileri", tint = MaterialTheme.colorScheme.primary)
                 }
@@ -1458,6 +1453,7 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                         valueRange = 0f..durationMs.coerceAtLeast(1).toFloat(),
                         enabled = durationMs > 0,
                         wavyTrack = true,
+                        animateWave = isPlaying,
                         onValueChange = { scrubPosition = it; onSeekingChanged(true) },
                         onValueChangeFinished = {
                             scrubPosition?.let { onSeek(it.toLong()) }
@@ -1500,7 +1496,7 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                 ) {
                     IconButton(
                         onClick = onToggleMute,
-                        modifier = Modifier.size(if (isCompact) 28.dp else 32.dp)
+                        modifier = Modifier.size(if (largeControls) 44.dp else if (isCompact) 28.dp else 32.dp)
                     ) {
                         Icon(
                             painter = painterResource(
@@ -1509,7 +1505,7 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                             ),
                             contentDescription = "Mute",
                             tint = Color.White,
-                            modifier = Modifier.size(if (isCompact) 18.dp else 20.dp)
+                            modifier = Modifier.size(if (largeControls) 26.dp else if (isCompact) 18.dp else 20.dp)
                         )
                     }
                     CompactPlayerSlider(
@@ -1575,7 +1571,6 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                                 if (!isAtLiveEdge) {
                                     Text(
                                         text = "• ${stringResource(R.string.go_to_live)}",
-                                        color = MaterialTheme.colorScheme.secondary,
                                         style = labelStyle,
                                         fontWeight = FontWeight.Bold,
                                         maxLines = 1,
@@ -1598,15 +1593,16 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                 ) {
                     if (showChatButton) IconButton(
                         onClick = onToggleChat,
-                        modifier = if (isCompact) Modifier.size(36.dp) else Modifier
+                        modifier = chromeButtonModifier
                     ) {
                         Icon(painterResource(R.drawable.chat_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
                             contentDescription = stringResource(if (isChatVisible) R.string.player_hide_chat else R.string.player_show_chat),
+                            modifier = chromeIconModifier,
                             tint = if (isChatVisible) MaterialTheme.colorScheme.primary else Color.White)
                     }
                     IconButton(
                         onClick = onToggleTheater,
-                        modifier = if (isCompact) Modifier.size(36.dp) else Modifier
+                        modifier = chromeButtonModifier
                     ) {
                         Icon(
                             painter = painterResource(
@@ -1614,12 +1610,13 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                                 else R.drawable.theaters_24dp_e3e3e3_fill0_wght400_grad0_opsz24
                             ),
                             contentDescription = "Theater Mode",
+                            modifier = chromeIconModifier,
                             tint = if (isTheaterMode) MaterialTheme.colorScheme.primary else Color.White
                         )
                     }
                     IconButton(
                         onClick = onToggleFullScreen,
-                        modifier = if (isCompact) Modifier.size(36.dp) else Modifier
+                        modifier = chromeButtonModifier
                     ) {
                         Icon(
                             painter = painterResource(
@@ -1627,6 +1624,7 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                                 else R.drawable.fullscreen_24dp_e3e3e3_fill0_wght400_grad0_opsz24
                             ),
                             contentDescription = "Fullscreen",
+                            modifier = chromeIconModifier,
                             tint = Color.White
                         )
                     }
@@ -1669,10 +1667,7 @@ internal fun MiniControlsOverlay(
                 .padding(8.dp)
         ) {
             PlayerChromeButton(
-                painter = painterResource(
-                    id = if (isPlaying) R.drawable.pause_24dp_e3e3e3_fill1_wght400_grad0_opsz24
-                    else R.drawable.play_arrow_24dp_e3e3e3_fill1_wght400_grad0_opsz24
-                ),
+                painter = rememberPlayPausePainter(isPlaying),
                 contentDescription = "Play/Pause",
                 size = 48.dp,
                 onClick = onTogglePlay
@@ -1751,10 +1746,9 @@ private fun CompactPlayerSlider(
     enabled: Boolean = true,
     valueRange: ClosedFloatingPointRange<Float> = 0f..1f,
     onValueChangeFinished: (() -> Unit)? = null,
-    wavyTrack: Boolean = false
+    wavyTrack: Boolean = false,
+    animateWave: Boolean = true
 ) {
-    val density = androidx.compose.ui.platform.LocalDensity.current
-    val waveStroke = remember(density) { with(density) { Stroke(width = 2.dp.toPx()) } }
     val sliderState = remember(valueRange) { SliderState(value = value, trackRange = valueRange) }
     sliderState.value = value
     CompositionLocalProvider(LocalMinimumInteractiveComponentSize provides 0.dp) {
@@ -1771,17 +1765,13 @@ private fun CompactPlayerSlider(
             track = { state ->
                 if (wavyTrack) {
                     // Keep Slider's gestures, thumb, RTL handling and accessibility actions.
-                    LinearWavyProgressIndicator(
+                    PlayerProgressTrack(
                         progress = {
                             val range = valueRange.endInclusive - valueRange.start
                             if (range > 0f) ((state.value - valueRange.start) / range).coerceIn(0f, 1f) else 0f
                         },
-                        modifier = Modifier.fillMaxWidth().height(12.dp).clearAndSetSemantics {},
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = if (enabled) 1f else 0.38f),
-                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = if (enabled) 1f else 0.38f),
-                        stroke = waveStroke,
-                        trackStroke = waveStroke,
-                        stopSize = 0.dp
+                        playing = animateWave, enabled = enabled,
+                        modifier = Modifier.fillMaxWidth().height(12.dp).clearAndSetSemantics {}
                     )
                 } else {
                     SliderDefaults.Track(

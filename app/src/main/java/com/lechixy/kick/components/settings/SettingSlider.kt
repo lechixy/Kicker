@@ -9,8 +9,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -45,6 +47,7 @@ fun SettingFloatSlider(key: SettingKey<Float>, title: String, valueRange: Closed
     NumberSettingSlider(key, title, { it }, { it }, valueRange, modifier, steps, description, valueFormatter)
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun <T> NumberSettingSlider(
     key: SettingKey<T>,
@@ -111,8 +114,17 @@ private fun <T> NumberSettingSlider(
 
             Spacer(modifier = Modifier.height(8.dp))
 
+            val coercedPosition = sliderPosition.coerceIn(valueRange.start, valueRange.endInclusive)
+            val sliderState = remember(steps, valueRange) {
+                SliderState(
+                    value = coercedPosition,
+                    steps = steps,
+                    trackRange = valueRange
+                )
+            }
+            sliderState.value = coercedPosition
             Slider(
-                value = sliderPosition.coerceIn(valueRange.start, valueRange.endInclusive),
+                state = sliderState,
                 onValueChange = { sliderPosition = it.coerceIn(valueRange.start, valueRange.endInclusive) },
                 onValueChangeFinished = {
                     val finalValue = fromFloat(sliderPosition)
@@ -121,9 +133,7 @@ private fun <T> NumberSettingSlider(
                             repository.set(key, finalValue)
                         }
                     }
-                },
-                valueRange = valueRange,
-                steps = steps
+                }
             )
         }
     }

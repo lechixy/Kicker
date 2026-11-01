@@ -1,7 +1,8 @@
 <resources>
     <style name="Theme.App.Starting" parent="Theme.SplashScreen">
-        <!-- Koyu mod için saf siyah veya Kick koyu teması -->
-        <item name="windowSplashScreenBackground">#0B0E0F</item>
+        <item name="windowSplashScreenBackground">#000000</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
         <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
         <item name="postSplashScreenTheme">@style/Theme.Kick</item>
     </style>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_search">Search settings</string>
+    <string name="settings_clear_search">Clear search</string>
+    <string name="settings_no_results">No matching settings</string>
+    <string name="notification_reward_title">Your reward is ready</string>
+    <string name="notification_reward_description">You reached %1$d minutes of watch time, tap to view your challenges</string>
+    <string name="notification_live_title">%1$s just went live!</string>
+    <string name="notification_live_description">Tap to join the stream</string>
+    <string name="notification_dismiss">Dismiss notification</string>
+    <string name="developer_notification_previews">Notification and release previews</string>
+    <string name="developer_reward_notification">Preview reward notification</string>
+    <string name="developer_live_notification">Preview live notification</string>
+    <string name="release_whats_new">What’s new</string>
+    <string name="release_update_available">Update available</string>
+    <string name="release_on_github">View on GitHub</string>
+    <string name="release_no_notes">Release notes are not available right now, you can view published releases on GitHub</string>
+    <string name="release_update">Update</string>
+    <string name="release_later">Maybe later</string>
+    <string name="live_signal_incoming">ACQUIRING SIGNAL</string>
+    <string name="live_signal_connected">SIGNAL CONNECTED</string>
+    <string name="live_reveal_headline">LIVE</string>
+</resources>

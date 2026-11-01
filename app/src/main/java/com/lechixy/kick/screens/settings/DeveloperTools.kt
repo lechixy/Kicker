@@ -65,7 +65,7 @@ fun DeveloperToolsScreen(onBackClick: () -> Unit, onTriggerLive: () -> Unit, can
     val repository = LocalSettingsRepository.current
     val unlocked by repository.get(SettingsKeys.DEVELOPER_ENABLED).collectAsStateWithLifecycle(false)
     Scaffold(topBar = { SettingsTopBar(stringResource(R.string.developer_tools), onBackClick) }) { padding ->
-        if (BuildConfig.DEBUG || unlocked) Column(Modifier.fillMaxSize().padding(padding).padding(16.dp).verticalScroll(rememberScrollState()),
+        if (BuildConfig.DEBUG || unlocked) Column(Modifier.fillMaxSize().padding(padding).wrapContentWidth(androidx.compose.ui.Alignment.CenterHorizontally).widthIn(max = 840.dp).fillMaxWidth().padding(16.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             SettingSwitch(key = SettingsKeys.DEVELOPER_FLOATING_MENU, title = stringResource(R.string.developer_floating_menu))
             DeveloperToolsContent(onTriggerLive, canTriggerLive)
@@ -75,6 +75,17 @@ fun DeveloperToolsScreen(onBackClick: () -> Unit, onTriggerLive: () -> Unit, can
 
 @Composable
 private fun DeveloperToolsContent(onTriggerLive: () -> Unit, canTriggerLive: Boolean) {
+    val previewRelease = com.lechixy.kick.components.LocalReleasePreview.current
+    Text(stringResource(R.string.developer_notification_previews), style = MaterialTheme.typography.titleMedium)
+    Button(onClick = { com.lechixy.kick.data.account.AccountGraph.notifications.preview(com.lechixy.kick.data.notifications.NotificationKind.WatchTimeGoal) }) {
+        Text(stringResource(R.string.developer_reward_notification))
+    }
+    Button(onClick = { com.lechixy.kick.data.account.AccountGraph.notifications.preview(com.lechixy.kick.data.notifications.NotificationKind.StreamStarted) }) {
+        Text(stringResource(R.string.developer_live_notification))
+    }
+    TextButton(onClick = { previewRelease(com.lechixy.kick.data.releases.ReleaseDialogMode.WhatsNew) }) { Text(stringResource(R.string.release_whats_new)) }
+    TextButton(onClick = { previewRelease(com.lechixy.kick.data.releases.ReleaseDialogMode.UpdateAvailable) }) { Text(stringResource(R.string.release_update_available)) }
+    HorizontalDivider()
     PlayerDiagnosticsContent()
     HorizontalDivider()
     val state by ViewerTrackingDiagnostics.state.collectAsStateWithLifecycle()

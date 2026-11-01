@@ -22,6 +22,7 @@ import com.lechixy.kick.data.following.model.FollowedChannel
 import com.lechixy.kick.data.following.model.FollowingState
 
 class FollowingRepository(private val auth: AuthRepository, private val scope: CoroutineScope) {
+    val rail = RailFollowingRepository(auth, scope)
     private val mutableState = MutableStateFlow(FollowingState())
     val state = mutableState.asStateFlow()
     private var loadJob: Job? = null
@@ -136,6 +137,7 @@ class FollowingRepository(private val auth: AuthRepository, private val scope: C
             require(slug.matches(Regex("[A-Za-z0-9_-]+")))
             auth.request("https://kick.com/api/v2/channels/$slug/follow", if (following) "POST" else "DELETE")
             refresh()
+            rail.invalidate()
         }
     }
 }

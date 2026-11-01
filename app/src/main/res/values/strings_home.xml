@@ -1,10 +1,15 @@
 <resources>
     <string name="home_live_streamers">Live channels</string>
     <string name="home_total_viewers">Viewers</string>
-    <string name="home_live_totals_description">%1$s live channels and %2$s viewers on Kick. Scroll to top.</string>
+    <string name="home_live_totals_description">%1$s live channels and %2$s viewers on Kick, scroll to top</string>
     <string name="home_following_live">Following live</string>
-    <string name="home_no_following_live">None of your followed channels are live right now.</string>
+    <string name="home_no_following_live">None of your followed channels are live right now</string>
     <string name="home_popular_categories">POPULAR CATEGORIES</string>
     <string name="home_recommended_live">Recommended live streams</string>
     <string name="viewers_count">%1$s viewers</string>
+    <string name="navigation_expand">Expand navigation</string>
+    <string name="navigation_collapse">Collapse navigation</string>
+    <string name="home_continue_watching">Continue watching</string>
+    <string name="home_last_position">Last watched: %1$s</string>
+    <string name="home_recording_unavailable">The recording is not available yet, try again later</string>
 </resources>

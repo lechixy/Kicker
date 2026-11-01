@@ -25,6 +25,8 @@ object AccountGraph {
         private set
     lateinit var challenges: ChallengesRepository
         private set
+    lateinit var notifications: com.lechixy.kick.data.notifications.AccountNotificationsRepository
+        private set
     fun init(context: Context) {
         if (::auth.isInitialized) return
         auth = AuthRepository(SecureSessionStore(context.applicationContext))
@@ -32,6 +34,7 @@ object AccountGraph {
         chat = AccountChatRepository(auth)
         dashboard = AccountDashboardRepository(auth, scope)
         challenges = ChallengesRepository(auth, scope)
+        notifications = com.lechixy.kick.data.notifications.AccountNotificationsRepository(auth, challenges, scope)
         scope.launch {
             auth.session.map { it.signedIn to it.generation }.distinctUntilChanged().collect { (signedIn, _) ->
                 chat.clearSession()

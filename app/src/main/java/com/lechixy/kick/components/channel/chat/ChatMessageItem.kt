@@ -67,6 +67,7 @@ fun ChatMessageItem(
     isOwnMessage: Boolean = false,
     replyHighlight: Int = 0,
     onReplyClick: ((String) -> Unit)? = null,
+    timestamp: String? = message.recordingOffsetMs?.let(com.lechixy.kick.util.FormatUtils::formatDuration),
 ) {
     val eventContext = LocalContext.current
     // Read configuration so in-place app language changes rebuild every event sentence.
@@ -262,7 +263,7 @@ fun ChatMessageItem(
         streamerSlug = streamerSlug,
         streamerMentionBrush = streamerMentionBrush,
         streamerMentionShadow = streamerMentionShadow,
-        timestamp = message.recordingOffsetMs?.let(com.lechixy.kick.util.FormatUtils::formatDuration),
+        timestamp = timestamp,
         deleted = message.messageDeleted != null
     )
 

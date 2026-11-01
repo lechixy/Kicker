@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="navigation_back">Back</string>
+    <string name="navigation_following_live">%1$s, live</string>
+    <string name="navigation_following_empty">No followed channels</string>
+    <string name="settings_changelog">Changelog</string>
+    <string name="settings_changelog_description">Browse release notes and app changes</string>
+    <string name="changelog_failed">Release notes could not be loaded.</string>
+    <string name="changelog_empty">No published releases yet.</string>
+    <string name="navigation_following_viewers">%1$s viewers</string>
+</resources>
