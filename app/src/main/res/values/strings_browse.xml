@@ -1,0 +1,8 @@
+<resources>
+    <string name="section_channels">Channels</string>
+    <string name="section_livestreams">Livestreams</string>
+    <string name="search_clear">Clear search</string>
+    <string name="search_hint">Search for a channel or category</string>
+    <string name="search_empty">No results found</string>
+    <string name="search_failed">Search could not be loaded. Please try again.</string>
+</resources>

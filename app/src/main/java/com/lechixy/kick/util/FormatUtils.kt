@@ -4,11 +4,13 @@ import android.text.format.DateUtils
 import android.icu.number.NumberFormatter
 import android.icu.number.Notation
 import android.icu.number.Precision
-import com.lechixy.kick.data.model.VideoThumbnail
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
+
+import com.lechixy.kick.R
+import com.lechixy.kick.data.channel.model.VideoThumbnail
 
 object FormatUtils {
 
@@ -65,44 +67,26 @@ object FormatUtils {
     }
 
     fun formatLastLive(
+        context: android.content.Context,
         startTimeStr: String?,
         showPrefix: Boolean = false
     ): String {
-        if (startTimeStr.isNullOrBlank()) {
-            return if (showPrefix) {
-                // Bu metinleri strings.xml üzerinden yerelleştir.
-                "Son zamanlarda yayın yapmadı"
-            } else {
-                "Bilinmiyor"
-            }
+        val start = com.lechixy.kick.data.chat.model.recordingStartInstant(startTimeStr)
+            ?: return context.getString(if (showPrefix) R.string.channel_no_recent_live else R.string.channel_live_unknown)
+        val seconds = (System.currentTimeMillis() - start.toEpochMilli()) / 1000.0
+        val magnitude = kotlin.math.abs(seconds)
+        val (divisor, unit) = when {
+            magnitude < 3600 -> 60.0 to android.icu.text.RelativeDateTimeFormatter.RelativeDateTimeUnit.MINUTE
+            magnitude < 86400 -> 3600.0 to android.icu.text.RelativeDateTimeFormatter.RelativeDateTimeUnit.HOUR
+            magnitude < 604800 -> 86400.0 to android.icu.text.RelativeDateTimeFormatter.RelativeDateTimeUnit.DAY
+            magnitude < 2592000 -> 604800.0 to android.icu.text.RelativeDateTimeFormatter.RelativeDateTimeUnit.WEEK
+            magnitude < 31536000 -> 2592000.0 to android.icu.text.RelativeDateTimeFormatter.RelativeDateTimeUnit.MONTH
+            else -> 31536000.0 to android.icu.text.RelativeDateTimeFormatter.RelativeDateTimeUnit.YEAR
         }
-
-        return try {
-            val format = SimpleDateFormat(
-                "yyyy-MM-dd HH:mm:ss",
-                Locale.US
-            ).apply {
-                timeZone = TimeZone.getTimeZone("UTC")
-            }
-
-            val date = format.parse(startTimeStr)
-                ?: return "Bilinmiyor"
-
-            val relativeTime = DateUtils.getRelativeTimeSpanString(
-                date.time,
-                System.currentTimeMillis(),
-                DateUtils.MINUTE_IN_MILLIS,
-                DateUtils.FORMAT_ABBREV_RELATIVE
-            ).toString()
-
-            if (showPrefix) {
-                "Last live ${relativeTime.take( 1).lowercase()}${relativeTime.drop(1)}"
-            } else {
-                relativeTime
-            }
-        } catch (e: Exception) {
-            "Bilinmiyor"
-        }
+        val locale = context.resources.configuration.locales[0]
+        val relativeTime = android.icu.text.RelativeDateTimeFormatter.getInstance(locale)
+            .formatNumeric(-(seconds / divisor).toLong().toDouble(), unit)
+        return if (showPrefix) context.getString(R.string.channel_last_live, relativeTime) else relativeTime
     }
 
     fun extractVideoThumbnailUrl(thumbnail: VideoThumbnail?): String? {

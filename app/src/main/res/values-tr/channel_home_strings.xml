@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="channel_popular_clips">Popüler klipler</string>
-    <string name="channel_recent_categories">Geçmiş kategoriler</string>
-    <string name="channel_categories">Kategoriler</string>
-    <string name="channel_no_categories">Geçmiş kategori yok</string>
-    <string name="channel_section_error">Bu bölüm yüklenemedi</string>
-    <string name="channel_clips_error">Klipler yüklenemedi</string>
-</resources>

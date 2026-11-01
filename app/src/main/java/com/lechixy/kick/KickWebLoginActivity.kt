@@ -28,21 +28,26 @@ import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.lechixy.kick.data.account.AccountGraph
-import com.lechixy.kick.data.account.AuthRepository
-import com.lechixy.kick.data.account.SessionStatus
-import com.lechixy.kick.data.account.userMessage
-import com.lechixy.kick.data.settings.SettingsKeys
-import com.lechixy.kick.data.settings.SettingsRepository
-import com.lechixy.kick.ui.components.account.*
-import com.lechixy.kick.ui.theme.KickTheme
-import com.lechixy.kick.ui.theme.Theme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+import com.lechixy.kick.components.account.KICK_LOGIN_URL
+import com.lechixy.kick.components.account.createKickLoginWebViewContainer
+import com.lechixy.kick.components.account.isAllowedLoginUrl
+import com.lechixy.kick.components.account.isKickLoginUrl
+import com.lechixy.kick.components.account.kickLoginPageScript
+import com.lechixy.kick.data.account.AccountGraph
+import com.lechixy.kick.data.account.model.SessionStatus
+import com.lechixy.kick.data.account.remote.userMessage
+import com.lechixy.kick.data.account.repository.AuthRepository
+import com.lechixy.kick.data.settings.model.SettingsKeys
+import com.lechixy.kick.data.settings.repository.SettingsRepository
+import com.lechixy.kick.theme.KickTheme
+import com.lechixy.kick.theme.Theme
 
 /** Login directly on Kick; only the verified Kick session is retained in encrypted storage. */
 @AndroidEntryPoint
@@ -239,7 +244,7 @@ class KickWebLoginActivity : ComponentActivity() {
                 finish()
             } catch (failure: Exception) {
                 if (failure is CancellationException) throw failure
-                error = if (failure is com.lechixy.kick.data.account.AccountApiException)
+                error = if (failure is com.lechixy.kick.data.account.remote.AccountApiException)
                     getString(R.string.web_login_verify_error, failure.status)
                     else failure.userMessage()
             } finally { verifying = false }

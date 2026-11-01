@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="favorite_user_add">Add to favorites</string>
-    <string name="favorite_user_remove">Remove from favorites</string>
-    <string name="chatter_channel">Channel</string>
-    <string name="chat_go_to_reply">Go to replied message</string>
-    <string name="identity_open_profile">Open your profile</string>
-</resources>

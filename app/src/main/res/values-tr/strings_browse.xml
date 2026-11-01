@@ -1,0 +1,8 @@
+<resources>
+    <string name="section_channels">Kanallar</string>
+    <string name="section_livestreams">Canlı yayınlar</string>
+    <string name="search_clear">Aramayı temizle</string>
+    <string name="search_hint">Kanal veya kategori ara</string>
+    <string name="search_empty">Sonuç bulunamadı</string>
+    <string name="search_failed">Arama yüklenemedi. Lütfen tekrar dene.</string>
+</resources>

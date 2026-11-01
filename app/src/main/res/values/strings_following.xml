@@ -1,0 +1,13 @@
+<resources>
+    <string name="following_title">Following</string>
+    <string name="following_online">Online channels</string>
+    <string name="following_offline">Offline channels</string>
+    <string name="following_refresh">Refresh</string>
+    <string name="following_retry">Retry</string>
+    <string name="following_no_online">None of your followed channels are live right now.</string>
+    <string name="following_no_offline">No offline channels on this page.</string>
+    <string name="following_page">Page %1$d</string>
+    <string name="following_previous">Previous</string>
+    <string name="following_next">Next</string>
+    <string name="following_button">Following</string>
+</resources>

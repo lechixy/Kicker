@@ -1,0 +1,13 @@
+<resources>
+    <string name="following_title">Takip edilenler</string>
+    <string name="following_online">Canlı kanallar</string>
+    <string name="following_offline">Çevrimdışı kanallar</string>
+    <string name="following_refresh">Yenile</string>
+    <string name="following_retry">Yeniden dene</string>
+    <string name="following_no_online">Takip ettiğin kanallardan şu anda canlı yayında olan yok.</string>
+    <string name="following_no_offline">Bu sayfada çevrimdışı kanal yok.</string>
+    <string name="following_page">Sayfa %1$d</string>
+    <string name="following_previous">Önceki</string>
+    <string name="following_next">Sonraki</string>
+    <string name="following_button">Takip ediliyor</string>
+</resources>

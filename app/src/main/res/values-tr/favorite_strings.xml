@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="favorite_user_add">Favorilere ekle</string>
-    <string name="favorite_user_remove">Favorilerden Ã§Ä±kar</string>
-    <string name="chatter_channel">Kanal</string>
-    <string name="chat_go_to_reply">YanÄ±tlanan mesaja git</string>
-    <string name="identity_open_profile">Profilini aç</string>
-</resources>

@@ -3,7 +3,6 @@ package com.lechixy.kick
 import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.annotation.StringRes
@@ -11,17 +10,13 @@ import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -32,7 +27,6 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.consumeWindowInsets
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.only
@@ -62,10 +56,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.unit.Constraints
-import kotlin.math.roundToInt
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.Constraints
 import androidx.core.app.PictureInPictureModeChangedInfo
 import androidx.core.os.LocaleListCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
@@ -81,28 +74,31 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.lechixy.kick.data.settings.LocalSettingsRepository
-import com.lechixy.kick.data.settings.SettingsKeys
-import com.lechixy.kick.data.settings.SettingsRepository
-import com.lechixy.kick.ui.components.ExpansionSource
-import com.lechixy.kick.ui.components.PlayerHost
-import com.lechixy.kick.ui.screens.browse.BrowseScreen
-import com.lechixy.kick.ui.screens.channel.ChannelScreen
-import com.lechixy.kick.ui.screens.channel.ChannelViewModel
-import com.lechixy.kick.ui.screens.channel.findActivity
-import com.lechixy.kick.ui.screens.following.FollowingScreen
-import com.lechixy.kick.ui.screens.following.FollowingViewModel
-import com.lechixy.kick.ui.screens.home.HomeScreen
-import com.lechixy.kick.ui.screens.home.HomeViewModel
-import com.lechixy.kick.ui.screens.settings.SettingsScreen
-import com.lechixy.kick.ui.screens.settings.general.GeneralSettingsScreen
-import com.lechixy.kick.ui.theme.KickTheme
-import com.lechixy.kick.ui.theme.Theme
+import com.lechixy.kick.components.ExpansionSource
+import com.lechixy.kick.components.PlayerHost
+import com.lechixy.kick.components.PlayerMode
+import com.lechixy.kick.components.rememberPlayerHostState
+import com.lechixy.kick.data.settings.model.SettingsKeys
+import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
+import com.lechixy.kick.data.settings.repository.SettingsRepository
+import com.lechixy.kick.screens.browse.BrowseScreen
+import com.lechixy.kick.screens.channel.ChannelScreen
+import com.lechixy.kick.screens.channel.ChannelViewModel
+import com.lechixy.kick.screens.following.FollowingScreen
+import com.lechixy.kick.screens.following.FollowingViewModel
+import com.lechixy.kick.screens.home.HomeScreen
+import com.lechixy.kick.screens.home.HomeViewModel
+import com.lechixy.kick.screens.settings.SettingsScreen
+import com.lechixy.kick.screens.settings.general.GeneralSettingsScreen
+import com.lechixy.kick.theme.KickTheme
+import com.lechixy.kick.theme.Theme
 import com.lechixy.kick.util.LanguageUtils.getCurrentAppLanguage
+import com.lechixy.kick.util.findActivity
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import kotlin.math.roundToInt
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -112,11 +108,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        com.lechixy.kick.data.remote.NetworkMonitor.setForeground(true)
+        com.lechixy.kick.data.common.remote.NetworkMonitor.setForeground(true)
     }
 
     override fun onStop() {
-        com.lechixy.kick.data.remote.NetworkMonitor.setForeground(false)
+        com.lechixy.kick.data.common.remote.NetworkMonitor.setForeground(false)
         super.onStop()
     }
 
@@ -227,10 +223,9 @@ fun KickApp() {
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
-    val browseViewModel: com.lechixy.kick.ui.screens.browse.BrowseViewModel = viewModel()
+    val browseViewModel: com.lechixy.kick.screens.browse.BrowseViewModel = viewModel()
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
-
 
     // Tek yerde tutulan player oturumu; ChannelScreen, mini player ve nav bar buradan beslenir.
     val playerHost = rememberPlayerHostState()
@@ -277,9 +272,9 @@ fun KickApp() {
         color = MaterialTheme.colorScheme.background,
         contentColor = MaterialTheme.colorScheme.onBackground
     ) {
-        androidx.compose.runtime.CompositionLocalProvider(
-            com.lechixy.kick.ui.components.LocalSharedTopBar provides true,
-            com.lechixy.kick.ui.components.LocalContentNavigation provides com.lechixy.kick.ui.components.ContentNavigation(
+        CompositionLocalProvider(
+            com.lechixy.kick.components.LocalSharedTopBar provides true,
+            com.lechixy.kick.components.LocalContentNavigation provides com.lechixy.kick.components.ContentNavigation(
                 browse = { query -> navController.navigate("browse?query=${android.net.Uri.encode(query)}") { launchSingleTop = true } },
                 category = { slug ->
                     if (playerHost.isChannelVisible) playerHost.minimize()
@@ -311,11 +306,11 @@ fun KickApp() {
                         .background(MaterialTheme.colorScheme.background)
                 ) {
                     Column(Modifier.fillMaxSize()) {
-                            com.lechixy.kick.ui.components.HomeTopBar(forceVisible = true,
+                            com.lechixy.kick.components.HomeTopBar(forceVisible = true,
                                 showAccount = currentRoute?.startsWith("settings") != true,
                                 centerContent = if (currentRoute?.substringBefore("?") == "browse" &&
                                     androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 600)
-                                    ({ com.lechixy.kick.ui.screens.browse.BrowseSearchBar(browseViewModel) }) else null)
+                                    ({ com.lechixy.kick.screens.browse.BrowseSearchBar(browseViewModel) }) else null)
                     val animDuration = 350
                     NavHost(
                         navController = navController,
@@ -432,11 +427,11 @@ fun KickApp() {
                         }
 
                         composable("categories?slug={slug}", arguments = listOf(navArgument("slug") { defaultValue = "" })) { entry ->
-                            com.lechixy.kick.ui.screens.categories.CategoriesScreen(
+                            com.lechixy.kick.screens.categories.CategoriesScreen(
                                 onChannelClick = { openChannel(it, null) }, selectedSlug = entry.arguments?.getString("slug"))
                         }
                         composable("events") {
-                            com.lechixy.kick.ui.screens.events.EventsScreen(onChannelClick = { openChannel(it, null) })
+                            com.lechixy.kick.screens.events.EventsScreen(onChannelClick = { openChannel(it, null) })
                         }
 
                         composable("settings") {
@@ -456,7 +451,7 @@ fun KickApp() {
                                 backStackEntry.arguments?.getString("settingRoute") ?: ""
 
                             when (settingRoute) {
-                                "developer" -> com.lechixy.kick.ui.screens.settings.DeveloperToolsScreen(
+                                "developer" -> com.lechixy.kick.screens.settings.DeveloperToolsScreen(
                                     onBackClick = { navController.popBackStack() },
                                     onTriggerLive = { playerHost.triggerLiveAnnouncement(System.nanoTime()) },
                                     canTriggerLive = playerHost.channel?.livestream != null && playerHost.recording == null && playerHost.mode != PlayerMode.Hidden
@@ -468,11 +463,11 @@ fun KickApp() {
                                     )
                                 }
 
-                                "customization" -> com.lechixy.kick.ui.screens.settings.customization.CustomizationSettingsScreen(
+                                "customization" -> com.lechixy.kick.screens.settings.customization.CustomizationSettingsScreen(
                                     onBackClick = { navController.popBackStack() })
 
                                 "playback" -> {
-                                    com.lechixy.kick.ui.screens.settings.playback.PlayerPlaybackSettingsScreen(
+                                    com.lechixy.kick.screens.settings.playback.PlayerPlaybackSettingsScreen(
                                         onBackClick = { navController.popBackStack() }
                                     )
                                 }
@@ -526,11 +521,10 @@ fun KickApp() {
                         }
                     )
 
-
                 }
             }
-            if (!isInPipMode) com.lechixy.kick.ui.components.NetworkInfoBar(Modifier.align(Alignment.BottomCenter))
-            com.lechixy.kick.ui.screens.settings.DeveloperToolsOverlay(
+            if (!isInPipMode) com.lechixy.kick.components.NetworkInfoBar(Modifier.align(Alignment.BottomCenter))
+            com.lechixy.kick.screens.settings.DeveloperToolsOverlay(
                 isInPipMode = isInPipMode,
                 onTriggerLive = { playerHost.triggerLiveAnnouncement(System.nanoTime()) },
                 canTriggerLive = playerHost.channel?.livestream != null && playerHost.recording == null && playerHost.mode != PlayerMode.Hidden

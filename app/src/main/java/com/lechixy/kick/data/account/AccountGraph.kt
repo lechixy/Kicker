@@ -5,6 +5,13 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
+import com.lechixy.kick.data.account.local.SecureSessionStore
+import com.lechixy.kick.data.account.repository.AccountDashboardRepository
+import com.lechixy.kick.data.account.repository.AuthRepository
+import com.lechixy.kick.data.account.repository.ChallengesRepository
+import com.lechixy.kick.data.chat.repository.AccountChatRepository
+import com.lechixy.kick.data.following.repository.FollowingRepository
+
 /** Application scoped account services, also usable by the existing non-Hilt player ViewModels. */
 object AccountGraph {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)

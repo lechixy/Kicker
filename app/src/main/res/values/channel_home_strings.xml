@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <string name="channel_popular_clips">Popular clips</string>
-    <string name="channel_recent_categories">Recent categories</string>
-    <string name="channel_categories">Categories</string>
-    <string name="channel_no_categories">No recent categories</string>
-    <string name="channel_section_error">Could not load this section</string>
-    <string name="channel_clips_error">Could not load clips</string>
-</resources>

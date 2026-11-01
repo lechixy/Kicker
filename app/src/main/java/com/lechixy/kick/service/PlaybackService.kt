@@ -31,9 +31,6 @@ import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import androidx.media3.exoplayer.upstream.ParsingLoadable
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import com.lechixy.kick.BuildConfig
-import com.lechixy.kick.data.settings.SettingsKeys
-import com.lechixy.kick.data.settings.SettingsRepository
 import dagger.hilt.android.AndroidEntryPoint
 import java.io.ByteArrayInputStream
 import java.io.InputStream
@@ -45,6 +42,17 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+
+import com.lechixy.kick.BuildConfig
+import com.lechixy.kick.data.settings.model.SettingsKeys
+import com.lechixy.kick.data.settings.repository.SettingsRepository
+import com.lechixy.kick.service.player.DiagnosticLiveSpeedControl
+import com.lechixy.kick.service.player.LiveResumeListener
+import com.lechixy.kick.service.player.PlaybackDiagnosticTracker
+import com.lechixy.kick.service.player.PlaybackProgressTracker
+import com.lechixy.kick.service.player.SleepTimer
+import com.lechixy.kick.service.player.distanceBehindLiveTargetMs
+import com.lechixy.kick.service.player.transformKickLivePlaylist
 
 @AndroidEntryPoint
 class PlaybackService : MediaSessionService() {
@@ -58,7 +66,7 @@ class PlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private var progressTracker: PlaybackProgressTracker? = null
     private var diagnosticTracker: PlaybackDiagnosticTracker? = null
-    private val viewerTracking = com.lechixy.kick.data.remote.ViewerTrackingClient(
+    private val viewerTracking = com.lechixy.kick.data.player.remote.ViewerTrackingClient(
         // Keep metadata decoding and websocket work off the player/UI thread.
         // A serial dispatcher also keeps the tracking heartbeat state confined.
         CoroutineScope(serviceScope.coroutineContext + Dispatchers.Default.limitedParallelism(1))
@@ -189,11 +197,11 @@ class PlaybackService : MediaSessionService() {
                 val watching = player.playWhenReady && player.playerError == null &&
                     player.playbackState in listOf(Player.STATE_READY, Player.STATE_BUFFERING) &&
                     extras?.getBoolean(EXTRA_IS_LIVE) == true && channelId > 0 && livestreamId > 0
-                viewerTracking.setSession(if (watching) com.lechixy.kick.data.remote.ViewerSession(
+                viewerTracking.setSession(if (watching) com.lechixy.kick.data.player.remote.ViewerSession(
                     channelId, livestreamId, extras?.getString(EXTRA_VIEWER_VOD_ID), extras?.getString(EXTRA_VIEWER_CHANNEL_SLUG)
                 ) else null)
                 if (events.containsAny(Player.EVENT_PLAYBACK_STATE_CHANGED, Player.EVENT_PLAY_WHEN_READY_CHANGED)) {
-                    com.lechixy.kick.data.remote.NetworkMonitor.reportPlaybackBuffering(
+                    com.lechixy.kick.data.common.remote.NetworkMonitor.reportPlaybackBuffering(
                         player.playWhenReady && player.playbackState == Player.STATE_BUFFERING
                     )
                 }
@@ -210,7 +218,7 @@ class PlaybackService : MediaSessionService() {
     override fun onDestroy() {
         SleepTimer.detach(this)
         viewerTracking.close()
-        com.lechixy.kick.data.remote.NetworkMonitor.reportPlaybackBuffering(false)
+        com.lechixy.kick.data.common.remote.NetworkMonitor.reportPlaybackBuffering(false)
         diagnosticTracker?.close()
         diagnosticTracker = null
         progressTracker?.close()
@@ -296,7 +304,7 @@ fun buildPlaybackMediaItem(
     vodDurationMs: Long? = null,
     isLowLatency: Boolean = true,
     recordingId: String? = null,
-    viewerSession: com.lechixy.kick.data.remote.ViewerSession? = null
+    viewerSession: com.lechixy.kick.data.player.remote.ViewerSession? = null
 ): MediaItem {
     val subtitle = buildString {
         append(if (isLive) "🔴 Canlı" else "Kayıt")
