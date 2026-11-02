@@ -2,66 +2,37 @@ package com.lechixy.kick.screens.browse
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
-import kotlin.coroutines.cancellation.CancellationException
-import kotlin.time.Duration.Companion.milliseconds
 
-import com.lechixy.kick.data.browse.model.SearchData
+import com.lechixy.kick.data.account.remote.userMessage
+import com.lechixy.kick.data.browse.model.BrowseCategory
 import com.lechixy.kick.data.common.remote.KickNetwork
 import com.lechixy.kick.data.common.repository.KickRepository
 
-data class BrowseUiState(
-    val query: String = "",
-    val isLoading: Boolean = false,
-    val searchData: SearchData? = null,
-    val error: String? = null
-)
-
-class BrowseViewModel(
-    private val repository: KickRepository = KickRepository(KickNetwork.api)
-) : ViewModel() {
-
-    private val _uiState = MutableStateFlow(BrowseUiState())
-    val uiState: StateFlow<BrowseUiState> = _uiState.asStateFlow()
-
-    private var searchJob: Job? = null
-
-    fun onQueryChange(newQuery: String) {
-        _uiState.value = _uiState.value.copy(query = newQuery)
-        searchJob?.cancel()
-
-        if (newQuery.isBlank()) {
-            _uiState.value = _uiState.value.copy(
-                isLoading = false,
-                searchData = null,
-                error = null
-            )
-            return
-        }
-
-        searchJob = viewModelScope.launch {
-            delay(350.milliseconds) // Debounce
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null)
-
+data class BrowseUiState(val categories: List<BrowseCategory> = emptyList(), val loading: Boolean = true,
+    val page: Int = 0, val lastPage: Int = 1, val error: String? = null, val loadingMore: Boolean = false)
+class BrowseViewModel : ViewModel() {
+    private val repository = KickRepository(KickNetwork.api)
+    private val mutableState = MutableStateFlow(BrowseUiState())
+    val state = mutableState.asStateFlow()
+    private var job: Job? = null
+    init { refresh() }
+    fun refresh() { job?.cancel(); load(true) }
+    fun more() { if (!state.value.loading && !state.value.loadingMore && state.value.page < state.value.lastPage) load(false) }
+    private fun load(reset: Boolean) {
+        job = viewModelScope.launch {
+            mutableState.update { it.copy(loading = reset, loadingMore = !reset, error = null) }
             try {
-                val data = repository.search(newQuery.trim())
-                _uiState.value = _uiState.value.copy(
-                    isLoading = false,
-                    searchData = data,
-                    error = null
-                )
+                val result = repository.getCategories(if (reset) 1 else state.value.page + 1)
+                mutableState.update { it.copy(categories = ((if (reset) emptyList() else it.categories) + result.data)
+                    .distinctBy { it.slug }.sortedByDescending { it.viewers }, page = result.currentPage,
+                    lastPage = result.lastPage, loading = false, loadingMore = false) }
             } catch (e: Exception) {
-                if (e !is CancellationException) {
-                    _uiState.value = _uiState.value.copy(
-                        isLoading = false,
-                        error = e.message ?: "Search failed"
-                    )
-                }
+                if (e is CancellationException) throw e
+                mutableState.update { it.copy(loading = false, loadingMore = false, error = e.userMessage()) }
             }
         }
     }

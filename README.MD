@@ -60,16 +60,13 @@ Account features depend on Kick's service availability and may need updates when
 See the [roadmap and planned work](https://app.notion.com/p/lechixy/3f79ce1d06e580d99d7ac8f36ea9b953?v=2689ce1d06e58207971c0840ab5893c6&source=copy_link). Goals describe the project's direction; they are not guarantees of delivery dates or benchmark results.
 
 ## Screenshots
-
-The images below are placeholders for future app captures.
-
 ### Phone
 
 <table>
   <tr>
-    <td align="center" width="33%"><img src=".github/assets/phone-placeholder.svg" alt="Placeholder: phone home and discovery screen" width="240"><br><strong>Discover</strong></td>
-    <td align="center" width="33%"><img src=".github/assets/phone-placeholder.svg" alt="Placeholder: phone stream player and chat" width="240"><br><strong>Watch &amp; chat</strong></td>
-    <td align="center" width="33%"><img src=".github/assets/phone-placeholder.svg" alt="Placeholder: phone appearance settings" width="240"><br><strong>Make it yours</strong></td>
+    <td align="center" width="33%"><img src=".github/assets/phone_1.webp" alt="phone appearance settings" width="240"><br><strong>Make it yours</strong></td>
+    <td align="center" width="33%"><img src=".github/assets/phone_2.webp" alt="phone stream player and chat" width="240"><br><strong>Watch &amp; chat</strong></td>
+    <td align="center" width="33%"><img src=".github/assets/phone_3.webp" alt="phone home and discovery screen" width="240"><br><strong>Discover</strong></td>
   </tr>
 </table>
 
@@ -77,8 +74,8 @@ The images below are placeholders for future app captures.
 
 <table>
   <tr>
-    <td align="center" width="50%"><img src=".github/assets/tablet-placeholder.svg" alt="Placeholder: tablet discovery layout" width="480"><br><strong>Discover on a larger screen</strong></td>
-    <td align="center" width="50%"><img src=".github/assets/tablet-placeholder.svg" alt="Placeholder: tablet player with side-by-side chat" width="480"><br><strong>Player &amp; chat, side by side</strong></td>
+    <td align="center" width="50%"><img src=".github/assets/tablet_1.webp" alt="tablet discovery layout" width="480"><br><strong>Discover on a larger screen</strong></td>
+    <td align="center" width="50%"><img src=".github/assets/tablet_2.webp" alt="tablet player with side-by-side chat" width="480"><br><strong>Player &amp; chat, side by side</strong></td>
   </tr>
 </table>
 

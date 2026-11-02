@@ -7,7 +7,7 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.FastOutSlowInEasing
 
-private val primaryDestinations = setOf("home", "following", "browse", "events", "settings")
+private val primaryDestinations = setOf("home", "following", "search", "browse", "events", "settings")
 private fun changesPrimaryDestination(from: String?, to: String?) =
     from?.substringBefore('?') in primaryDestinations && to?.substringBefore('?') in primaryDestinations
 

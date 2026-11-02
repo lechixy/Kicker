@@ -21,7 +21,7 @@ fun HomeTopBar(
     val navigation = LocalContentNavigation.current
     val wide = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 600
     val center: (@Composable () -> Unit)? = centerContent ?: if (wide) ({
-        TopBarSearchField(onClick = onSearchClick ?: { navigation.browse("") })
+        TopBarSearchField(onClick = onSearchClick ?: { navigation.search("") })
     }) else null
     Row(
         modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp),

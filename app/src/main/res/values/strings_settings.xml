@@ -21,7 +21,7 @@
     <string name="settings_for_you">Just for you 💖</string>
     <string name="settings_version">Version %1$s</string>
     <string name="settings_updated">Updated on %1$s</string>
-    <string name="settings_github">Explore the project on GitHub</string>
+    <string name="settings_github">Tap to view project on GitHub</string>
     <string name="settings_chat_connection">Connect to chat automatically</string>
     <string name="settings_chat_spacing">Chat message spacing</string>
     <string name="settings_chat_width">Tablet chat width</string>

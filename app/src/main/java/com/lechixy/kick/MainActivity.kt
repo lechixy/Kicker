@@ -12,8 +12,6 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -31,13 +29,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -75,8 +70,8 @@ import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.core.util.Consumer
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -92,14 +87,13 @@ import com.lechixy.kick.components.rememberPlayerHostState
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 import com.lechixy.kick.data.settings.repository.SettingsRepository
-import com.lechixy.kick.screens.browse.BrowseScreen
+import com.lechixy.kick.screens.search.SearchScreen
 import com.lechixy.kick.screens.channel.ChannelScreen
 import com.lechixy.kick.screens.channel.ChannelViewModel
 import com.lechixy.kick.screens.following.FollowingScreen
 import com.lechixy.kick.screens.following.FollowingViewModel
 import com.lechixy.kick.screens.home.HomeScreen
 import com.lechixy.kick.screens.home.HomeViewModel
-import kotlin.time.Duration.Companion.milliseconds
 import com.lechixy.kick.screens.settings.SettingsScreen
 import com.lechixy.kick.screens.settings.general.GeneralSettingsScreen
 import com.lechixy.kick.theme.KickTheme
@@ -112,6 +106,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.milliseconds
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -179,8 +174,11 @@ class MainActivity : ComponentActivity() {
             ) {
                 val repository = LocalSettingsRepository.current
                 val themeSettings: Pair<String, Boolean>? by remember(repository) {
-                    combine(repository.get(SettingsKeys.THEME), repository.get(SettingsKeys.DYNAMIC_COLOR)) {
-                        theme, dynamicColor -> theme to dynamicColor
+                    combine(
+                        repository.get(SettingsKeys.THEME),
+                        repository.get(SettingsKeys.DYNAMIC_COLOR)
+                    ) { theme, dynamicColor ->
+                        theme to dynamicColor
                     }
                 }.collectAsStateWithLifecycle(initialValue = null)
                 val theme = themeSettings?.first ?: SettingsKeys.THEME.defaultValue
@@ -231,8 +229,12 @@ enum class AppDestinations(
         R.drawable.favorite_24dp_e3e3e3_fill1_wght400_grad0_opsz24,
         R.drawable.favorite_24dp_e3e3e3_fill0_wght400_grad0_opsz24
     ),
-    BROWSE(R.string.browse, R.drawable.search_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
-    CATEGORIES(R.string.section_categories, R.drawable.apps_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
+    SEARCH(R.string.search, R.drawable.search_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
+    BROWSE(
+        R.string.browse,
+        R.drawable.browse_24dp_e3e3e3_fill1_wght400_grad0_opsz24,
+        R.drawable.browse_24dp_e3e3e3_fill0_wght400_grad0_opsz24
+    ),
     EVENTS(
         R.string.events,
         R.drawable.local_activity_24dp_e3e3e3_fill1_wght400_grad0_opsz24,
@@ -258,17 +260,25 @@ fun KickApp() {
     DisposableEffect(lifecycleOwner) {
         val notifications = com.lechixy.kick.data.account.AccountGraph.notifications
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_START) notifications.setForeground(true)
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) notifications.setForeground(false)
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_START) notifications.setForeground(
+                true
+            )
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) notifications.setForeground(
+                false
+            )
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         notifications.setForeground(lifecycleOwner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED))
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer); notifications.setForeground(false) }
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer); notifications.setForeground(
+            false
+        )
+        }
     }
     val navController = rememberNavController()
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
-    val browseViewModel: com.lechixy.kick.screens.browse.BrowseViewModel = viewModel()
+    val searchViewModel: com.lechixy.kick.screens.search.SearchViewModel = viewModel()
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
 
@@ -318,15 +328,31 @@ fun KickApp() {
         contentColor = MaterialTheme.colorScheme.onBackground
     ) {
         CompositionLocalProvider(
-            com.lechixy.kick.screens.settings.LocalOpenChangelog provides { navController.navigate("settings/changelog") { launchSingleTop = true } },
+            com.lechixy.kick.screens.settings.LocalOpenChangelog provides {
+                navController.navigate("settings/changelog") {
+                    launchSingleTop = true
+                }
+            },
             com.lechixy.kick.components.LocalReleasePreview provides releaseViewModel::preview,
-            com.lechixy.kick.components.account.LocalOpenChallenges provides { challengesOpen = true },
+            com.lechixy.kick.components.account.LocalOpenChallenges provides {
+                challengesOpen = true
+            },
             com.lechixy.kick.components.LocalSharedTopBar provides true,
             com.lechixy.kick.components.LocalContentNavigation provides com.lechixy.kick.components.ContentNavigation(
-                browse = { query -> navController.navigate("browse?query=${android.net.Uri.encode(query)}") { launchSingleTop = true } },
+                search = { query ->
+                    navController.navigate(
+                        "search?query=${
+                            android.net.Uri.encode(
+                                query
+                            )
+                        }"
+                    ) { launchSingleTop = true }
+                },
                 category = { slug ->
                     if (playerHost.isChannelVisible) playerHost.minimize()
-                    navController.navigate("categories?slug=${android.net.Uri.encode(slug)}") { launchSingleTop = true }
+                    navController.navigate("browse?slug=${android.net.Uri.encode(slug)}") {
+                        launchSingleTop = true
+                    }
                 }, channel = { openChannel(it, null) },
                 recording = { slug, recording, source ->
                     playerHost.open(slug, source)
@@ -334,218 +360,286 @@ fun KickApp() {
                 }
             )
         ) {
-        Box(Modifier.fillMaxSize()) {
-            KickNavScaffold(
-                hidden = isScaffoldHidden,
-                navigationProgress = { playerHost.navigationOpenProgress.value },
-                onNavigationWidthChanged = { playerHost.navigationWidthPx = it },
-                currentRoute = currentRoute,
-                activeChannelSlug = playerHost.pageSlug.takeIf { playerHost.isChannelVisible },
-                onChannelClick = { openChannel(it, null) },
-                onNavigate = { targetRoute ->
-                    if (playerHost.isChannelVisible) playerHost.minimize()
-                    if (currentRoute?.substringBefore("?") != targetRoute) {
-                        navController.navigate(targetRoute) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                inclusive = false
+            Box(Modifier.fillMaxSize()) {
+                KickNavScaffold(
+                    hidden = isScaffoldHidden,
+                    navigationProgress = { playerHost.navigationOpenProgress.value },
+                    onNavigationWidthChanged = { playerHost.navigationWidthPx = it },
+                    currentRoute = currentRoute,
+                    activeChannelSlug = playerHost.pageSlug.takeIf { playerHost.isChannelVisible },
+                    onChannelClick = { openChannel(it, null) },
+                    onNavigate = { targetRoute ->
+                        if (playerHost.isChannelVisible) playerHost.minimize()
+                        if (currentRoute?.substringBefore("?") != targetRoute) {
+                            navController.navigate(targetRoute) {
+                                popUpTo(navController.graph.findStartDestination().id) {
+                                    inclusive = false
+                                }
+                                launchSingleTop = true
                             }
-                            launchSingleTop = true
                         }
                     }
-                }
-            ) {
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.background)
                 ) {
-                    Column(Modifier.fillMaxSize()) {
-                            com.lechixy.kick.components.HomeTopBar(forceVisible = true,
-                                showAccount = true,
-                                centerContent = if (currentRoute?.substringBefore("?") == "browse" &&
-                                    androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 600)
-                                    ({ com.lechixy.kick.screens.browse.BrowseSearchBar(browseViewModel) }) else null)
-                    NavHost(
-                        navController = navController,
-                        modifier = Modifier.weight(1f).consumeWindowInsets(WindowInsets.statusBars),
-                        startDestination = "home",
-                        enterTransition = {
-                            com.lechixy.kick.components.navigationEnter(initialState.destination.route, targetState.destination.route)
-                        },
-                        exitTransition = {
-                            com.lechixy.kick.components.navigationExit(initialState.destination.route, targetState.destination.route)
-                        },
-                        popEnterTransition = {
-                            com.lechixy.kick.components.navigationPopEnter(initialState.destination.route, targetState.destination.route)
-                        },
-                        popExitTransition = {
-                            com.lechixy.kick.components.navigationPopExit(initialState.destination.route, targetState.destination.route)
-                        }
-
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background)
                     ) {
-                        composable("home") {
-                            val homeViewModel: HomeViewModel = hiltViewModel()
-                            HomeScreen(
-                                viewModel = homeViewModel,
-                                onStreamClick = { channelSlug, source ->
-                                    openChannel(
-                                        channelSlug,
-                                        source
+                        Column(Modifier.fillMaxSize()) {
+                            com.lechixy.kick.components.HomeTopBar(
+                                forceVisible = true,
+                                showAccount = true,
+                                centerContent = if (currentRoute?.substringBefore("?") == "search" &&
+                                    androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 600
+                                )
+                                    ({
+                                        com.lechixy.kick.screens.search.SearchBar(
+                                            searchViewModel
+                                        )
+                                    }) else null
+                            )
+                            NavHost(
+                                navController = navController,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .consumeWindowInsets(WindowInsets.statusBars),
+                                startDestination = "home",
+                                enterTransition = {
+                                    com.lechixy.kick.components.navigationEnter(
+                                        initialState.destination.route,
+                                        targetState.destination.route
                                     )
                                 },
-                                onFollowingClick = {
-                                    navController.navigate("following") {
-                                        launchSingleTop = true
+                                exitTransition = {
+                                    com.lechixy.kick.components.navigationExit(
+                                        initialState.destination.route,
+                                        targetState.destination.route
+                                    )
+                                },
+                                popEnterTransition = {
+                                    com.lechixy.kick.components.navigationPopEnter(
+                                        initialState.destination.route,
+                                        targetState.destination.route
+                                    )
+                                },
+                                popExitTransition = {
+                                    com.lechixy.kick.components.navigationPopExit(
+                                        initialState.destination.route,
+                                        targetState.destination.route
+                                    )
+                                }
+
+                            ) {
+                                composable("home") {
+                                    val homeViewModel: HomeViewModel = hiltViewModel()
+                                    HomeScreen(
+                                        viewModel = homeViewModel,
+                                        onStreamClick = { channelSlug, source ->
+                                            openChannel(
+                                                channelSlug,
+                                                source
+                                            )
+                                        },
+                                        onFollowingClick = {
+                                            navController.navigate("following") {
+                                                launchSingleTop = true
+                                            }
+                                        }
+                                    )
+                                }
+
+                                composable("following") {
+                                    val followingViewModel: FollowingViewModel = viewModel()
+                                    FollowingScreen(
+                                        viewModel = followingViewModel,
+                                        onStreamClick = { channelSlug, source ->
+                                            openChannel(
+                                                channelSlug,
+                                                source
+                                            )
+                                        }
+                                    )
+                                }
+
+                                composable(
+                                    "search?query={query}",
+                                    arguments = listOf(navArgument("query") { defaultValue = "" })
+                                ) { entry ->
+                                    SearchScreen(
+                                        viewModel = searchViewModel,
+                                        initialQuery = entry.arguments?.getString("query")
+                                            .orEmpty(),
+                                        onChannelClick = { channelSlug, source ->
+                                            openChannel(
+                                                channelSlug,
+                                                source
+                                            )
+                                        }
+                                    )
+                                }
+
+                                composable(
+                                    "browse?slug={slug}",
+                                    arguments = listOf(navArgument("slug") { defaultValue = "" })
+                                ) { entry ->
+                                    com.lechixy.kick.screens.browse.BrowseScreen(
+                                        onChannelClick = { openChannel(it, null) },
+                                        selectedSlug = entry.arguments?.getString("slug")
+                                    )
+                                }
+                                composable("events") {
+                                    com.lechixy.kick.screens.events.EventsScreen(onChannelClick = {
+                                        openChannel(
+                                            it,
+                                            null
+                                        )
+                                    })
+                                }
+
+                                composable("settings") {
+                                    SettingsScreen(
+                                        onBackClick = { navController.popBackStack() },
+                                        onSubsettingClick = { subsettingRoute ->
+                                            navController.navigate(
+                                                "settings/${subsettingRoute.name.lowercase()}"
+                                            )
+                                        }
+                                    )
+                                }
+
+                                composable(
+                                    route = "settings/{settingRoute}",
+                                    arguments = listOf(navArgument("settingRoute") {
+                                        type = NavType.StringType
+                                    })
+                                ) { backStackEntry ->
+                                    val settingRoute =
+                                        backStackEntry.arguments?.getString("settingRoute") ?: ""
+
+                                    when (settingRoute) {
+                                        "changelog" -> com.lechixy.kick.screens.settings.ChangelogScreen(
+                                            releaseViewModel,
+                                            { navController.popBackStack() })
+
+                                        "developer" -> com.lechixy.kick.screens.settings.DeveloperToolsScreen(
+                                            onBackClick = { navController.popBackStack() },
+                                            onTriggerLive = {
+                                                playerHost.triggerLiveAnnouncement(
+                                                    System.nanoTime()
+                                                )
+                                            },
+                                            canTriggerLive = playerHost.channel?.livestream != null && playerHost.recording == null && playerHost.mode != PlayerMode.Hidden
+                                        )
+
+                                        "chat" -> com.lechixy.kick.screens.settings.SettingsCategoryScreen(
+                                            com.lechixy.kick.screens.settings.SettingsDestinations.CHAT,
+                                            { navController.popBackStack() })
+
+                                        "general" -> {
+                                            GeneralSettingsScreen(
+                                                onBackClick = { navController.popBackStack() }
+                                            )
+                                        }
+
+                                        "customization" -> com.lechixy.kick.screens.settings.customization.CustomizationSettingsScreen(
+                                            onBackClick = { navController.popBackStack() })
+
+                                        "playback" -> {
+                                            com.lechixy.kick.screens.settings.playback.PlayerPlaybackSettingsScreen(
+                                                onBackClick = { navController.popBackStack() }
+                                            )
+                                        }
+
+                                        else -> {
+                                            Row(
+                                                modifier = Modifier.fillMaxSize(),
+                                                Arrangement.Center,
+                                                Alignment.CenterVertically
+                                            ) {
+                                                Text("Unknown route: $settingRoute")
+                                            }
+                                        }
                                     }
                                 }
-                            )
-                        }
+                            }
 
-                        composable("following") {
-                            val followingViewModel: FollowingViewModel = viewModel()
-                            FollowingScreen(
-                                viewModel = followingViewModel,
-                                onStreamClick = { channelSlug, source ->
-                                    openChannel(
-                                        channelSlug,
-                                        source
-                                    )
+                        }
+                        val activeSlug = playerHost.slug
+                        if (activeSlug != null) {
+                            val activeChannelVm: ChannelViewModel = viewModel(key = activeSlug)
+                            val activeChannelState by activeChannelVm.uiState.collectAsStateWithLifecycle()
+                            LaunchedEffect(activeSlug, activeChannelState.channel) {
+                                activeChannelState.channel?.let { detail ->
+                                    playerHost.onChannelLoaded(activeSlug, detail)
                                 }
-                            )
+                            }
+                            LaunchedEffect(activeSlug, activeChannelState.liveAnnouncementId) {
+                                val announcementId =
+                                    activeChannelState.liveAnnouncementId ?: return@LaunchedEffect
+                                playerHost.triggerLiveAnnouncement(announcementId)
+                                activeChannelVm.consumeLiveAnnouncement(announcementId)
+                            }
                         }
 
-                        composable("browse?query={query}", arguments = listOf(navArgument("query") { defaultValue = "" })) { entry ->
-                            BrowseScreen(viewModel = browseViewModel, initialQuery = entry.arguments?.getString("query").orEmpty(),
-                                onChannelClick = { channelSlug, source ->
-                                    openChannel(
-                                        channelSlug,
-                                        source
-                                    )
-                                }
-                            )
-                        }
-
-                        composable("categories?slug={slug}", arguments = listOf(navArgument("slug") { defaultValue = "" })) { entry ->
-                            com.lechixy.kick.screens.categories.CategoriesScreen(
-                                onChannelClick = { openChannel(it, null) }, selectedSlug = entry.arguments?.getString("slug"))
-                        }
-                        composable("events") {
-                            com.lechixy.kick.screens.events.EventsScreen(onChannelClick = { openChannel(it, null) })
-                        }
-
-                        composable("settings") {
-                            SettingsScreen(
-                                onBackClick = { navController.popBackStack() },
-                                onSubsettingClick = { subsettingRoute -> navController.navigate("settings/${subsettingRoute.name.lowercase()}") }
-                            )
-                        }
-
-                        composable(
-                            route = "settings/{settingRoute}",
-                            arguments = listOf(navArgument("settingRoute") {
-                                type = NavType.StringType
-                            })
-                        ) { backStackEntry ->
-                            val settingRoute =
-                                backStackEntry.arguments?.getString("settingRoute") ?: ""
-
-                            when (settingRoute) {
-                                "changelog" -> com.lechixy.kick.screens.settings.ChangelogScreen(releaseViewModel, { navController.popBackStack() })
-                                "developer" -> com.lechixy.kick.screens.settings.DeveloperToolsScreen(
-                                    onBackClick = { navController.popBackStack() },
-                                    onTriggerLive = { playerHost.triggerLiveAnnouncement(System.nanoTime()) },
-                                    canTriggerLive = playerHost.channel?.livestream != null && playerHost.recording == null && playerHost.mode != PlayerMode.Hidden
+                        PlayerHost(
+                            host = playerHost,
+                            navigationRailAvailable = !useBottomBar,
+                            isInPipMode = isInPipMode,
+                            onMinimize = playerHost::minimize,
+                            onExpand = playerHost::expand,
+                            onClose = playerHost::close,
+                            pageContent = { slug ->
+                                ChannelScreen(
+                                    channelSlug = slug,
+                                    playerHost = playerHost,
+                                    viewModel = viewModel(key = slug),
+                                    onChannelLoaded = { playerHost.onChannelLoaded(slug, it) },
+                                    onBackClick = playerHost::minimize,
                                 )
+                            }
+                        )
 
-                                "chat" -> com.lechixy.kick.screens.settings.SettingsCategoryScreen(
-                                    com.lechixy.kick.screens.settings.SettingsDestinations.CHAT, { navController.popBackStack() })
-                                "general" -> {
-                                    GeneralSettingsScreen(
-                                        onBackClick = { navController.popBackStack() }
+                    }
+                }
+                if (!isInPipMode) {
+                    com.lechixy.kick.components.InAppNotificationHost(
+                        modifier = Modifier.align(Alignment.TopCenter),
+                        enabled = !challengesOpen && releaseDialogs.isEmpty(),
+                        onActivate = { notification ->
+                            when (notification.kind) {
+                                com.lechixy.kick.data.notifications.NotificationKind.WatchTimeGoal -> challengesOpen =
+                                    true
+
+                                com.lechixy.kick.data.notifications.NotificationKind.StreamStarted -> notification.channelSlug?.let {
+                                    openChannel(
+                                        it,
+                                        null
                                     )
                                 }
-
-                                "customization" -> com.lechixy.kick.screens.settings.customization.CustomizationSettingsScreen(
-                                    onBackClick = { navController.popBackStack() })
-
-                                "playback" -> {
-                                    com.lechixy.kick.screens.settings.playback.PlayerPlaybackSettingsScreen(
-                                        onBackClick = { navController.popBackStack() }
-                                    )
-                                }
-
-                                else -> {
-                                    Row(
-                                        modifier = Modifier.fillMaxSize(),
-                                        Arrangement.Center,
-                                        Alignment.CenterVertically
-                                    ) {
-                                        Text("Unknown route: $settingRoute")
-                                    }
-                                }
                             }
-                        }
+                        })
+                    com.lechixy.kick.components.account.AccountChallengeDialogHost(
+                        challengesOpen,
+                        { challengesOpen = false })
+                    if (!challengesOpen) releaseDialogs.firstOrNull()?.let { request ->
+                        com.lechixy.kick.components.ReleaseDialog(
+                            request,
+                            releaseViewModel::dismiss
+                        )
                     }
-
-                    }
-                    val activeSlug = playerHost.slug
-                    if (activeSlug != null) {
-                        val activeChannelVm: ChannelViewModel = viewModel(key = activeSlug)
-                        val activeChannelState by activeChannelVm.uiState.collectAsStateWithLifecycle()
-                        LaunchedEffect(activeSlug, activeChannelState.channel) {
-                            activeChannelState.channel?.let { detail ->
-                                playerHost.onChannelLoaded(activeSlug, detail)
-                            }
-                        }
-                        LaunchedEffect(activeSlug, activeChannelState.liveAnnouncementId) {
-                            val announcementId =
-                                activeChannelState.liveAnnouncementId ?: return@LaunchedEffect
-                            playerHost.triggerLiveAnnouncement(announcementId)
-                            activeChannelVm.consumeLiveAnnouncement(announcementId)
-                        }
-                    }
-
-                    PlayerHost(
-                        host = playerHost,
-                        navigationRailAvailable = !useBottomBar,
-                        isInPipMode = isInPipMode,
-                        onMinimize = playerHost::minimize,
-                        onExpand = playerHost::expand,
-                        onClose = playerHost::close,
-                        pageContent = { slug ->
-                            ChannelScreen(
-                                channelSlug = slug,
-                                playerHost = playerHost,
-                                viewModel = viewModel(key = slug),
-                                onChannelLoaded = { playerHost.onChannelLoaded(slug, it) },
-                                onBackClick = playerHost::minimize,
-                            )
-                        }
+                }
+                if (!isInPipMode) com.lechixy.kick.components.NetworkInfoBar(
+                    Modifier.align(
+                        Alignment.BottomCenter
                     )
-
-                }
+                )
+                com.lechixy.kick.screens.settings.DeveloperToolsOverlay(
+                    isInPipMode = isInPipMode,
+                    onTriggerLive = { playerHost.triggerLiveAnnouncement(System.nanoTime()) },
+                    canTriggerLive = playerHost.channel?.livestream != null && playerHost.recording == null && playerHost.mode != PlayerMode.Hidden
+                )
             }
-            if (!isInPipMode) {
-                com.lechixy.kick.components.InAppNotificationHost(modifier = Modifier.align(Alignment.TopCenter),
-                    enabled = !challengesOpen && releaseDialogs.isEmpty(), onActivate = { notification ->
-                    when (notification.kind) {
-                        com.lechixy.kick.data.notifications.NotificationKind.WatchTimeGoal -> challengesOpen = true
-                        com.lechixy.kick.data.notifications.NotificationKind.StreamStarted -> notification.channelSlug?.let { openChannel(it, null) }
-                    }
-                })
-                com.lechixy.kick.components.account.AccountChallengeDialogHost(challengesOpen, { challengesOpen = false })
-                if (!challengesOpen) releaseDialogs.firstOrNull()?.let { request ->
-                    com.lechixy.kick.components.ReleaseDialog(request, releaseViewModel::dismiss)
-                }
-            }
-            if (!isInPipMode) com.lechixy.kick.components.NetworkInfoBar(Modifier.align(Alignment.BottomCenter))
-            com.lechixy.kick.screens.settings.DeveloperToolsOverlay(
-                isInPipMode = isInPipMode,
-                onTriggerLive = { playerHost.triggerLiveAnnouncement(System.nanoTime()) },
-                canTriggerLive = playerHost.channel?.livestream != null && playerHost.recording == null && playerHost.mode != PlayerMode.Hidden
-            )
         }
-    }
     }
 }
 
@@ -568,27 +662,45 @@ internal fun KickNavScaffold(
     val sharedContent = remember { movableContentOf { latestContent() } }
 
     val settings = LocalSettingsRepository.current
-    val railExpanded by settings.get(SettingsKeys.NAVIGATION_RAIL_EXPANDED).collectAsStateWithLifecycle(false)
+    val railExpanded by settings.get(SettingsKeys.NAVIGATION_RAIL_EXPANDED)
+        .collectAsStateWithLifecycle(false)
     val scope = rememberCoroutineScope()
     val railWidth = androidx.compose.animation.core.animateDpAsState(
         if (railExpanded) 240.dp else 80.dp,
         animationSpec = tween(320, easing = FastOutSlowInEasing),
-        label = "rail width")
+        label = "rail width"
+    )
 
     @Composable
-    fun DestinationIcon(destination: AppDestinations, selected: Boolean, bouncy: Boolean = false, pressed: Boolean = false) {
+    fun DestinationIcon(
+        destination: AppDestinations,
+        selected: Boolean,
+        bouncy: Boolean = false,
+        pressed: Boolean = false
+    ) {
         val scale = remember { androidx.compose.animation.core.Animatable(1f) }
         LaunchedEffect(selected, pressed, bouncy) {
             if (bouncy && selected && !pressed) scale.snapTo(.8f)
-            scale.animateTo(if (pressed) .8f else if (selected) 1.08f else 1f,
-                androidx.compose.animation.core.spring(dampingRatio = if (bouncy) .38f else 1f, stiffness = 500f))
+            scale.animateTo(
+                if (pressed) .8f else if (selected) 1.08f else 1f,
+                androidx.compose.animation.core.spring(
+                    dampingRatio = if (bouncy) .38f else 1f,
+                    stiffness = 500f
+                )
+            )
         }
-        androidx.compose.animation.Crossfade(targetState = selected, label = "navigation icon") { active ->
-            Icon(painterResource(if (active) destination.activeIcon else destination.inactiveIcon),
-                stringResource(destination.label), Modifier.size(24.dp).graphicsLayer {
-                    scaleX = scale.value
-                    scaleY = scale.value
-                })
+        androidx.compose.animation.Crossfade(
+            targetState = selected,
+            label = "navigation icon"
+        ) { active ->
+            Icon(
+                painterResource(if (active) destination.activeIcon else destination.inactiveIcon),
+                stringResource(destination.label), Modifier
+                    .size(24.dp)
+                    .graphicsLayer {
+                        scaleX = scale.value
+                        scaleY = scale.value
+                    })
         }
     }
 
@@ -596,7 +708,11 @@ internal fun KickNavScaffold(
     fun RowScope.BottomBarItems() {
         AppDestinations.entries.filter { it != AppDestinations.EVENTS }.forEach { destination ->
             val targetRoute = destination.name.lowercase()
-            val isSelected = com.lechixy.kick.components.navigationDestinationSelected(currentRoute, activeChannelSlug, targetRoute)
+            val isSelected = com.lechixy.kick.components.navigationDestinationSelected(
+                currentRoute,
+                activeChannelSlug,
+                targetRoute
+            )
             NavigationBarItem(
                 selected = isSelected,
                 onClick = { onNavigate(targetRoute) },
@@ -613,14 +729,26 @@ internal fun KickNavScaffold(
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             AppDestinations.entries.forEach { destination ->
                 val targetRoute = destination.name.lowercase()
-                val isSelected = com.lechixy.kick.components.navigationDestinationSelected(currentRoute, activeChannelSlug, targetRoute)
+                val isSelected = com.lechixy.kick.components.navigationDestinationSelected(
+                    currentRoute,
+                    activeChannelSlug,
+                    targetRoute
+                )
                 com.lechixy.kick.components.RailNavigationItem(
-                    expanded = expanded, selected = isSelected, label = stringResource(destination.label),
+                    expanded = expanded,
+                    selected = isSelected,
+                    label = stringResource(destination.label),
                     onClick = { onNavigate(targetRoute) },
                     icon = {
-                        androidx.compose.animation.Crossfade(isSelected, animationSpec = tween(180), label = "rail icon") { active ->
-                            Icon(painterResource(if (active) destination.activeIcon else destination.inactiveIcon),
-                                contentDescription = null, modifier = Modifier.size(24.dp))
+                        androidx.compose.animation.Crossfade(
+                            isSelected,
+                            animationSpec = tween(180),
+                            label = "rail icon"
+                        ) { active ->
+                            Icon(
+                                painterResource(if (active) destination.activeIcon else destination.inactiveIcon),
+                                contentDescription = null, modifier = Modifier.size(24.dp)
+                            )
                         }
                     })
             }
@@ -651,25 +779,46 @@ internal fun KickNavScaffold(
         }
     } else {
         val fallbackProgress = androidx.compose.animation.core.animateFloatAsState(
-            if (hidden) 0f else 1f, label = "navigation rail")
+            if (hidden) 0f else 1f, label = "navigation rail"
+        )
         KickRailLayout(
             navigationProgress = { navigationProgress?.invoke() ?: fallbackProgress.value },
             onNavigationWidthChanged = onNavigationWidthChanged,
             navigation = {
                 Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
-                    Column(Modifier.layout { measurable, constraints ->
-                        // Width animation should remeasure the page without recomposing its screens.
-                        val width = railWidth.value.roundToPx().coerceIn(constraints.minWidth, constraints.maxWidth)
-                        val rail = measurable.measure(constraints.copy(minWidth = width, maxWidth = width))
-                        layout(rail.width, rail.height) { rail.placeRelative(0, 0) }
-                    }.fillMaxHeight().windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Vertical)),
-                        horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(
+                        Modifier
+                            .layout { measurable, constraints ->
+                                // Width animation should remeasure the page without recomposing its screens.
+                                val width = railWidth.value.roundToPx()
+                                    .coerceIn(constraints.minWidth, constraints.maxWidth)
+                                val rail = measurable.measure(
+                                    constraints.copy(
+                                        minWidth = width,
+                                        maxWidth = width
+                                    )
+                                )
+                                layout(rail.width, rail.height) { rail.placeRelative(0, 0) }
+                            }
+                            .fillMaxHeight()
+                            .windowInsetsPadding(WindowInsets.systemBars.only(WindowInsetsSides.Vertical)),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
                         val menuRotation by androidx.compose.animation.core.animateFloatAsState(
-                            if (railExpanded) 90f else 0f, animationSpec = tween(220), label = "rail toggle")
+                            if (railExpanded) 90f else 0f,
+                            animationSpec = tween(220),
+                            label = "rail toggle"
+                        )
                         androidx.compose.material3.IconButton(onClick = {
-                            scope.launch { settings.set(SettingsKeys.NAVIGATION_RAIL_EXPANDED, !railExpanded) }
+                            scope.launch {
+                                settings.set(
+                                    SettingsKeys.NAVIGATION_RAIL_EXPANDED,
+                                    !railExpanded
+                                )
+                            }
                         }, modifier = Modifier.padding(vertical = 8.dp)) {
-                            Icon(painterResource(R.drawable.menu_24dp),
+                            Icon(
+                                painterResource(R.drawable.menu_24dp),
                                 androidx.compose.ui.res.stringResource(if (railExpanded) R.string.navigation_collapse else R.string.navigation_expand),
                                 modifier = Modifier.graphicsLayer { rotationZ = menuRotation })
                         }
@@ -678,17 +827,27 @@ internal fun KickNavScaffold(
                         val followed by following.state.collectAsStateWithLifecycle()
                         val favorites by com.lechixy.kick.data.favorites.local.FavoriteUsersStore.favorites.collectAsStateWithLifecycle()
                         val railChannels = remember(followed.channels, favorites) {
-                            com.lechixy.kick.data.following.repository.rankRailChannels(followed.channels, favorites)
+                            com.lechixy.kick.data.following.repository.rankRailChannels(
+                                followed.channels,
+                                favorites
+                            )
                         }
-                        val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
+                        val lifecycle =
+                            androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
                         LaunchedEffect(session.signedIn, session.generation, lifecycle) {
                             if (session.signedIn) lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
-                                while (true) { following.refresh(); kotlinx.coroutines.delay(60_000.milliseconds) }
+                                while (true) {
+                                    following.refresh(); kotlinx.coroutines.delay(60_000.milliseconds)
+                                }
                             }
                         }
-                        androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f).fillMaxWidth(),
+                        androidx.compose.foundation.lazy.LazyColumn(
+                            Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp)) {
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 16.dp)
+                        ) {
                             item("destinations") {
                                 RailBarItems(railExpanded)
                             }
@@ -696,21 +855,40 @@ internal fun KickNavScaffold(
                                 item("following-header") {
                                     com.lechixy.kick.components.FollowingRailHeader(railExpanded)
                                 }
-                                items(railChannels.size, key = { "followed:${railChannels[it].slug}" }) { index ->
+                                items(
+                                    railChannels.size,
+                                    key = { "followed:${railChannels[it].slug}" }) { index ->
                                     val channel = railChannels[index]
-                                    com.lechixy.kick.components.FollowingRailItem(channel,
-                                        selected = channel.slug.equals(activeChannelSlug, ignoreCase = true),
-                                        onClick = { onChannelClick(channel.slug) }, expanded = railExpanded)
+                                    com.lechixy.kick.components.FollowingRailItem(
+                                        channel,
+                                        selected = channel.slug.equals(
+                                            activeChannelSlug,
+                                            ignoreCase = true
+                                        ),
+                                        onClick = { onChannelClick(channel.slug) },
+                                        expanded = railExpanded
+                                    )
                                 }
                                 item("following-status") {
                                     when {
-                                        followed.loading -> com.lechixy.kick.components.AppLoadingIndicator(Modifier.padding(12.dp).size(24.dp))
-                                        followed.failed -> androidx.compose.material3.TextButton(onClick = following::retry) {
+                                        followed.loading -> com.lechixy.kick.components.AppLoadingIndicator(
+                                            Modifier
+                                                .padding(12.dp)
+                                                .size(24.dp)
+                                        )
+
+                                        followed.failed -> androidx.compose.material3.TextButton(
+                                            onClick = following::retry
+                                        ) {
                                             Text(androidx.compose.ui.res.stringResource(R.string.chat_retry))
                                         }
-                                        followed.loaded && followed.channels.isEmpty() -> Text(androidx.compose.ui.res.stringResource(R.string.navigation_following_empty),
-                                            Modifier.padding(8.dp), style = MaterialTheme.typography.labelSmall,
-                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+
+                                        followed.loaded && followed.channels.isEmpty() -> Text(
+                                            androidx.compose.ui.res.stringResource(R.string.navigation_following_empty),
+                                            Modifier.padding(8.dp),
+                                            style = MaterialTheme.typography.labelSmall,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                        )
                                     }
                                 }
                             }
@@ -730,16 +908,23 @@ internal fun KickRailLayout(
     navigation: @Composable () -> Unit,
     content: @Composable () -> Unit
 ) {
-    Layout(contents = listOf(navigation, { Box(Modifier.fillMaxSize()) { content() } }),
-        modifier = Modifier.fillMaxSize().clipToBounds()) { (navigationItems, body), constraints ->
+    Layout(
+        contents = listOf(navigation, { Box(Modifier.fillMaxSize()) { content() } }),
+        modifier = Modifier
+            .fillMaxSize()
+            .clipToBounds()
+    ) { (navigationItems, body), constraints ->
         val rail = navigationItems.single().measure(constraints.copy(minWidth = 0))
         onNavigationWidthChanged(rail.width)
         // Read progress during measurement so each drag event resizes the page without
         // recomposing or recreating its player, just like the side chat panel.
         val visibleWidth = (rail.width * navigationProgress().coerceIn(0f, 1f))
             .roundToInt().coerceIn(0, constraints.maxWidth)
-        val page = body.single().measure(Constraints.fixed(
-            constraints.maxWidth - visibleWidth, constraints.maxHeight))
+        val page = body.single().measure(
+            Constraints.fixed(
+                constraints.maxWidth - visibleWidth, constraints.maxHeight
+            )
+        )
         layout(constraints.maxWidth, constraints.maxHeight) {
             if (visibleWidth > 0) rail.placeRelative(visibleWidth - rail.width, 0)
             page.placeRelative(visibleWidth, 0)

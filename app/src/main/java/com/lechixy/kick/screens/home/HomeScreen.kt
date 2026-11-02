@@ -94,7 +94,7 @@ fun HomeScreen(
         Scaffold(
             topBar = {
                 HomeTopBar(
-                    onSearchClick = { navigation.browse("") },
+                    onSearchClick = { navigation.search("") },
                     onChannelClick = { onStreamClick(it, null) }
                 )
             }

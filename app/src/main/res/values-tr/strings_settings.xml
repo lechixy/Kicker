@@ -21,7 +21,7 @@
     <string name="settings_for_you">Sadece senin için 💖</string>
     <string name="settings_version">Sürüm %1$s</string>
     <string name="settings_updated">Son güncelleme: %1$s</string>
-    <string name="settings_github">Projeyi GitHub’da incele</string>
+    <string name="settings_github">Projeyi GitHub’da incelemek için bas</string>
     <string name="settings_chat_connection">Sohbete otomatik bağlan</string>
     <string name="settings_chat_spacing">Sohbet mesaj aralığı</string>
     <string name="settings_chat_width">Tablet sohbet genişliği</string>

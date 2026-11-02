@@ -41,4 +41,5 @@
     <string name="more">More</string>
     <string name="views_count">%1$s views</string>
     <string name="settings_about">About</string>
+    <string name="search">Search</string>
 </resources>

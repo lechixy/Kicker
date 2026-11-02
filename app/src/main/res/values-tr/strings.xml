@@ -18,7 +18,7 @@
     <string name="live_badge">CANLI</string>
     <string name="home">Ana</string>
     <string name="following">Takip</string>
-    <string name="browse">Ara</string>
+    <string name="browse">Göz at</string>
     <string name="settings">Ayarlar</string>
     <string name="anonymous">İsimsiz biri</string>
     <string name="follow">Takip et</string>
@@ -40,4 +40,5 @@
     <string name="more">More</string>
     <string name="views_count">%1$s görüntüleme</string>
     <string name="settings_about">Hakkında</string>
+    <string name="search">Ara</string>
 </resources>
