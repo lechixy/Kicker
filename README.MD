@@ -91,6 +91,7 @@ See the [roadmap and planned work](https://app.notion.com/p/lechixy/3f79ce1d06e5
 
 <p align="center">
   <a href="https://github.com/lechixy/Kicker/releases"><img src="https://img.shields.io/badge/Download-GitHub-181717?style=for-the-badge&amp;logo=github" alt="Download from GitHub Releases"></a>
+  <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.lechixy.kicker%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Flechixy%2FKicker%22%2C%22author%22%3A%22lechixy%22%2C%22name%22%3A%22Kicker%22%2C%22additionalSettings%22%3A%22%7B%5C%22includePrereleases%5C%22%3Afalse%2C%5C%22apkFilterRegEx%5C%22%3A%5C%22_release%5C%5C%5C%5C.apk%24%5C%22%2C%5C%22autoApkFilterByArch%5C%22%3Atrue%7D%22%7D"><img src="https://img.shields.io/badge/Add%20to-Obtainium-079AA6?style=for-the-badge" alt="Add Kicker to Obtainium"></a>
   <a href="https://search.f-droid.org/?q=com.lechixy.kicker"><img src="https://img.shields.io/badge/F--Droid-Check%20availability-1976D2?style=for-the-badge" alt="Check F-Droid availability"></a>
   <a href="https://apt.izzysoft.de/fdroid/index.php"><img src="https://img.shields.io/badge/IzzyOnDroid-Check%20availability-F57C00?style=for-the-badge" alt="Check IzzyOnDroid availability"></a>
 </p>
@@ -98,8 +99,19 @@ See the [roadmap and planned work](https://app.notion.com/p/lechixy/3f79ce1d06e5
 | Source | Installation |
 | --- | --- |
 | [GitHub Releases](https://github.com/lechixy/Kicker/releases) | Download an APK from a published release and install it manually. |
+| [Obtainium](#install-and-update-with-obtainium) | Install release APKs from GitHub and track updates with Obtainium. |
 | [F-Droid](https://search.f-droid.org/?q=com.lechixy.kicker) | Search for Kicker or its package ID in the F-Droid client. Listing availability is not yet confirmed; use GitHub if it is absent. |
 | [IzzyOnDroid](https://apt.izzysoft.de/fdroid/index.php) | Search the repository for Kicker or its package ID. Listing availability is not yet confirmed; use GitHub if it is absent. |
+
+### Install and update with Obtainium
+
+1. Install [Obtainium](https://obtainium.imranr.dev/) on your Android device.
+2. Tap the **Add to Obtainium** badge above and confirm the import. The configuration tracks stable GitHub releases, excludes debug APKs, and enables automatic APK filtering by device architecture.
+3. Install Kicker through Obtainium and use it to check for future updates.
+
+To add it manually, paste `https://github.com/lechixy/Kicker` into Obtainium's **Add App** screen. Set the APK filename filter (regular expression) to `_release\.apk$`, enable automatic APK filtering by architecture, and leave prereleases disabled. Enable prereleases only if you want test versions.
+
+Obtainium downloads the same APKs as GitHub Releases. No separate store listing is required; see the [Obtainium deep-link documentation](https://wiki.obtainium.imranr.dev/deep_links/).
 
 ### Install an APK from GitHub
 
