@@ -137,7 +137,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     // Depency Injection
     implementation(libs.hilt.android)
-    "baselineProfile"(project(":baselineprofile"))
+    "baselineProfile"(project(":baselineProfile"))
     ksp(libs.hilt.compiler)
     implementation(libs.hilt.navigation.compose)
     // OkHttp
