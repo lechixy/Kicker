@@ -24,4 +24,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "Kick"
 include(":app")
-include(":baselineprofile")
+include(":baselineProfile")
