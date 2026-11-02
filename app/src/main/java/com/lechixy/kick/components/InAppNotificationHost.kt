@@ -52,6 +52,7 @@ import com.lechixy.kick.data.notifications.AppNotification
 import com.lechixy.kick.data.notifications.NotificationKind
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 fun InAppNotificationHost(onActivate: (AppNotification) -> Unit, modifier: Modifier = Modifier, enabled: Boolean = true) {
@@ -64,12 +65,12 @@ fun InAppNotificationHost(onActivate: (AppNotification) -> Unit, modifier: Modif
     var visible by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(next?.id) {
-        if (next == null) { visible = false; delay(260); displayed = null; return@LaunchedEffect }
+        if (next == null) { visible = false; delay(260.milliseconds); displayed = null; return@LaunchedEffect }
         displayed = next
         visible = true
-        delay(7_000)
+        delay(7_000.milliseconds)
         visible = false
-        delay(260)
+        delay(260.milliseconds)
         repository.dismiss(next.id)
     }
     val current = displayed
@@ -79,12 +80,12 @@ fun InAppNotificationHost(onActivate: (AppNotification) -> Unit, modifier: Modif
         if (current != null) NotificationCard(current, onClick = {
             if (visible) scope.launch {
                 visible = false
-                delay(260)
+                delay(260.milliseconds)
                 repository.dismiss(current.id)
                 if (repository.accepts(current)) onActivate(current)
             }
         }, onDismiss = {
-            scope.launch { visible = false; delay(260); repository.dismiss(current.id) }
+            scope.launch { visible = false; delay(260.milliseconds); repository.dismiss(current.id) }
         })
     }
 }

@@ -9,6 +9,7 @@ import okhttp3.*
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.time.Duration.Companion.milliseconds
 
 import com.lechixy.kick.data.common.remote.KickNetwork
 
@@ -51,7 +52,7 @@ object ViewerTrackingProtocol {
             put("name", "tracking.user.watch.livestream")
             put("channel_id", session.channelId)
             put("livestream_id", session.livestreamId)
-            session.vodId?.takeIf { it.isNotBlank() }?.let { put("vod_id", it) }
+            session.vodId.takeIf { it.isNotBlank() }?.let { put("vod_id", it) }
         } }
     }.toString()
 }
@@ -86,7 +87,7 @@ class ViewerTrackingClient(private val scope: CoroutineScope) {
                     failures++
                     state.update { it.copy(status = "retrying", reconnects = it.reconnects + 1,
                         error = failure.message ?: "Viewer connection failed") }
-                    delay((1_000L shl (failures - 1).coerceAtMost(5)).coerceAtMost(30_000L))
+                    delay(((1_000L shl (failures - 1).coerceAtMost(5)).coerceAtMost(30_000L)).milliseconds)
                 }
             }
         } }
@@ -110,7 +111,7 @@ class ViewerTrackingClient(private val scope: CoroutineScope) {
             override fun onResponse(call: Call, response: Response) {
                 val result = runCatching { response.use {
                     check(it.isSuccessful) { "Viewer token HTTP ${it.code}" }
-                    val root = Json.parseToJsonElement(it.body?.string().orEmpty()).jsonObject
+                    val root = Json.parseToJsonElement(it.body.string()).jsonObject
                     root["data"]?.jsonObject?.get("token")?.jsonPrimitive?.content
                         ?.takeIf(String::isNotBlank) ?: error("Missing viewer token")
                 } }
@@ -136,26 +137,26 @@ class ViewerTrackingClient(private val scope: CoroutineScope) {
                     state.update { it.copy(lastWatchEvent = System.currentTimeMillis(), lastHandshake = System.currentTimeMillis()) }
                     launch {
                         while (isActive) {
-                            delay(ViewerTrackingProtocol.HANDSHAKE_MS)
+                            delay(ViewerTrackingProtocol.HANDSHAKE_MS.milliseconds)
                             send(ViewerTrackingProtocol.handshake(target))
                             state.update { it.copy(lastHandshake = System.currentTimeMillis()) }
                         }
                     }
                     launch {
                         while (isActive) {
-                            delay(ViewerTrackingProtocol.WATCH_MS)
+                            delay(ViewerTrackingProtocol.WATCH_MS.milliseconds)
                             send(ViewerTrackingProtocol.watch(target))
                             state.update { it.copy(lastWatchEvent = System.currentTimeMillis()) }
                         }
                     }
                     launch {
                         while (isActive) {
-                            delay(ViewerTrackingProtocol.PING_MS)
+                            delay(ViewerTrackingProtocol.PING_MS.milliseconds)
                             awaitingPongAt = android.os.SystemClock.elapsedRealtime()
                             send("{\"type\":\"ping\"}")
                             state.update { it.copy(lastPing = System.currentTimeMillis()) }
                             launch {
-                                delay(ViewerTrackingProtocol.PONG_TIMEOUT_MS)
+                                delay(ViewerTrackingProtocol.PONG_TIMEOUT_MS.milliseconds)
                                 if (awaitingPongAt != null) ended.completeExceptionally(java.io.IOException("Viewer pong timeout"))
                             }
                         }

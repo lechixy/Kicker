@@ -66,6 +66,7 @@ import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.core.app.PictureInPictureModeChangedInfo
@@ -98,6 +99,7 @@ import com.lechixy.kick.screens.following.FollowingScreen
 import com.lechixy.kick.screens.following.FollowingViewModel
 import com.lechixy.kick.screens.home.HomeScreen
 import com.lechixy.kick.screens.home.HomeViewModel
+import kotlin.time.Duration.Companion.milliseconds
 import com.lechixy.kick.screens.settings.SettingsScreen
 import com.lechixy.kick.screens.settings.general.GeneralSettingsScreen
 import com.lechixy.kick.theme.KickTheme
@@ -583,7 +585,7 @@ internal fun KickNavScaffold(
         }
         androidx.compose.animation.Crossfade(targetState = selected, label = "navigation icon") { active ->
             Icon(painterResource(if (active) destination.activeIcon else destination.inactiveIcon),
-                destination.getLabel(context), Modifier.size(24.dp).graphicsLayer {
+                stringResource(destination.label), Modifier.size(24.dp).graphicsLayer {
                     scaleX = scale.value
                     scaleY = scale.value
                 })
@@ -601,7 +603,7 @@ internal fun KickNavScaffold(
                 icon = {
                     DestinationIcon(destination, isSelected)
                 },
-                label = { Text(destination.getLabel(context)) }
+                label = { Text(stringResource(destination.label)) }
             )
         }
     }
@@ -613,7 +615,7 @@ internal fun KickNavScaffold(
                 val targetRoute = destination.name.lowercase()
                 val isSelected = com.lechixy.kick.components.navigationDestinationSelected(currentRoute, activeChannelSlug, targetRoute)
                 com.lechixy.kick.components.RailNavigationItem(
-                    expanded = expanded, selected = isSelected, label = destination.getLabel(context),
+                    expanded = expanded, selected = isSelected, label = stringResource(destination.label),
                     onClick = { onNavigate(targetRoute) },
                     icon = {
                         androidx.compose.animation.Crossfade(isSelected, animationSpec = tween(180), label = "rail icon") { active ->
@@ -681,7 +683,7 @@ internal fun KickNavScaffold(
                         val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
                         LaunchedEffect(session.signedIn, session.generation, lifecycle) {
                             if (session.signedIn) lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
-                                while (true) { following.refresh(); kotlinx.coroutines.delay(60_000) }
+                                while (true) { following.refresh(); kotlinx.coroutines.delay(60_000.milliseconds) }
                             }
                         }
                         androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f).fillMaxWidth(),

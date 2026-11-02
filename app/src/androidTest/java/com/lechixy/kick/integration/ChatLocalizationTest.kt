@@ -36,9 +36,9 @@ class ChatLocalizationTest {
         assertEquals("Mesaj en fazla 500 karakter olabilir.", ChatRestriction(ChatIssue.TOO_LONG).localized(tr))
         assertTrue(ChatRestriction(ChatIssue.RATE_LIMIT, 12).localized(en).contains("12 seconds"))
         assertTrue(ChatRestriction(ChatIssue.RATE_LIMIT, 12).localized(tr).contains("12 saniye"))
-        assertEquals("1 month", en.resources.getQuantityString(R.plurals.chatter_subscription_months, 1, 1))
-        assertEquals("26 months", en.resources.getQuantityString(R.plurals.chatter_subscription_months, 26, 26))
-        assertEquals("26 ay", tr.resources.getQuantityString(R.plurals.chatter_subscription_months, 26, 26))
+        assertEquals("1 month", en.getString(R.string.chatter_subscription_month, 1))
+        assertEquals("26 months", en.getString(R.string.chatter_subscription_months, 26))
+        assertEquals("26 ay", tr.getString(R.string.chatter_subscription_months, 26))
         assertEquals(en.getString(R.string.chat_message_empty), ChatPolicyException(ChatRestriction(ChatIssue.EMPTY)).chatUserMessage(en))
         assertEquals(tr.getString(R.string.chat_network_error), java.io.IOException().chatUserMessage(tr))
     }

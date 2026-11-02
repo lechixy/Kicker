@@ -11,14 +11,10 @@
     <string name="sleep_timer_time_left">%1$s kaldı</string>
     <string name="sleep_timer_short_hours">%1$d sa</string>
     <string name="sleep_timer_short_minutes">%1$d dk</string>
-    <plurals name="sleep_timer_hours">
-        <item quantity="one">%1$d saat</item>
-        <item quantity="other">%1$d saat</item>
-    </plurals>
-    <plurals name="sleep_timer_minutes">
-        <item quantity="one">%1$d dakika</item>
-        <item quantity="other">%1$d dakika</item>
-    </plurals>
+    <string name="sleep_timer_hour">%1$d saat</string>
+    <string name="sleep_timer_hours">%1$d saat</string>
+    <string name="sleep_timer_minute">%1$d dakika</string>
+    <string name="sleep_timer_minutes">%1$d dakika</string>
     <string name="live_badge">CANLI</string>
     <string name="home">Ana</string>
     <string name="following">Takip</string>
@@ -43,4 +39,5 @@
     <string name="events">Etkinlikler</string>
     <string name="more">More</string>
     <string name="views_count">%1$s görüntüleme</string>
+    <string name="settings_about">Hakkında</string>
 </resources>

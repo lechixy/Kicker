@@ -1,29 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <plurals name="chat_event_gifted_community">
-        <item quantity="one">%1$s topluluğa %2$s abonelik hediye etti</item>
-        <item quantity="other">%1$s topluluğa %2$s abonelik hediye etti</item>
-    </plurals>
-    <plurals name="chat_event_gifted_to">
-        <item quantity="one">%1$s, %3$s için %2$s abonelik hediye etti</item>
-        <item quantity="other">%1$s, %3$s için %2$s abonelik hediye etti</item>
-    </plurals>
-    <plurals name="chat_event_group_subscribed">
-        <item quantity="one">%1$s ve %2$s kişi daha abone oldu</item>
-        <item quantity="other">%1$s ve %2$s kişi daha abone oldu</item>
-    </plurals>
-    <plurals name="chat_event_raid">
-        <item quantity="one">%1$s, %2$s izleyiciyle baskın yaptı</item>
-        <item quantity="other">%1$s, %2$s izleyiciyle baskın yaptı</item>
-    </plurals>
-    <plurals name="chat_event_subscribed_months">
-        <item quantity="one">%1$s, %2$s aydır abone</item>
-        <item quantity="other">%1$s, %2$s aydır abone</item>
-    </plurals>
-    <plurals name="chatter_subscription_months">
-        <item quantity="one">%1$d ay</item>
-        <item quantity="other">%1$d ay</item>
-    </plurals>
+    <string name="chat_event_gifted_community_single">%1$s topluluğa %2$s abonelik hediye etti</string>
+    <string name="chat_event_gifted_community">%1$s topluluğa %2$s abonelik hediye etti</string>
+    <string name="chat_event_gifted_to_single">%1$s, %3$s için abonelik hediye etti</string>
+    <string name="chat_event_gifted_to">%1$s, %3$s için %2$s abonelik hediye etti</string>
+    <string name="chat_event_group_subscribed_single">%1$s ve %2$s kişi daha abone oldu</string>
+    <string name="chat_event_group_subscribed">%1$s ve %2$s kişi daha abone oldu</string>
+    <string name="chat_event_subscribed_month">%1$s, %2$s aydır abone</string>
+    <string name="chat_event_subscribed_months">%1$s, %2$s aydır abone</string>
+    <string name="chatter_subscription_month">%1$d ay</string>
+    <string name="chatter_subscription_months">%1$d ay</string>
+    <string name="chat_event_raid">%1$s, %2$s izleyiciyle baskın yaptı</string>
     <string name="about">Hakkında</string>
     <string name="active_chatters_bots">Botlar</string>
     <string name="active_chatters_collapse">%1$s grubunu daralt</string>
@@ -56,7 +43,7 @@
     <string name="channel_about_username">%1$s hakkında</string>
     <string name="channel_categories">Kategoriler</string>
     <string name="channel_clips_error">Klipler yüklenemedi</string>
-    <string name="channel_goal_remaining">Hedefe %1$d abonelik kaldı</string>
+    <string name="channel_goal_remaining">Hedefe %1$d abonelik kaldı!</string>
     <string name="channel_goal_subscribe">Abone ol</string>
     <string name="channel_kicks_exact">%1$s Kicks</string>
     <string name="channel_no_categories">Geçmiş kategori yok</string>
@@ -228,7 +215,7 @@
     <string name="recent_broadcasts">Geçmiş yayınlar</string>
     <string name="replying_to">Yanıt veriyor</string>
     <string name="sent_by">%1$s tarafından gönderildi</string>
-    <string name="streamer_is_live">%1$s YAYINDA!</string>
+    <string name="streamer_is_live">%1$s YAYINDA</string>
     <string name="videos">Videolar</string>
     <string name="viewers">izleyici</string>
     <string name="views">görüntüleme</string>

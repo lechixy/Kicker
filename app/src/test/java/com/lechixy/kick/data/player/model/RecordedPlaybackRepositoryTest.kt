@@ -19,8 +19,9 @@ class RecordedPlaybackRepositoryTest {
     private val videoUuid = "cb18022c-aa57-49ff-9d2a-843f02e34d52"
     private val vodId = "01a173e5-f220-78ca-9ddd-d29e8cc11441"
     private val playback = PlaybackResponse(PlaybackUrls(vod = "https://example.com/vod.m3u8"))
+    private val json = Json { ignoreUnknownKeys = true }
     // A dedicated detail DTO must ignore legacy livestream fields, including its string thumbnail.
-    private val detail = Json { ignoreUnknownKeys = true }.decodeFromString<VideoDetailResponse>(
+    private val detail = json.decodeFromString<VideoDetailResponse>(
         """{"uuid":"cb18022c-aa57-49ff-9d2a-843f02e34d52","livestream":{"id":134227291,"thumbnail":"https://example.com/image.jpg","vod_id":"01a173e5-f220-78ca-9ddd-d29e8cc11441"}}"""
     )
 

@@ -49,6 +49,7 @@ import kotlinx.coroutines.delay
 import kotlin.math.sin
 import kotlin.math.cos
 import kotlin.math.sqrt
+import kotlin.time.Duration.Companion.milliseconds
 
 private val SignalGreen = Color(0xFF53FC18)
 private val SignalAqua = Color(0xFF00F5D4)
@@ -67,7 +68,7 @@ fun StreamerIsLiveOverlay(username: String, announcementId: Long, onFinished: ()
     val animate = remember(announcementId) { ValueAnimator.areAnimatorsEnabled() }
     var time by remember(announcementId) { mutableFloatStateOf(if (animate) 0f else 1_200f) }
     LaunchedEffect(announcementId) {
-        if (!animate) { delay(1_800); finish(); return@LaunchedEffect }
+        if (!animate) { delay(1_800.milliseconds); finish(); return@LaunchedEffect }
         val start = withFrameNanos { it }
         do {
             time = ((withFrameNanos { it } - start) / 1_000_000f).coerceAtMost(RevealDurationMs)

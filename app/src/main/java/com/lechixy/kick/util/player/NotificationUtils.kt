@@ -28,9 +28,11 @@ fun sleepTimerRemainingText(resources: Resources, seconds: Int, compact: Boolean
     val minutes = totalMinutes % 60
     val parts = buildList {
         if (hours > 0) add(if (compact) resources.getString(R.string.sleep_timer_short_hours, hours)
-            else resources.getQuantityString(R.plurals.sleep_timer_hours, hours, hours))
+            else if (hours == 1) resources.getString(R.string.sleep_timer_hour, hours)
+            else resources.getString(R.string.sleep_timer_hours, hours))
         if (minutes > 0 || hours == 0) add(if (compact) resources.getString(R.string.sleep_timer_short_minutes, minutes)
-            else resources.getQuantityString(R.plurals.sleep_timer_minutes, minutes, minutes))
+            else if (minutes == 1) resources.getString(R.string.sleep_timer_minute, minutes)
+            else resources.getString(R.string.sleep_timer_minutes, minutes))
     }
     return resources.getString(R.string.sleep_timer_time_left, parts.joinToString(" "))
 }

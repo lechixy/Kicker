@@ -28,6 +28,7 @@ import androidx.media3.exoplayer.hls.playlist.HlsPlaylistParserFactory
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
+import androidx.media3.exoplayer.upstream.DefaultAllocator
 import androidx.media3.exoplayer.upstream.ParsingLoadable
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
@@ -55,6 +56,7 @@ import com.lechixy.kick.service.player.SleepTimer
 import com.lechixy.kick.service.player.distanceBehindLiveTargetMs
 import com.lechixy.kick.service.player.transformKickLivePlaylist
 
+@OptIn(UnstableApi::class)
 @AndroidEntryPoint
 class PlaybackService : MediaSessionService() {
     @Inject
@@ -66,6 +68,7 @@ class PlaybackService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
     private var progressTracker: PlaybackProgressTracker? = null
+    @OptIn(UnstableApi::class)
     private var diagnosticTracker: PlaybackDiagnosticTracker? = null
     private val viewerTracking = com.lechixy.kick.data.player.remote.ViewerTrackingClient(
         // Keep metadata decoding and websocket work off the player/UI thread.
@@ -99,7 +102,9 @@ class PlaybackService : MediaSessionService() {
             )
 
         // Keep recovery below one typical 2s segment; shrinking this further risks stalls.
+        val allocator = DefaultAllocator(true, C.DEFAULT_BUFFER_SEGMENT_SIZE)
         val loadControl = DefaultLoadControl.Builder()
+            .setAllocator(allocator)
             .setBufferDurationsMs(
                 /* minBufferMs = */ 2500,
                 /* maxBufferMs = */ 10000,
@@ -199,7 +204,7 @@ class PlaybackService : MediaSessionService() {
                     player.playbackState in listOf(Player.STATE_READY, Player.STATE_BUFFERING) &&
                     extras?.getBoolean(EXTRA_IS_LIVE) == true && channelId > 0 && livestreamId > 0
                 viewerTracking.setSession(if (watching) com.lechixy.kick.data.player.remote.ViewerSession(
-                    channelId, livestreamId, extras?.getString(EXTRA_VIEWER_VOD_ID), extras?.getString(EXTRA_VIEWER_CHANNEL_SLUG)
+                    channelId, livestreamId, extras.getString(EXTRA_VIEWER_VOD_ID), extras.getString(EXTRA_VIEWER_CHANNEL_SLUG)
                 ) else null)
                 if (events.containsAny(Player.EVENT_PLAYBACK_STATE_CHANGED, Player.EVENT_PLAY_WHEN_READY_CHANGED)) {
                     com.lechixy.kick.data.common.remote.NetworkMonitor.reportPlaybackBuffering(
@@ -208,7 +213,7 @@ class PlaybackService : MediaSessionService() {
                 }
             }
         })
-        diagnosticTracker = PlaybackDiagnosticTracker(player, liveSpeedControl, serviceScope)
+        diagnosticTracker = PlaybackDiagnosticTracker(player, liveSpeedControl, serviceScope, allocator)
         SleepTimer.attach(this, player, serviceScope)
         progressTracker = PlaybackProgressTracker(player)
         mediaSession = MediaSession.Builder(this, LiveAwarePlayer(player)).build()
@@ -216,6 +221,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = mediaSession
 
+    @OptIn(UnstableApi::class)
     override fun onDestroy() {
         SleepTimer.detach(this)
         viewerTracking.close()

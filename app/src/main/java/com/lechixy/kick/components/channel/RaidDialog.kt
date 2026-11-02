@@ -20,6 +20,7 @@ import com.lechixy.kick.data.common.remote.KickNetwork
 import com.lechixy.kick.data.common.repository.KickRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,7 +37,7 @@ internal fun RaidDialog(sourceName: String, raid: ChannelRaid, onStay: () -> Uni
     val join by rememberUpdatedState(accept)
     LaunchedEffect(raid) {
         repeat(10) {
-            delay(1000)
+            delay(1000.milliseconds)
             remaining--
         }
         join()

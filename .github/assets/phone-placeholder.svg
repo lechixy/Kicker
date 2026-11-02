@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="540" height="1080" viewBox="0 0 540 1080" role="img" aria-labelledby="title desc">
+  <title id="title">Phone screenshot placeholder</title>
+  <desc id="desc">Replace with a portrait phone screenshot. No actual application UI is shown.</desc>
+  <rect x="8" y="8" width="524" height="1064" rx="48" fill="#10150f" stroke="#354630" stroke-width="3"/>
+  <rect x="32" y="32" width="476" height="1016" rx="30" fill="none" stroke="#354630" stroke-width="2" stroke-dasharray="10 10"/>
+  <rect x="228" y="62" width="84" height="8" rx="4" fill="#354630"/>
+  <g text-anchor="middle" font-family="Arial, Helvetica, sans-serif">
+    <text x="270" y="484" fill="#53fc18" font-size="42" font-weight="700">PHONE</text>
+    <text x="270" y="536" fill="#e3e8d8" font-size="24">Screenshot placeholder</text>
+    <text x="270" y="588" fill="#a5b49d" font-size="20">540 × 1080</text>
+  </g>
+  <rect x="202" y="1016" width="136" height="6" rx="3" fill="#354630"/>
+</svg>

@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
 import org.junit.Assert.*
 import org.junit.Test
+import kotlin.time.Duration.Companion.milliseconds
 
 import com.lechixy.kick.data.account.remote.AccountApiException
 import com.lechixy.kick.data.following.repository.FollowingRepository
@@ -30,9 +31,9 @@ class FollowingRepositoryTest {
         val job = SupervisorJob()
         val repo = FollowingRepository(auth, CoroutineScope(coroutineContext + job))
         try {
-            withTimeout(3000) { repo.state.first { it.loaded } }
+            withTimeout(3000.milliseconds) { repo.state.first { it.loaded } }
             repo.setFollowing("one", false)
-            withTimeout(3000) { repo.state.first { it.loaded && !it.loading && it.channels.isEmpty() } }
+            withTimeout(3000.milliseconds) { repo.state.first { it.loaded && !it.loading && it.channels.isEmpty() } }
             failMutation = true
             assertTrue(runCatching { repo.setFollowing("one", true) }.isFailure)
             assertTrue(repo.state.value.channels.isEmpty())
@@ -52,10 +53,10 @@ class FollowingRepositoryTest {
         val job = SupervisorJob()
         val repo = FollowingRepository(auth, CoroutineScope(coroutineContext + job))
         try {
-            withTimeout(3000) { repo.state.first { it.loaded } }
+            withTimeout(3000.milliseconds) { repo.state.first { it.loaded } }
             assertEquals("5", repo.state.value.nextCursor)
             repo.loadMore()
-            withTimeout(3000) { repo.state.first { !it.loading && it.channels.size == 2 } }
+            withTimeout(3000.milliseconds) { repo.state.first { !it.loading && it.channels.size == 2 } }
             assertNull(repo.state.value.nextCursor)
             assertTrue(repo.state.value.channels[0].live)
             assertFalse(repo.state.value.channels[1].live)
@@ -68,7 +69,7 @@ class FollowingRepositoryTest {
             assertEquals(1, repo.state.value.pageIndex)
             assertNull(repo.state.value.nextCursor)
             auth.signOut()
-            withTimeout(3000) { repo.state.first { it.channels.isEmpty() && !it.loaded } }
+            withTimeout(3000.milliseconds) { repo.state.first { it.channels.isEmpty() && !it.loaded } }
         } finally { job.cancelAndJoin() }
     }
     @Test fun endpointErrorIsNotAnEmptyFollowingListAndCanRetry() = runBlocking<Unit> {
@@ -81,11 +82,11 @@ class FollowingRepositoryTest {
         val job = SupervisorJob()
         val repo = FollowingRepository(auth, CoroutineScope(coroutineContext + job))
         try {
-            withTimeout(3000) { repo.state.first { it.error != null } }
+            withTimeout(3000.milliseconds) { repo.state.first { it.error != null } }
             assertFalse(repo.state.value.loaded)
             assertTrue(auth.session.value.signedIn)
             fail = false; repo.refresh()
-            withTimeout(3000) { repo.state.first { it.loaded } }
+            withTimeout(3000.milliseconds) { repo.state.first { it.loaded } }
             assertTrue(repo.state.value.channels.isEmpty())
             assertNull(repo.state.value.error)
         } finally { job.cancelAndJoin() }
@@ -104,7 +105,7 @@ class FollowingRepositoryTest {
         val job = SupervisorJob()
         val repo = FollowingRepository(auth, CoroutineScope(coroutineContext + job))
         try {
-            val state = withTimeout(3000) { repo.state.first { it.streamsLoaded && it.error != null } }
+            val state = withTimeout(3000.milliseconds) { repo.state.first { it.streamsLoaded && it.error != null } }
             val stream = state.livestreams.single()
             assertEquals("panky", stream.channel?.slug)
             assertEquals("avatar", stream.channel?.profilePic)
@@ -116,7 +117,7 @@ class FollowingRepositoryTest {
             assertFalse(state.loaded)
             assertNull(state.streamsError)
             auth.signOut()
-            withTimeout(3000) { repo.state.first { !it.streamsLoaded && it.livestreams.isEmpty() } }
+            withTimeout(3000.milliseconds) { repo.state.first { !it.streamsLoaded && it.livestreams.isEmpty() } }
         } finally { job.cancelAndJoin() }
     }
 
@@ -134,22 +135,22 @@ class FollowingRepositoryTest {
         val job = SupervisorJob()
         val repo = FollowingRepository(auth, CoroutineScope(coroutineContext + job))
         try {
-            withTimeout(3000) { repo.state.first { it.loaded } }
+            withTimeout(3000.milliseconds) { repo.state.first { it.loaded } }
             fail = true
             repo.loadMore()
-            withTimeout(3000) { repo.state.first { it.error != null } }
+            withTimeout(3000.milliseconds) { repo.state.first { it.error != null } }
             assertEquals(0, repo.state.value.pageIndex)
             assertEquals("20", repo.state.value.nextCursor)
             fail = false
             repo.retryPage()
-            withTimeout(3000) { repo.state.first { it.pageIndex == 1 } }
+            withTimeout(3000.milliseconds) { repo.state.first { it.pageIndex == 1 } }
             assertEquals(listOf(null, "20", "20"), cursors)
             repo.previousPage()
             repo.loadMore()
             assertEquals(3, cursors.size)
             fail = true
             repo.refresh()
-            withTimeout(3000) { repo.state.first { it.error != null && !it.loading } }
+            withTimeout(3000.milliseconds) { repo.state.first { it.error != null && !it.loading } }
             repo.previousPage()
             assertEquals(0, repo.state.value.pageIndex)
             assertEquals("live", repo.state.value.pageChannels.single().slug)

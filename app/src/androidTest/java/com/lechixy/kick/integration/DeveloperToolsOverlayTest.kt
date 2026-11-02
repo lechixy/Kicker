@@ -158,6 +158,7 @@ class DeveloperToolsOverlayTest {
         val restoredPosition = panelPosition()!!
         assertEquals(draggedPosition.first.toFloat(), restoredPosition.first.toFloat(), 2f)
         assertEquals(draggedPosition.second.toFloat(), restoredPosition.second.toFloat(), 2f)
+        compose.waitUntil(2_000) { ViewerTrackingDiagnostics.mutableState.subscriptionCount.value > 0 }
         // No input anywhere for seven seconds hides the native panel and releases its touch region.
         fun panelVisible(): Boolean {
             var visible = false
@@ -169,8 +170,10 @@ class DeveloperToolsOverlayTest {
             return visible
         }
         compose.waitUntil(9_000) { !panelVisible() }
+        compose.waitUntil(2_000) { ViewerTrackingDiagnostics.mutableState.subscriptionCount.value == 0 }
         InstrumentationRegistry.getInstrumentation().sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_SHIFT_LEFT)
         compose.waitUntil(2_000) { panelVisible() }
+        compose.waitUntil(2_000) { ViewerTrackingDiagnostics.mutableState.subscriptionCount.value > 0 }
         runBlocking { repository.set(SettingsKeys.DEVELOPER_FLOATING_MENU, false) }
         compose.waitUntil(5_000) { panelPosition() == null }
         assertEquals(bounds, compose.onNodeWithTag("screen").fetchSemanticsNode().boundsInRoot)

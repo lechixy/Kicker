@@ -5,7 +5,7 @@
     <string name="settings_no_results">No matching settings</string>
     <string name="notification_reward_title">Your reward is ready</string>
     <string name="notification_reward_description">You reached %1$d minutes of watch time, tap to view your challenges</string>
-    <string name="notification_live_title">%1$s just went live!</string>
+    <string name="notification_live_title">%1$s just went live</string>
     <string name="notification_live_description">Tap to join the stream</string>
     <string name="notification_dismiss">Dismiss notification</string>
     <string name="developer_notification_previews">Notification and release previews</string>
@@ -13,7 +13,7 @@
     <string name="developer_live_notification">Preview live notification</string>
     <string name="release_whats_new">What’s new</string>
     <string name="release_update_available">Update available</string>
-    <string name="release_on_github">View on GitHub</string>
+    <string name="github_label" translatable="false">GitHub</string>
     <string name="release_no_notes">Release notes are not available right now, you can view published releases on GitHub</string>
     <string name="release_update">Update</string>
     <string name="release_later">Maybe later</string>

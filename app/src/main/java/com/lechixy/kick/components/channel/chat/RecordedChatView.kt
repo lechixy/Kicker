@@ -17,6 +17,7 @@ import com.lechixy.kick.data.common.repository.KickRepository
 import com.lechixy.kick.data.player.model.RecordedPlayback
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 internal fun RecordedChatView(
@@ -33,14 +34,19 @@ internal fun RecordedChatView(
     }
     val timeline = remember(channel.id, recording.id, start) { RecordedChatTimeline(start) }
     val repository = remember { KickRepository(KickNetwork.api) }
-    val position = playerHost.recordingPositionMs
+    val active = LocalChatContentActive.current
+    val initialPosition = remember(recording.id, playerHost) { playerHost.recordingPositionMs }
+    val position by produceState(initialPosition, playerHost, active) {
+        if (active) snapshotFlow { playerHost.recordingPositionMs }.collect { value = it }
+    }
     val bucket = position / 5000
     var previousBucket by remember(timeline) { mutableStateOf<Long?>(null) }
     var version by remember(timeline) { mutableIntStateOf(0) }
     var loading by remember(timeline) { mutableStateOf(true) }
     var failed by remember(timeline) { mutableStateOf(false) }
     var retry by remember(timeline) { mutableIntStateOf(0) }
-    LaunchedEffect(timeline, bucket, retry) {
+    LaunchedEffect(timeline, bucket, retry, active) {
+        if (!active) return@LaunchedEffect
         val reset = previousBucket == null || bucket < previousBucket!! || bucket > previousBucket!! + 1
         if (reset) { timeline.clear(); version++; loading = true }
         previousBucket = bucket
@@ -62,7 +68,7 @@ internal fun RecordedChatView(
             catch (_: Exception) {
                 loading = false
                 failed = true
-                delay(5000)
+                delay(5000.milliseconds)
             }
         }
     }

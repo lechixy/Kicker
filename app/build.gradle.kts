@@ -22,11 +22,11 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.lechixy.kick"
+        applicationId = "com.lechixy.kicker"
         minSdk = 30
         targetSdk = 36
         versionCode = 1
-        versionName = "1.0"
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -47,10 +47,18 @@ android {
         compose = true
         buildConfig = true
     }
+
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            isUniversalApk = true
+        }
+    }
 }
 
 dependencies {
-    implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.adaptive)
     implementation(libs.androidx.compose.foundation)
@@ -88,7 +96,7 @@ dependencies {
     implementation(libs.androidx.core.splashscreen)
     // Retrofit
     implementation(libs.retrofit)
-    implementation("io.noties.markwon:core:4.6.2")
+    implementation(libs.core)
     implementation(libs.converter.kotlinx.serialization)
     // Settings
     implementation(libs.androidx.datastore.preferences)

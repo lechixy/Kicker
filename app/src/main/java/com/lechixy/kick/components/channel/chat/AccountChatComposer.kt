@@ -18,6 +18,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -38,6 +39,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import java.time.Instant
+import kotlin.time.Duration.Companion.milliseconds
 
 import com.lechixy.kick.R
 import com.lechixy.kick.components.account.AccountSignInState
@@ -105,6 +107,7 @@ private fun ComposerContent(
     onUserCommand: (String) -> Unit
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val scope = rememberCoroutineScope()
     var content by rememberSaveable { mutableStateOf("") }
@@ -191,7 +194,7 @@ private fun ComposerContent(
                             points = fetched
                         }
                 } catch (failure: Exception) { if (failure is CancellationException) throw failure }
-                delay(60_000)
+                delay(60_000.milliseconds)
             }
         }
     }
@@ -222,7 +225,7 @@ private fun ComposerContent(
     }
     LaunchedEffect(session.signedIn, compact, expanded) {
         if (session.signedIn) lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            while (true) { delay(if (compact && !expanded) 1_000 else 250); tick++ }
+            while (true) { delay((if (compact && !expanded) 1_000 else 250).milliseconds); tick++ }
         }
     }
     val currentReply by rememberUpdatedState(replyTo)
@@ -403,9 +406,9 @@ private fun ComposerContent(
                             }
                             catch (failure: Exception) {
                                 if (failure is CancellationException) throw failure
-                                error = if (failure is ChatCommandException) failure.usage?.let { context.getString(R.string.command_usage, it) }
-                                    ?: context.getString(R.string.command_not_available)
-                                    else if (failure is java.io.IOException) context.getString(R.string.chat_send_unknown)
+                                error = if (failure is ChatCommandException) failure.usage?.let { resources.getString(R.string.command_usage, it) }
+                                    ?: resources.getString(R.string.command_not_available)
+                                    else if (failure is java.io.IOException) resources.getString(R.string.chat_send_unknown)
                                     else failure.chatUserMessage(context)
                             } finally { sending = false; refresh++; tick++ }
                         }
@@ -436,7 +439,7 @@ private fun ComposerContent(
                     catch (failure: Exception) {
                         if (failure is CancellationException) throw failure
                         if (previous != null) access = access?.copy(identity = previous)
-                        error = context.getString(R.string.identity_save_failed)
+                        error = resources.getString(R.string.identity_save_failed)
                     } finally { identitySaving = false }
                 }
             }
@@ -494,7 +497,7 @@ private fun ChatRulesCard(rules: String, generation: Long, seen: (Long) -> Boole
     LaunchedEffect(rules, interaction) {
         if (rules.isBlank() || !visible) return@LaunchedEffect
         markSeen(generation)
-        delay(if (expanded) 12000 else 8000)
+        delay((if (expanded) 12000 else 8000).milliseconds)
         visible = false
     }
     AnimatedVisibility(visible && rules.isNotBlank()) {

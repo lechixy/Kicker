@@ -53,7 +53,9 @@ import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -88,6 +90,8 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 import com.lechixy.kick.R
+import com.lechixy.kick.components.channel.chat.LocalChatContentActive
+import com.lechixy.kick.components.channel.chat.collectAsChatState
 import com.lechixy.kick.components.CHAT_WIDTH_FRACTION
 import com.lechixy.kick.components.CardSection
 import com.lechixy.kick.components.ChannelCardSkeleton
@@ -229,7 +233,7 @@ fun ChannelScreen(
     androidx.compose.runtime.DisposableEffect(playerHost, offlineCollapse) {
         playerHost?.offlineCollapseProgress = offlineCollapse
         onDispose {
-            if (playerHost?.offlineCollapseProgress === offlineCollapse) playerHost?.offlineCollapseProgress = null
+            if (playerHost?.offlineCollapseProgress === offlineCollapse) playerHost.offlineCollapseProgress = null
         }
     }
     val tabScrollStates = remember(channelSlug) { ChannelTab.entries.associateWith { LazyListState() } }
@@ -317,6 +321,12 @@ fun ChannelScreen(
                 val hasSideChat = isWide || isFullScreen
                 val isChatActuallyVisible =
                     playerHost?.isSideChatOpen(isWide) ?: (isWide && isChatVisible)
+                // Retain measured rows for gestures; resume live work only once open.
+                val sideChatActive by remember(playerHost, isChatActuallyVisible) {
+                    derivedStateOf {
+                        isChatActuallyVisible && (playerHost?.chatOpenProgress?.value ?: 1f) >= 0.999f
+                    }
+                }
 
                 Layout(
                     contents = listOf(
@@ -513,8 +523,6 @@ fun ChannelScreen(
                             }
                         },
                         {
-                            // Yan sohbet paneli: hasSideChat aktifken her zaman compose'lu kalır,
-                            // böylece sola kaydırmanın ilk karesinde sıfırdan oluşturulmaz, GPU'da kayarak açılır.
                             if (hasSideChat && channel != null) {
                                 Box(
                                     Modifier
@@ -525,11 +533,13 @@ fun ChannelScreen(
                                             alpha = openProgress
                                         }
                                 ) {
-                                    sharedChat(
-                                        channel,
-                                        { playerHost?.setSideChatVisible(visible = false, isWide = isWide) },
-                                        Modifier.fillMaxSize()
-                                    )
+                                    CompositionLocalProvider(LocalChatContentActive provides sideChatActive) {
+                                        sharedChat(
+                                            channel,
+                                            { playerHost?.setSideChatVisible(visible = false, isWide = isWide) },
+                                            Modifier.fillMaxSize()
+                                        )
+                                    }
 
                                     if (isChatActuallyVisible || isDraggingHandle) {
                                         ChatResizeHandle(
@@ -639,15 +649,15 @@ private fun ChannelChatSection(
 ) {
     val community: com.lechixy.kick.components.channel.chat.ChatCommunityViewModel =
         androidx.lifecycle.viewmodel.compose.viewModel(key = "community-${channel.slug}")
-    val highTraffic by viewModel.highTraffic.collectAsState()
-    val chatMessages by viewModel.chatMessages.collectAsState()
-    val chatConnectionState by viewModel.chatConnectionState.collectAsState()
-    val pinnedMessage by viewModel.pinnedMessage.collectAsState()
-    val userColors by viewModel.userColors.collectAsState()
-    val chatSettings by viewModel.chatSettings.collectAsState()
-    val pointsUpdated by viewModel.pointsUpdated.collectAsState()
-    val emotes by viewModel.emotes.collectAsState()
-    val replySession by com.lechixy.kick.data.account.AccountGraph.auth.session.collectAsState()
+    val highTraffic by viewModel.highTraffic.collectAsChatState()
+    val chatMessages by viewModel.chatMessages.collectAsChatState()
+    val chatConnectionState by viewModel.chatConnectionState.collectAsChatState()
+    val pinnedMessage by viewModel.pinnedMessage.collectAsChatState()
+    val userColors by viewModel.userColors.collectAsChatState()
+    val chatSettings by viewModel.chatSettings.collectAsChatState()
+    val pointsUpdated by viewModel.pointsUpdated.collectAsChatState()
+    val emotes by viewModel.emotes.collectAsChatState()
+    val replySession by com.lechixy.kick.data.account.AccountGraph.auth.session.collectAsChatState()
     var replyTarget by remember(channel.id, replySession.generation) { mutableStateOf<com.lechixy.kick.data.chat.model.ChatMessage?>(null) }
     LaunchedEffect(chatMessages) {
         if (chatMessages.any { it.id == replyTarget?.id && it.isDeleted }) replyTarget = null
@@ -904,7 +914,7 @@ private fun ChannelHeaderInfo(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
-                        text = FormatUtils.formatFollowersCount(channel.followersCount, context.resources.configuration.locales[0]),
+                        text = FormatUtils.formatFollowersCount(channel.followersCount, LocalConfiguration.current.locales[0]),
                         style = MaterialTheme.typography.bodySmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
@@ -993,7 +1003,7 @@ private fun ChannelTabsRow(
                 onClick = { onTabSelected(tab) },
                 text = {
                     Text(
-                        text = tab.getLabel(LocalContext.current),
+                        text = stringResource(tab.label),
                         fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal
                     )
                 }

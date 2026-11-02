@@ -58,6 +58,7 @@ import com.lechixy.kick.data.channel.model.ChannelDetail
 import com.lechixy.kick.data.channel.model.ChannelReward
 import com.lechixy.kick.data.channel.model.formatExactBalance
 import kotlinx.coroutines.CancellationException
+import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 internal fun ChannelPointsDialog(
@@ -219,7 +220,7 @@ private fun PointsUpdateTime(lastUpdate: java.time.Instant?, nextAward: java.tim
     var now by remember { mutableStateOf(java.time.Instant.now()) }
     LaunchedEffect(nextAward) {
         while (nextAward != null && now.isBefore(nextAward)) {
-            kotlinx.coroutines.delay(1000)
+            kotlinx.coroutines.delay(1000.milliseconds)
             now = java.time.Instant.now()
         }
     }

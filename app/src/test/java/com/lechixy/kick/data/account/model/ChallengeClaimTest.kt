@@ -4,6 +4,7 @@ import com.lechixy.kick.data.account.support.objectJson
 import com.lechixy.kick.data.account.support.signedInAuth
 
 import kotlinx.coroutines.*
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
@@ -61,16 +62,16 @@ class ChallengeClaimTest {
         val job = SupervisorJob()
         val repo = ChallengesRepository(auth, CoroutineScope(coroutineContext + job))
         try {
-            withTimeout(3_000) { repo.state.first { it.loaded } }
+            withTimeout(3_000.milliseconds) { repo.state.first { it.loaded } }
             repo.claim(ready); repo.claim(ready)
             assertEquals(ready.id, repo.state.value.claimingId)
-            withTimeout(3_000) { entered.await() }
+            withTimeout(3_000.milliseconds) { entered.await() }
             assertEquals(1, posts)
             finish.complete(response)
-            withTimeout(3_000) { repo.state.first { it.reward != null } }
+            withTimeout(3_000.milliseconds) { repo.state.first { it.reward != null } }
             assertTrue(repo.state.value.challenges.single().claimed)
             repo.acknowledgeReward()
-            withTimeout(3_000) { repo.state.first { !it.loading } }
+            withTimeout(3_000.milliseconds) { repo.state.first { !it.loading } }
             assertNull(repo.state.value.reward)
             assertTrue(repo.state.value.challenges.single().claimed)
             repo.claim(ready); yield()
@@ -87,9 +88,9 @@ class ChallengeClaimTest {
         val job = SupervisorJob()
         val repo = ChallengesRepository(auth, CoroutineScope(coroutineContext + job))
         try {
-            withTimeout(3_000) { repo.state.first { it.loaded } }
+            withTimeout(3_000.milliseconds) { repo.state.first { it.loaded } }
             repo.claim(ready)
-            withTimeout(3_000) { repo.state.first { it.claimFailed && !it.loading } }
+            withTimeout(3_000.milliseconds) { repo.state.first { it.claimFailed && !it.loading } }
             assertTrue(repo.state.value.challenges.single().claimed)
             repo.claim(ready); yield()
             assertEquals(1, posts)
@@ -105,11 +106,11 @@ class ChallengeClaimTest {
         val job = SupervisorJob()
         val repo = ChallengesRepository(auth, CoroutineScope(coroutineContext + job))
         try {
-            withTimeout(3_000) { repo.state.first { it.loaded } }
+            withTimeout(3_000.milliseconds) { repo.state.first { it.loaded } }
             repo.claim(ready)
             entered.await()
             auth.signOut()
-            withTimeout(3_000) { repo.state.first { !it.loaded } }
+            withTimeout(3_000.milliseconds) { repo.state.first { !it.loaded } }
             assertNull(repo.state.value.reward)
             assertNull(repo.state.value.claimingId)
         } finally { job.cancelAndJoin() }

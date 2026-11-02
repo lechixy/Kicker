@@ -7,7 +7,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
-import androidx.appcompat.view.WindowCallbackWrapper
+
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.window.DialogWindowProvider
 import android.view.WindowManager
@@ -50,6 +50,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.combine
 import java.text.DateFormat
 import java.util.Date
+import kotlin.time.Duration.Companion.milliseconds
 
 import com.lechixy.kick.BuildConfig
 import com.lechixy.kick.R
@@ -216,11 +217,11 @@ fun DeveloperToolsOverlay(isInPipMode: Boolean, onTriggerLive: () -> Unit, canTr
                 if (view.isAttachedToWindow) manager.updateViewLayout(view, params)
             }
             idleJob = scope.launch {
-                delay(7_000)
+                delay(7_000.milliseconds)
                 idleHidden = true
                 params.flags = params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
                 if (view.isAttachedToWindow) manager.updateViewLayout(view, params)
-                delay(180)
+                delay(180.milliseconds)
                 view.visibility = View.INVISIBLE
             }
         }
@@ -229,18 +230,18 @@ fun DeveloperToolsOverlay(isInPipMode: Boolean, onTriggerLive: () -> Unit, canTr
         fun observeWindow(window: Window) {
             if (window in inputCallbacks) return
             val original = window.callback ?: return
-            val observer = object : WindowCallbackWrapper(original) {
+            val observer = object : Window.Callback by original {
                 override fun dispatchTouchEvent(event: MotionEvent): Boolean {
                     recordInput()
-                    return super.dispatchTouchEvent(event)
+                    return original.dispatchTouchEvent(event)
                 }
                 override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
                     recordInput()
-                    return super.dispatchGenericMotionEvent(event)
+                    return original.dispatchGenericMotionEvent(event)
                 }
                 override fun dispatchKeyEvent(event: KeyEvent): Boolean {
                     recordInput()
-                    return super.dispatchKeyEvent(event)
+                    return original.dispatchKeyEvent(event)
                 }
             }
             inputCallbacks[window] = original to observer
@@ -281,7 +282,7 @@ fun DeveloperToolsOverlay(isInPipMode: Boolean, onTriggerLive: () -> Unit, canTr
             if (next) resizeWindow(true)
             expanded = next
             if (!next) resizeJob = scope.launch {
-                delay(220)
+                delay(220.milliseconds)
                 if (!expanded) resizeWindow(false)
             }
         }
@@ -323,7 +324,7 @@ fun DeveloperToolsOverlay(isInPipMode: Boolean, onTriggerLive: () -> Unit, canTr
                         }
                         IconButton(onClick = {
                             visible = false
-                            scope.launch { delay(180); repository.set(SettingsKeys.DEVELOPER_FLOATING_MENU, false) }
+                            scope.launch { delay(180.milliseconds); repository.set(SettingsKeys.DEVELOPER_FLOATING_MENU, false) }
                         }, modifier = Modifier.size(40.dp)) {
                             Icon(painterResource(R.drawable.close_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
                                 contentDescription = stringResource(R.string.developer_close), modifier = Modifier.size(20.dp))
@@ -333,7 +334,9 @@ fun DeveloperToolsOverlay(isInPipMode: Boolean, onTriggerLive: () -> Unit, canTr
                         exit = shrinkVertically(tween(220)) + fadeOut(tween(120))) {
                         Column(Modifier.fillMaxWidth().heightIn(max = minOf(420.dp, maxPanelHeight - 48.dp))
                             .verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            DeveloperToolsContent({ trigger() }, canTrigger)
+                            // A native INVISIBLE window keeps its composition alive.
+                            // Drop the live collectors while the panel is idle-hidden.
+                            if (!idleHidden) DeveloperToolsContent({ trigger() }, canTrigger)
                         }
                     }
                 }
@@ -358,7 +361,7 @@ fun DeveloperToolsOverlay(isInPipMode: Boolean, onTriggerLive: () -> Unit, canTr
         // remain above them without taking focus or changing any existing window's flags.
         val followFocusedWindow = scope.launch {
             while (isActive) {
-                delay(200)
+                delay(200.milliseconds)
                 if (!activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) continue
                 val roots = WindowInspector.getGlobalWindowViews()
                 roots.filter { it !== view }.forEach(::observeDialogWindows)

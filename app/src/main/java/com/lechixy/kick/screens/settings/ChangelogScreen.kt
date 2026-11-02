@@ -1,13 +1,33 @@
 package com.lechixy.kick.screens.settings
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -17,7 +37,10 @@ import com.lechixy.kick.components.AppLoadingIndicator
 import com.lechixy.kick.components.ReleaseDialog
 import com.lechixy.kick.components.settings.SettingCard
 import com.lechixy.kick.components.settings.SettingsTopBar
-import com.lechixy.kick.data.releases.*
+import com.lechixy.kick.data.releases.GitHubRelease
+import com.lechixy.kick.data.releases.ReleaseConfig
+import com.lechixy.kick.data.releases.ReleaseDialogMode
+import com.lechixy.kick.data.releases.ReleaseDialogRequest
 
 val LocalOpenChangelog = staticCompositionLocalOf<() -> Unit> { {} }
 
@@ -51,9 +74,20 @@ internal fun ChangelogContent(state: ReleaseHistoryState, onRetry: () -> Unit, o
                             ?.trim()?.trimStart('#', '*', ' ')?.take(160),
                         onClick = { selected = release })
                 }
-                item { TextButton(onClick = { runCatching { uri.openUri(ReleaseConfig.RELEASES_URL) } }) {
-                    Text(stringResource(R.string.release_on_github))
-                } }
+                item {
+                    Row(
+                        Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        FilledTonalButton(
+                            onClick = { runCatching { uri.openUri(ReleaseConfig.RELEASES_URL) } }
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(painterResource(R.drawable.github), contentDescription = stringResource(R.string.github_label))
+                                Text(stringResource(R.string.github_label))
+                            }
+                        }
+                    }
+                }
             }
         }
     }

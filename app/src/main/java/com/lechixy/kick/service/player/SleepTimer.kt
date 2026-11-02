@@ -5,6 +5,7 @@ import android.os.SystemClock
 import androidx.media3.common.Player
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlin.time.Duration.Companion.milliseconds
 
 import com.lechixy.kick.util.player.NotificationUtils
 
@@ -69,7 +70,7 @@ internal suspend fun runSleepTimerCountdown(
     nowMs: () -> Long = SystemClock::elapsedRealtime,
     onTick: (Int) -> Unit,
     onFinished: () -> Unit,
-    waitNextTick: suspend () -> Unit = { delay(1000) }
+    waitNextTick: suspend () -> Unit = { delay(1000.milliseconds) }
 ) {
     while (true) {
         currentCoroutineContext().ensureActive()

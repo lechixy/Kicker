@@ -6,6 +6,7 @@ import com.lechixy.kick.data.account.support.signedInAuth
 import java.time.Instant
 import java.util.Locale
 import kotlinx.coroutines.*
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.*
@@ -109,17 +110,17 @@ class ChallengesTest {
         val job = SupervisorJob()
         val repo = ChallengesRepository(auth, CoroutineScope(coroutineContext + job))
         try {
-            withTimeout(3000) { repo.state.first { it.failed } }
+            withTimeout(3000.milliseconds) { repo.state.first { it.failed } }
             assertFalse(repo.state.value.loaded)
             assertEquals(ChallengeLoadFailure.Http, repo.state.value.failure)
             assertEquals(403, repo.state.value.httpStatus)
             fail = false; repo.refresh()
-            withTimeout(3000) { repo.state.first { it.loaded } }
+            withTimeout(3000.milliseconds) { repo.state.first { it.loaded } }
             assertNull(repo.state.value.failure)
             assertNull(repo.state.value.httpStatus)
             assertEquals(8, repo.state.value.challenges.single().condition.progress.toInt())
             auth.signOut()
-            withTimeout(3000) { repo.state.first { !it.loaded && it.challenges.isEmpty() } }
+            withTimeout(3000.milliseconds) { repo.state.first { !it.loaded && it.challenges.isEmpty() } }
         } finally { job.cancelAndJoin() }
     }
     @Test fun goalEventIsScopedToUserAndPrivateChannelAndSurvivesStaleFetch() = runBlocking<Unit> {
@@ -128,7 +129,7 @@ class ChallengesTest {
         val job = SupervisorJob()
         val repo = ChallengesRepository(auth, CoroutineScope(coroutineContext + job))
         try {
-            withTimeout(3000) { repo.state.first { it.loaded } }
+            withTimeout(3000.milliseconds) { repo.state.first { it.loaded } }
             val payload = JsonPrimitive("""{"user_id":42,"challenge_id":"daily-id","recurrence":"daily","threshold_minutes":60}""")
             repo.onGoalReached("private-99", payload)
             assertEquals(8, repo.state.value.challenges.single().condition.progress.toInt())
@@ -137,7 +138,7 @@ class ChallengesTest {
             repo.onGoalReached("private-42", payload)
             assertTrue(repo.state.value.challenges.single().canClaim(Instant.now()))
             yield()
-            withTimeout(3000) { repo.state.first { !it.loading } }
+            withTimeout(3000.milliseconds) { repo.state.first { !it.loading } }
             assertTrue(repo.state.value.challenges.single().canClaim(Instant.now()))
         } finally { job.cancelAndJoin() }
     }
@@ -147,12 +148,12 @@ class ChallengesTest {
         val job = SupervisorJob()
         val repo = ChallengesRepository(auth, CoroutineScope(coroutineContext + job))
         try {
-            withTimeout(3000) { repo.state.first { it.loaded } }
+            withTimeout(3000.milliseconds) { repo.state.first { it.loaded } }
             repo.onGoalReached("private-42", JsonPrimitive("""{"user_id":42,"challenge_id":"daily-id","recurrence":"daily","threshold_minutes":60}"""))
-            withTimeout(3000) { repo.state.first { !it.loading } }
+            withTimeout(3000.milliseconds) { repo.state.first { !it.loading } }
             data = challenge(Instant.now().plusSeconds(86400)).copy(condition = Condition(0, 60, "watch_time_minutes"))
             repo.refresh()
-            withTimeout(3000) { repo.state.first { !it.loading && it.challenges.single().window == data.window } }
+            withTimeout(3000.milliseconds) { repo.state.first { !it.loading && it.challenges.single().window == data.window } }
             assertEquals(0, repo.state.value.challenges.single().condition.progress.toInt())
         } finally { job.cancelAndJoin() }
     }

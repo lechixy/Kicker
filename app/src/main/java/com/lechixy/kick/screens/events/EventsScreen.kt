@@ -10,6 +10,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 import com.lechixy.kick.R
 import com.lechixy.kick.components.ContentState
@@ -24,7 +25,7 @@ fun EventsScreen(onChannelClick: (String) -> Unit = {}) {
     var refreshing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     Scaffold(topBar = { HomeTopBar(onChannelClick = onChannelClick) }) { padding ->
-        PullToRefreshBox(refreshing, { scope.launch { refreshing = true; delay(500); refreshing = false } },
+        PullToRefreshBox(refreshing, { scope.launch { refreshing = true; delay(500.milliseconds); refreshing = false } },
             Modifier.fillMaxSize().padding(padding)) {
             SkeletonLoadingScope(refreshing) {
                 LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {

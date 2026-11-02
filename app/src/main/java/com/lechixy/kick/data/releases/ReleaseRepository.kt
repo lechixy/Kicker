@@ -1,16 +1,16 @@
 package com.lechixy.kick.data.releases
 
+import com.lechixy.kick.data.common.remote.KickNetwork
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import retrofit2.http.GET
 import retrofit2.http.Path
-import com.lechixy.kick.data.common.remote.KickNetwork
 import javax.inject.Inject
 import javax.inject.Singleton
 
 object ReleaseConfig {
     const val OWNER = "lechixy"
-    const val REPOSITORY = "Kick"
+    const val REPOSITORY = "Kicker"
     const val API_URL = "https://api.github.com/"
     const val RELEASES_URL = "https://github.com/$OWNER/$REPOSITORY/releases"
     // Set this for a store flavor when its listing is published; GitHub works with F-Droid/Obtainium builds.

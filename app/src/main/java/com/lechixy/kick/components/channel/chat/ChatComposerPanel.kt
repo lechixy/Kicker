@@ -12,6 +12,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.lechixy.kick.R
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 internal fun ChatComposerPanel(
@@ -24,7 +25,7 @@ internal fun ChatComposerPanel(
 ) {
     LaunchedEffect(compact, expanded, allowAutoHide) {
         if (compact && expanded && allowAutoHide) {
-            delay(5_000)
+            delay(5_000.milliseconds)
             onExpandedChange(false)
         }
     }

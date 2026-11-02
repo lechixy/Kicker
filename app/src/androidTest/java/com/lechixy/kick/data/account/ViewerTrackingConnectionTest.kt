@@ -7,6 +7,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.serialization.json.*
 import okhttp3.*
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -42,7 +43,7 @@ class ViewerTrackingConnectionTest {
                     pong.completeExceptionally(AssertionError("Viewer connection failed (HTTP ${response?.code ?: "none"})"))
                 }
             })
-            try { withTimeout(15_000) { pong.await() } } finally { socket.cancel() }
+            try { withTimeout(15_000.milliseconds) { pong.await() } } finally { socket.cancel() }
         } finally {
             client.dispatcher.executorService.shutdown()
             client.connectionPool.evictAll()

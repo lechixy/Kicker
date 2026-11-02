@@ -6,6 +6,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.*
+import kotlin.time.Duration.Companion.milliseconds
 import org.junit.Assert.*
 import org.junit.Test
 import java.io.File
@@ -25,8 +26,8 @@ class SynchronizedEmoteTest {
         try {
             val second = withContext(Dispatchers.Main) { VisibleEmotes.acquire(context, url).also { acquired++ } }
             assertSame(first, second)
-            withTimeout(10000) {
-                while (withContext(Dispatchers.Main) { first.drawable == null && !first.failed }) delay(10)
+            withTimeout(10000.milliseconds) {
+                while (withContext(Dispatchers.Main) { first.drawable == null && !first.failed }) delay(10.milliseconds)
             }
             withContext(Dispatchers.Main) {
                 assertFalse("Animated GIF should decode successfully", first.failed)
@@ -36,7 +37,7 @@ class SynchronizedEmoteTest {
                 assertSame(first.drawable, second.drawable)
             }
             val colors = mutableSetOf<Int>()
-            withTimeout(5000) {
+            withTimeout(5000.milliseconds) {
                 while (!(Color.RED in colors && Color.GREEN in colors)) {
                     withContext(Dispatchers.Main) {
                         val drawable = first.drawable!!
@@ -45,7 +46,7 @@ class SynchronizedEmoteTest {
                         colors.add(bitmap.getPixel(0, 0))
                         bitmap.recycle()
                     }
-                    delay(40)
+                    delay(40.milliseconds)
                 }
             }
             withContext(Dispatchers.Main) {
@@ -75,8 +76,8 @@ class SynchronizedEmoteTest {
         val second = withContext(Dispatchers.Main) { VisibleEmotes.acquire(context, url, animated = false) }
         try {
             assertSame(first, second)
-            withTimeout(10000) {
-                while (withContext(Dispatchers.Main) { first.drawable == null && !first.failed }) delay(10)
+            withTimeout(10000.milliseconds) {
+                while (withContext(Dispatchers.Main) { first.drawable == null && !first.failed }) delay(10.milliseconds)
             }
             val initialFrame = withContext(Dispatchers.Main) {
                 assertFalse(first.failed)
@@ -84,7 +85,7 @@ class SynchronizedEmoteTest {
                 assertFalse((first.drawable as? Animatable)?.isRunning == true)
                 first.frame
             }
-            delay(300)
+            delay(300.milliseconds)
             withContext(Dispatchers.Main) { assertEquals(initialFrame, first.frame) }
         } finally {
             withContext(Dispatchers.Main) {

@@ -87,7 +87,7 @@ internal fun settingsCatalog(): List<SettingsEntry> {
             SettingSwitch(SettingsKeys.AUTO_CONNECT_CHAT, stringResource(R.string.settings_chat_connection))
         },
         SettingsEntry("chat-spacing", R.string.settings_chat_spacing, null, chat) {
-            SettingSlider(SettingsKeys.CHAT_MESSAGE_SPACING, stringResource(R.string.settings_chat_spacing), valueRange = 0f..25f, steps = 24, valueFormatter = { "${it.toInt()} dp" })
+            SettingSlider(SettingsKeys.CHAT_MESSAGE_SPACING, stringResource(R.string.settings_chat_spacing), valueRange = 0f..25f, steps = 24, valueFormatter = { "$it dp" })
         },
         SettingsEntry("chat-width", R.string.settings_chat_width, null, chat) {
             SettingFloatSlider(SettingsKeys.CHAT_WIDTH_FRACTION, stringResource(R.string.settings_chat_width), valueRange = .18f.. .60f, steps = 41, valueFormatter = { "${(it * 100).toInt()}%" })

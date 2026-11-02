@@ -2,7 +2,7 @@ package com.lechixy.kick.components.account
 
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -23,7 +23,7 @@ fun rememberAccountFollowAction(slug: String): AccountFollowAction {
     val session by AccountGraph.auth.session.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     val uriHandler = LocalUriHandler.current
-    val context = LocalContext.current
+    val resources = LocalResources.current
     var following by remember(slug, session.generation) { mutableStateOf<Boolean?>(null) }
     var busy by remember(slug, session.generation) { mutableStateOf(false) }
     var error by remember(slug, session.generation) { mutableStateOf<String?>(null) }
@@ -39,7 +39,7 @@ fun rememberAccountFollowAction(slug: String): AccountFollowAction {
             error = null; unsupported = false
         } catch (failure: Exception) {
             if (failure is CancellationException) throw failure
-            error = context.getString(R.string.channel_follow_failed)
+            error = resources.getString(R.string.channel_follow_failed)
             unsupported = failure is AccountApiException && failure.status in listOf(401, 403, 404)
         } finally { busy = false }
     }
@@ -74,7 +74,7 @@ fun rememberAccountFollowAction(slug: String): AccountFollowAction {
                 } catch (failure: Exception) {
                     if (failure is CancellationException) throw failure
                     if (generation == AccountGraph.auth.session.value.generation) {
-                        error = context.getString(R.string.channel_follow_failed); dialog = true
+                        error = resources.getString(R.string.channel_follow_failed); dialog = true
                         unsupported = failure is AccountApiException && failure.status in listOf(401, 403, 404)
                     }
                 } finally { busy = false }

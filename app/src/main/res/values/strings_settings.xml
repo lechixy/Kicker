@@ -17,7 +17,7 @@
     <string name="developer_status_retrying">Connection issue · retrying</string>
     <string name="developer_socket_times">Connected: %1$s\nLast ping: %2$s\nLast pong: %3$s\nRTT: %4$s ms\nHandshake: %5$s\nWatch event: %6$s\nReconnects: %7$d</string>
     <string name="developer_missing_vod">Channel API did not return a VOD ID; watch events omit vod_id</string>
-    <string name="settings_made_by">Made by lechixy</string>
+    <string name="settings_made_by">Made by @lechixy</string>
     <string name="settings_for_you">Just for you 💖</string>
     <string name="settings_version">Version %1$s</string>
     <string name="settings_updated">Updated on %1$s</string>
@@ -62,7 +62,7 @@
     <string name="developer_player_last_drop">Last drop report: %1$d frames · %2$s s ago</string>
     <string name="developer_player_processing">Average frame processing offset: %1$s ms (negative = late)\nAudio underruns: %2$d</string>
     <string name="developer_player_format">Video: %1$s × %2$s · %3$s fps\nVideo bitrate: %4$s Mbps · estimated bandwidth: %5$s Mbps</string>
-    <string name="github" translatable="false">https://github.com/lechixy/Kick</string>
+    <string name="github" translatable="false">https://github.com/lechixy/Kicker</string>
     <string name="player_playback">Player &amp; playback</string>
     <string name="player_section">Player</string>
     <string name="player_section_description">Player and video settings</string>

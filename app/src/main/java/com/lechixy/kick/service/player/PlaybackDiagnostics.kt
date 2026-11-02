@@ -1,6 +1,7 @@
 package com.lechixy.kick.service.player
 
 import android.os.SystemClock
+import android.os.Debug
 import android.util.Log
 import com.lechixy.kick.BuildConfig
 import androidx.media3.common.C
@@ -13,10 +14,12 @@ import androidx.media3.exoplayer.LivePlaybackSpeedControl
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.LoadEventInfo
 import androidx.media3.exoplayer.source.MediaLoadData
+import androidx.media3.exoplayer.upstream.Allocator
 import java.io.IOException
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlin.time.Duration.Companion.milliseconds
 
 /** Process-local values only; never includes stream URLs or account data. */
 data class PlaybackDiagnosticState(
@@ -85,7 +88,8 @@ internal class DiagnosticLiveSpeedControl(private val delegate: LivePlaybackSpee
 internal class PlaybackDiagnosticTracker(
     private val player: ExoPlayer,
     private val speedControl: DiagnosticLiveSpeedControl,
-    scope: CoroutineScope
+    scope: CoroutineScope,
+    private val allocator: Allocator
 ) : AnalyticsListener, Player.Listener {
     private var bufferingStarted: Long? = null
     private var bufferingTotal = 0L
@@ -95,6 +99,7 @@ internal class PlaybackDiagnosticTracker(
     private var audioUnderruns = 0
     private var bandwidthBps: Long? = null
     private val job: Job
+    private var lastMemoryLogMs = 0L
 
     init {
         player.addAnalyticsListener(this)
@@ -102,7 +107,7 @@ internal class PlaybackDiagnosticTracker(
         job = scope.launch(Dispatchers.Main.immediate) {
             while (isActive) {
                 publish()
-                delay(500)
+                delay(500.milliseconds)
             }
         }
     }
@@ -149,6 +154,16 @@ internal class PlaybackDiagnosticTracker(
 
     private fun publish() {
         val now = SystemClock.elapsedRealtime()
+        if (BuildConfig.DEBUG && now - lastMemoryLogMs >= 10_000L) {
+            lastMemoryLogMs = now
+            val runtime = Runtime.getRuntime()
+            // Measure without forcing GC or retaining historical samples. Buffer
+            // bytes distinguish player samples from growth elsewhere in the heap.
+            Log.d("KickMemory", "heapUsedKb=${(runtime.totalMemory() - runtime.freeMemory()) / 1024} " +
+                "heapMaxKb=${runtime.maxMemory() / 1024} " +
+                "nativeUsedKb=${Debug.getNativeHeapAllocatedSize() / 1024} " +
+                "playerBufferKb=${allocator.totalBytesAllocated / 1024}")
+        }
         val buffering = player.playWhenReady && player.playbackState == Player.STATE_BUFFERING
         if (buffering && bufferingStarted == null) bufferingStarted = now
         if (!buffering) bufferingStarted?.let { bufferingTotal += now - it; bufferingStarted = null }

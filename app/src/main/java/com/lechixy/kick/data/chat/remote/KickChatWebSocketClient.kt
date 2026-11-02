@@ -27,6 +27,7 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import kotlin.time.Duration.Companion.milliseconds
 
 import com.lechixy.kick.data.chat.model.CentrifugoConnectFrame
 import com.lechixy.kick.data.chat.model.CentrifugoPushFrame
@@ -166,7 +167,7 @@ class KickChatWebSocketClient(
 
         batchJob = clientScope.launch {
             while (isActive) {
-                delay(if (_highTraffic.value) 250L else 100L)
+                delay((if (_highTraffic.value) 250L else 100L).milliseconds)
                 flushMessages()
             }
         }
@@ -209,7 +210,7 @@ class KickChatWebSocketClient(
                 account.request("https://web.kick.com/api/v1/realtime/auth/connection", "POST",
                     kotlinx.serialization.json.buildJsonObject {
                         put("client_id", JsonPrimitive(guestClientId))
-                    })?.get("data")?.let { it as? JsonObject }?.get("token")
+                    })["data"]?.let { it as? JsonObject }?.get("token")
                     ?.let { it as? JsonPrimitive }?.content
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
               catch (_: Exception) {
@@ -245,7 +246,7 @@ class KickChatWebSocketClient(
 
         heartbeatJob = clientScope.launch {
             while (isActive && !isIntentionallyClosed && webSocket === activeSocket) {
-                delay(WATCHDOG_CHECK_INTERVAL_MS)
+                delay(WATCHDOG_CHECK_INTERVAL_MS.milliseconds)
                 if (isIntentionallyClosed || webSocket !== activeSocket) break
 
                 val elapsedSinceLastActivity = System.currentTimeMillis() - lastServerActivityMs.get()
@@ -618,7 +619,7 @@ class KickChatWebSocketClient(
         reconnectJob?.cancel()
         heartbeatJob?.cancel()
         reconnectJob = clientScope.launch {
-            delay(delayMs)
+            delay(delayMs.milliseconds)
             if (!isIntentionallyClosed && currentChannelId == channelId && currentChatroomId == chatroomId) {
                 Log.d(tag, "Attempting reconnect...")
                 startConnectionFlow(channelId, chatroomId)

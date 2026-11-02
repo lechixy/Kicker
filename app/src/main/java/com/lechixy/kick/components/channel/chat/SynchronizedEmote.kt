@@ -32,13 +32,14 @@ internal val LocalChatAnimationsEnabled = staticCompositionLocalOf { true }
 internal fun SynchronizedEmote(url: String, name: String, modifier: Modifier = Modifier) {
     val context = LocalContext.current.applicationContext
     val animated = LocalChatAnimationsEnabled.current
+    val active = LocalChatContentActive.current
     var shared by remember(url, animated) { mutableStateOf<SharedEmote?>(null) }
-    LifecycleStartEffect(url, animated) {
-        val entry = VisibleEmotes.acquire(context, url, animated)
+    LifecycleStartEffect(url, animated, active) {
+        val entry = if (active) VisibleEmotes.acquire(context, url, animated) else null
         shared = entry
         onStopOrDispose {
             shared = null
-            VisibleEmotes.release(url, entry, animated)
+            if (entry != null) VisibleEmotes.release(url, entry, animated)
         }
     }
     val entry = shared

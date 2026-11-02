@@ -13,6 +13,7 @@ import com.lechixy.kick.util.player.MediaVolumeDevice
 import com.lechixy.kick.util.player.PlayerVolumeController
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 internal fun rememberPlayerVolume(syncWithDevice: Boolean): PlayerVolumeController {
@@ -37,7 +38,7 @@ internal fun rememberPlayerVolume(syncWithDevice: Boolean): PlayerVolumeControll
             // covering hardware keys, Bluetooth routes and external volume controls.
             while (isActive) {
                 controller.refresh()
-                delay(250)
+                delay(250.milliseconds)
             }
         }
     }

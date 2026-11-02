@@ -11,15 +11,11 @@
     <string name="sleep_timer_time_left">%1$s left</string>
     <string name="sleep_timer_short_hours">%1$d h</string>
     <string name="sleep_timer_short_minutes">%1$d m</string>
-    <plurals name="sleep_timer_hours">
-        <item quantity="one">%1$d hour</item>
-        <item quantity="other">%1$d hours</item>
-    </plurals>
-    <plurals name="sleep_timer_minutes">
-        <item quantity="one">%1$d minute</item>
-        <item quantity="other">%1$d minutes</item>
-    </plurals>
-    <string name="app_name" translatable="false">Kick</string>
+    <string name="sleep_timer_hour">%1$d hour</string>
+    <string name="sleep_timer_hours">%1$d hours</string>
+    <string name="sleep_timer_minute">%1$d minute</string>
+    <string name="sleep_timer_minutes">%1$d minutes</string>
+    <string name="app_name" translatable="false">Kicker</string>
     <string name="live_badge">LIVE</string>
     <string name="home">Home</string>
     <string name="following">Following</string>
@@ -44,4 +40,5 @@
     <string name="events">Events</string>
     <string name="more">More</string>
     <string name="views_count">%1$s views</string>
+    <string name="settings_about">About</string>
 </resources>

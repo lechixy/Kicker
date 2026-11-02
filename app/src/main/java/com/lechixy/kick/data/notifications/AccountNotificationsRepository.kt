@@ -10,10 +10,17 @@ import kotlinx.serialization.json.*
 import okhttp3.*
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import kotlin.time.Duration.Companion.milliseconds
 
 /** One foreground account feed, independent of the currently watched channel and chat visibility. */
 class AccountNotificationsRepository(private val auth: AuthRepository, private val challenges: ChallengesRepository, scope: CoroutineScope) {
-    private val json = Json { ignoreUnknownKeys = true; coerceInputValues = true }
+    private val json = Json {
+        ignoreUnknownKeys = true
+        coerceInputValues = true
+        // Connection discovery requires client.type and capabilities even when
+        // their values match the Kotlin model defaults (as in the chat client).
+        encodeDefaults = true
+    }
     private val client = OkHttpClient.Builder().readTimeout(0, TimeUnit.MILLISECONDS).build()
     private val foreground = MutableStateFlow(false)
     private val queue = NotificationQueue()
@@ -30,7 +37,7 @@ class AccountNotificationsRepository(private val auth: AuthRepository, private v
                     try { connect(userId, generation) }
                     catch (cancelled: CancellationException) { throw cancelled }
                     catch (_: Exception) { /* Retry with a fresh auth token, never downgrade to guest. */ }
-                    delay(backoff)
+                    delay(backoff.milliseconds)
                     backoff = (backoff * 2).coerceAtMost(30_000)
                 }
             }
@@ -95,7 +102,7 @@ class AccountNotificationsRepository(private val auth: AuthRepository, private v
         })
         val watchdog = launch {
             while (isActive) {
-                delay(30_000)
+                delay(30_000.milliseconds)
                 if (SystemClock.elapsedRealtime() - lastActivity.get() > 90_000) { done.complete(Unit); break }
             }
         }

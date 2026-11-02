@@ -5,7 +5,7 @@
     <string name="settings_no_results">Eşleşen ayar bulunamadı</string>
     <string name="notification_reward_title">Ödülün hazır</string>
     <string name="notification_reward_description">%1$d dakika izleme hedefine ulaştın, görevlerini görmek için dokun</string>
-    <string name="notification_live_title">%1$s yayına başladı!</string>
+    <string name="notification_live_title">%1$s yayına başladı</string>
     <string name="notification_live_description">Yayına katılmak için dokun</string>
     <string name="notification_dismiss">Bildirimi kapat</string>
     <string name="developer_notification_previews">Bildirim ve sürüm önizlemeleri</string>
@@ -13,7 +13,7 @@
     <string name="developer_live_notification">Canlı yayın bildirimini dene</string>
     <string name="release_whats_new">Yenilikler</string>
     <string name="release_update_available">Güncelleme mevcut</string>
-    <string name="release_on_github">GitHub’da görüntüle</string>
+
     <string name="release_no_notes">Sürüm notları şu anda kullanılamıyor, yayınlanan sürümleri GitHub’dan görüntüleyebilirsin</string>
     <string name="release_update">Güncelle</string>
     <string name="release_later">Daha sonra</string>

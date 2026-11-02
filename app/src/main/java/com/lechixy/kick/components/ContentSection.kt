@@ -55,7 +55,7 @@ import com.lechixy.kick.R
 fun contentColumns(width: Dp): Int = if (width < 600.dp) 2 else (width / 280.dp).toInt().coerceAtLeast(2)
 
 @Composable
-fun SectionHeader(title: String, onMore: (() -> Unit)? = null, moreEnabled: Boolean = true, leadingIcon: Int? = null) {
+fun SectionHeader(title: String, onMore: (() -> Unit)? = null, moreEnabled: Boolean = true, leadingIcon: Int? = null, modifier: Modifier = Modifier) {
     val interactions = remember { MutableInteractionSource() }
     val hovered by interactions.collectIsHoveredAsState()
     val focused by interactions.collectIsFocusedAsState()
@@ -79,7 +79,7 @@ fun SectionHeader(title: String, onMore: (() -> Unit)? = null, moreEnabled: Bool
         if (highlighted) primary else MaterialTheme.colorScheme.onSurface,
         label = "section header text")
     val moreLabel = stringResource(R.string.home_more)
-    Row(Modifier.wrapContentWidth(Alignment.Start).heightIn(min = 48.dp)
+    Row(modifier = modifier.wrapContentWidth(Alignment.Start).heightIn(min = 48.dp)
         .clip(MaterialTheme.shapes.medium)
         .background(background)
         .then(if (onMore != null) Modifier.clickable(

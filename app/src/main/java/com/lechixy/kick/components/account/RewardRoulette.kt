@@ -42,6 +42,7 @@ import coil3.request.ImageRequest
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlin.time.Duration.Companion.milliseconds
 
 import com.lechixy.kick.R
 import com.lechixy.kick.data.account.model.ChallengeClaim
@@ -104,7 +105,7 @@ internal fun ShieldRoulette(claim: ChallengeClaim, imageLoader: ImageLoader, onS
     val surface = MaterialTheme.colorScheme.surfaceContainerLowest
     LaunchedEffect(claim.challengeId, claim.winner.id) {
         // Bound startup latency and concurrent decodes. Failed images retain the shield placeholder.
-        withTimeoutOrNull(900) {
+        withTimeoutOrNull(900.milliseconds) {
             val permits = Semaphore(4)
             coroutineScope {
                 (claim.roulette.map { it.itemUrl } + listOfNotNull(claim.winner.thumbnailUrl))
@@ -123,7 +124,7 @@ internal fun ShieldRoulette(claim: ChallengeClaim, imageLoader: ImageLoader, onS
                 last = value
             }
         }
-        delay(500)
+        delay(500.milliseconds)
         onFinished()
     }
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {

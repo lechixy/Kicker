@@ -3,11 +3,10 @@ package com.lechixy.kick.components.channel.chat
 import android.content.Context
 import android.icu.text.ListFormatter
 import androidx.compose.ui.graphics.Color
-import java.text.NumberFormat
-import java.util.Locale
-
 import com.lechixy.kick.R
 import com.lechixy.kick.data.chat.model.GiftedSubscriptionsEvent
+import java.text.NumberFormat
+import java.util.Locale
 
 private val eventArgument = Regex("%(?:(\\d+)[$]s|%)")
 
@@ -45,12 +44,16 @@ internal fun subscriptionEventSegments(
     val user = eventUser(username.ifBlank { context.getString(R.string.chat_event_someone) }, userColor,
         username.takeIf { it.isNotBlank() })
     return when {
-        months != null && months > 0 -> eventTextSegments(
-            context.resources.getQuantityString(R.plurals.chat_event_subscribed_months, months),
-            user, context.eventCount(months, primaryColor))
-        extraSubscribers > 0 -> eventTextSegments(
-            context.resources.getQuantityString(R.plurals.chat_event_group_subscribed, extraSubscribers),
-            user, context.eventCount(extraSubscribers, primaryColor))
+        months != null && months > 0 -> {
+            val template = if (months == 1) context.getString(R.string.chat_event_subscribed_month)
+                else context.getString(R.string.chat_event_subscribed_months)
+            eventTextSegments(template, user, context.eventCount(months, primaryColor))
+        }
+        extraSubscribers > 0 -> {
+            val template = if (extraSubscribers == 1) context.getString(R.string.chat_event_group_subscribed_single)
+                else context.getString(R.string.chat_event_group_subscribed)
+            eventTextSegments(template, user, context.eventCount(extraSubscribers, primaryColor))
+        }
         else -> eventTextSegments(context.getString(R.string.chat_event_subscribed), user)
     }
 }
@@ -70,19 +73,22 @@ internal fun giftedEventSegments(
         else user(event.gifterUsername)
     val result = if (recipients.isNotEmpty() && count < 5) {
         val recipientPattern = ListFormatter.getInstance(context.eventLocale())
-            .format(recipients.indices.map { "%${it + 1}\$s" })
+            .format(recipients.indices.map { $$"%$${it + 1}$s" })
         val recipientSegments = eventTextSegments(recipientPattern, *recipients.map(::user).toTypedArray())
-        eventTextSegments(context.resources.getQuantityString(R.plurals.chat_event_gifted_to, count),
-            gifter, context.eventCount(count, primaryColor), recipientSegments)
+        val template = if (count == 1) context.getString(R.string.chat_event_gifted_to_single)
+            else context.getString(R.string.chat_event_gifted_to)
+        eventTextSegments(template, gifter, context.eventCount(count, primaryColor), recipientSegments)
     } else {
-        eventTextSegments(context.resources.getQuantityString(R.plurals.chat_event_gifted_community, count),
-            gifter, context.eventCount(count, primaryColor))
+        val template = if (count == 1) context.getString(R.string.chat_event_gifted_community_single)
+            else context.getString(R.string.chat_event_gifted_community)
+        eventTextSegments(template, gifter, context.eventCount(count, primaryColor))
     }
-    return event.gifterTotal?.takeIf { it > 1 }?.let { total ->
-        eventTextSegments(context.getString(R.string.chat_event_gifted_total), result, context.eventCount(total, primaryColor))
-    } ?: result
+//    return event.gifterTotal?.takeIf { it > 1 }?.let { total ->
+//        eventTextSegments(context.getString(R.string.chat_event_gifted_total), result, context.eventCount(total, primaryColor))
+//    } ?: result
+    return result
 }
 
 internal fun raidEventSegments(context: Context, username: String, count: Int, color: Color) =
-    eventTextSegments(context.resources.getQuantityString(R.plurals.chat_event_raid, count),
+    eventTextSegments(context.resources.getString(R.string.chat_event_raid),
         eventUser(username, color), context.eventCount(count, color))

@@ -24,7 +24,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
@@ -35,6 +35,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlin.time.Duration.Companion.milliseconds
 
 /** Keep the real app composed underneath so startup work continues during the GIF. */
 @Composable
@@ -55,7 +56,7 @@ internal fun LaunchSplashHost(
 
             // A corrupt asset or interrupted decoder must never trap the user at launch.
             LaunchedEffect(Unit) {
-                delay(10_000)
+                delay(10_000.milliseconds)
                 timedOut = true
             }
             LaunchedEffect(animationFinished, appReady, timedOut) {
@@ -82,7 +83,7 @@ internal fun LaunchSplashHost(
 
 @Composable
 private fun LaunchGif(playAnimation: Boolean, onFinished: () -> Unit) {
-    val resources = LocalContext.current.resources
+    val resources = LocalResources.current
     val tablet = LocalConfiguration.current.smallestScreenWidthDp >= 600
     val resource = if (tablet) R.drawable.splash_tablet else R.drawable.splash_mobile
     var drawable by remember(resource) { mutableStateOf<AnimatedImageDrawable?>(null) }

@@ -1,0 +1,103 @@
+name: Build and Release APKs
+
+on:
+  push:
+    tags:
+      - 'v*'
+      - '[0-9]+.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Sürüm etiketi / Version tag (örn: v1.0.0)'
+        required: false
+        default: 'v1.0.0'
+
+jobs:
+  build-and-release:
+    name: Build & Release APKs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build Release and Debug APKs
+        run: ./gradlew assembleRelease assembleDebug --stacktrace
+
+      - name: Prepare and rename APKs
+        run: |
+          # Sürüm adını al (tag push ise GITHUB_REF_NAME, manuel ise input)
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            RAW_TAG="${{ github.event.inputs.tag }}"
+          else
+            RAW_TAG="${GITHUB_REF_NAME}"
+          fi
+
+          # Başındaki 'v' harfini temizle (örn. v1.0.0 -> 1.0.0)
+          VERSION="${RAW_TAG#v}"
+
+          mkdir -p dist
+
+          echo "Bulunan APK dosyaları:"
+          find app/build/outputs/apk -name "*.apk"
+
+          # APK'ları tara ve istenen isimlendirmeye göre dist klasörüne kopyala
+          find app/build/outputs/apk -name "*.apk" | while read -r apk_path; do
+            filename=$(basename "$apk_path")
+            parent_dir=$(basename "$(dirname "$apk_path")")
+
+            # release ya da debug türünü belirle
+            if [[ "$parent_dir" == "release" || "$filename" =~ -release ]]; then
+              build_type="release"
+            elif [[ "$parent_dir" == "debug" || "$filename" =~ -debug ]]; then
+              build_type="debug"
+            else
+              build_type="release"
+            fi
+
+            # Mimariyi (ABI) ayıkla: arm64-v8a, armeabi-v7a, x86_64, x86, universal
+            if [[ "$filename" =~ app-(.+)-${build_type}\.apk ]]; then
+              arch="${BASH_REMATCH[1]}"
+            elif [[ "$filename" =~ app-${build_type}\.apk ]]; then
+              arch="universal"
+            else
+              arch="all"
+            fi
+
+            target_name="kicker_${VERSION}_${arch}_${build_type}.apk"
+            echo "Paketleniyor: $filename -> $target_name"
+            cp "$apk_path" "dist/$target_name"
+          done
+
+          echo "Oluşturulan nihai paketler:"
+          ls -la dist/
+
+          # SHA256 checksum dosyası oluştur
+          cd dist
+          sha256sum *.apk > sha256sums.txt
+          cd ..
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.apk
+            dist/sha256sums.txt
+          generate_release_notes: true
+          tag_name: ${{ github.ref_name || github.event.inputs.tag }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

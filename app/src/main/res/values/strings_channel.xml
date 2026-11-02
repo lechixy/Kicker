@@ -40,10 +40,8 @@
     <string name="chatter_unfollow">Unfollow</string>
     <string name="chatter_mute">Mute user</string>
     <string name="chatter_unmute">Unmute user</string>
-    <plurals name="chatter_subscription_months">
-        <item quantity="one">%1$d month</item>
-        <item quantity="other">%1$d months</item>
-    </plurals>
+    <string name="chatter_subscription_month">%1$d month</string>
+    <string name="chatter_subscription_months">%1$d months</string>
     <string name="points_last_update">Last points update: %1$s</string>
     <string name="points_next_estimate">Next award: ~%1$d min</string>
     <string name="offline_badge">Offline</string>
@@ -78,7 +76,7 @@
     <string name="message_deleted_by_ai_moderator">Message deleted by AI moderator</string>
     <string name="message_deleted_rule_violation">Message deleted because user violated rule</string>
     <string name="message_deleted_by_moderator">Message deleted by moderator</string>
-    <string name="streamer_is_live">%1$s IS LIVE!</string>
+    <string name="streamer_is_live">%1$s IS LIVE</string>
     <string name="channel_offline">CHANNEL OFFLINE</string>
     <string name="play_live">Play live</string>
     <string name="connection_weak">Connection is weak</string>
@@ -144,29 +142,18 @@
     <string name="chat_event_someone">Someone</string>
     <string name="chat_event_anonymous">Anonymous</string>
     <string name="chat_event_user">User</string>
-    <string name="chat_event_subscribed">%1$s just subscribed!</string>
+    <string name="chat_event_subscribed">%1$s just subscribed</string>
     <string name="chat_event_reward_redeemed">%1$s redeemed %2$s</string>
     <string name="chat_event_gifted_total">%1$s (%2$s in total)</string>
-    <plurals name="chat_event_subscribed_months">
-        <item quantity="one">%1$s has subscribed for %2$s month</item>
-        <item quantity="other">%1$s has subscribed for %2$s months</item>
-    </plurals>
-    <plurals name="chat_event_group_subscribed">
-        <item quantity="one">%1$s and %2$s other just subscribed!</item>
-        <item quantity="other">%1$s and %2$s others just subscribed!</item>
-    </plurals>
-    <plurals name="chat_event_gifted_to">
-        <item quantity="one">%1$s gifted %2$s sub to %3$s</item>
-        <item quantity="other">%1$s gifted %2$s subs to %3$s</item>
-    </plurals>
-    <plurals name="chat_event_gifted_community">
-        <item quantity="one">%1$s gifted %2$s sub to the community</item>
-        <item quantity="other">%1$s gifted %2$s subs to the community</item>
-    </plurals>
-    <plurals name="chat_event_raid">
-        <item quantity="one">%1$s raided with %2$s viewer!</item>
-        <item quantity="other">%1$s raided with %2$s viewers!</item>
-    </plurals>
+    <string name="chat_event_subscribed_month">%1$s has subscribed for %2$s month</string>
+    <string name="chat_event_subscribed_months">%1$s has subscribed for %2$s months</string>
+    <string name="chat_event_group_subscribed_single">%1$s and %2$s other just subscribed</string>
+    <string name="chat_event_group_subscribed">%1$s and %2$s others just subscribed</string>
+    <string name="chat_event_gifted_to_single">%1$s gifted %2$s sub to %3$s</string>
+    <string name="chat_event_gifted_to">%1$s gifted %2$s subs to %3$s</string>
+    <string name="chat_event_gifted_community_single">%1$s gifted %2$s sub to the community</string>
+    <string name="chat_event_gifted_community">%1$s gifted %2$s subs to the community</string>
+    <string name="chat_event_raid">%1$s raided with %2$s viewers</string>
     <string name="badge_broadcaster">Broadcaster</string>
     <string name="badge_moderator">Moderator</string>
     <string name="badge_verified">Verified</string>
@@ -178,7 +165,7 @@
     <string name="badge_subscriber_months">%1$d-Months Subscriber</string>
     <string name="badge_subscriber_month">%1$d-Month Subscriber</string>
     <string name="badge_gifter_count">Gifted %1$d sub</string>
-    <string name="badge_gifter_count_single">Gifted 1 sub</string>
+    <string name="badge_gifter_count_single">Gifted %1$d sub</string>
     <string name="identity_preview">Preview:</string>
     <string name="identity_badges">Badges</string>
     <string name="identity_badges_limit">A maximum of 4 badges can be displayed</string>

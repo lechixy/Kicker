@@ -83,8 +83,8 @@ fun ChatMessageItem(
         val rewardColor = remember(rewardEvent.rewardBackgroundColor, defaultPrimaryColor) {
             ChatTextParser.parseHexColor(rewardEvent.rewardBackgroundColor, defaultPrimaryColor)
         }
-        val segments = eventTextSegments(eventContext.getString(R.string.chat_event_reward_redeemed),
-            eventUser(rewardEvent.username.ifBlank { eventContext.getString(R.string.chat_event_user) }, rewardColor,
+        val segments = eventTextSegments(stringResource(R.string.chat_event_reward_redeemed),
+            eventUser(rewardEvent.username.ifBlank { stringResource(R.string.chat_event_user) }, rewardColor,
                 rewardEvent.username.takeIf { it.isNotBlank() }),
             eventUser(rewardEvent.rewardTitle, rewardColor, username = null))
         ChatEventBaseItem(
@@ -106,7 +106,7 @@ fun ChatMessageItem(
     val giftedEvent = message.giftedSubscriptions
     if (message.isGiftedSubscriptions && giftedEvent != null) {
         val defaultPrimaryColor = MaterialTheme.colorScheme.primary
-        val gifterName = giftedEvent.gifterUsername.ifBlank { eventContext.getString(R.string.chat_event_anonymous) }
+        val gifterName = giftedEvent.gifterUsername.ifBlank { stringResource(R.string.chat_event_anonymous) }
         val gifterRawColor = userColors[gifterName.lowercase()]
         val gifterColor = remember(gifterRawColor, defaultPrimaryColor) {
             ChatTextParser.parseHexColor(gifterRawColor, defaultPrimaryColor)
@@ -134,7 +134,7 @@ fun ChatMessageItem(
         val senderName = message.sender?.username?.takeIf { it.isNotBlank() }
             ?: celebration?.sender?.username?.takeIf { it.isNotBlank() }
             ?: celebration?.username?.takeIf { it.isNotBlank() }
-            ?: eventContext.getString(R.string.chat_event_someone)
+            ?: stringResource(R.string.chat_event_someone)
         val rawColor = message.sender?.identity?.color
             ?: celebration?.sender?.identity?.color
             ?: userColors[senderName.lowercase()]
@@ -164,7 +164,7 @@ fun ChatMessageItem(
     val subEvent = message.channelSubscription
     if (message.isChannelSubscription && subEvent != null) {
         val defaultPrimaryColor = MaterialTheme.colorScheme.primary
-        val subUsername = subEvent.username.ifBlank { eventContext.getString(R.string.chat_event_someone) }
+        val subUsername = subEvent.username.ifBlank { stringResource(R.string.chat_event_someone) }
         val subRawColor = userColors[subUsername.lowercase()]
         val userColor = remember(subRawColor, defaultPrimaryColor) {
             ChatTextParser.parseHexColor(subRawColor, defaultPrimaryColor)
@@ -189,7 +189,7 @@ fun ChatMessageItem(
         return
     }
 
-    val senderName = message.sender?.username ?: eventContext.getString(R.string.chat_event_user)
+    val senderName = message.sender?.username ?: stringResource(R.string.chat_event_user)
     val defaultUsernameColor = MaterialTheme.colorScheme.primary
     val rawSenderColor = message.sender?.identity?.color ?: userColors[senderName.lowercase()]
     val usernameColor = remember(rawSenderColor, defaultUsernameColor) {
@@ -294,7 +294,7 @@ fun ChatMessageItem(
             val originalSenderName = message.metadata.originalSender?.username
                 ?.takeIf { it.isNotBlank() }
                 ?: originalMessage.sender?.username
-                ?: eventContext.getString(R.string.chat_event_user)
+                ?: stringResource(R.string.chat_event_user)
 
             val rawOriginalColor = message.metadata.originalSender?.identity?.color
                 ?: originalMessage.sender?.identity?.color
@@ -529,6 +529,9 @@ fun ChatEventBaseItem(
 
 @Composable
 internal fun rememberStreamerMentionEffects(fontSizeSp: Int): Pair<Brush, Shadow> {
+    if (!LocalChatContentActive.current) {
+        return Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.secondary)) to Shadow.None
+    }
     val spanWidthPx = with(LocalDensity.current) { (fontSizeSp * 3.5f).sp.toPx() }
     val doubleSpanWidthPx = spanWidthPx * 2f
 

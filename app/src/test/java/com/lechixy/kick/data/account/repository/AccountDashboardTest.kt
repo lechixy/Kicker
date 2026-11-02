@@ -4,6 +4,7 @@ import com.lechixy.kick.data.account.support.objectJson
 import com.lechixy.kick.data.account.support.signedInAuth
 
 import kotlinx.coroutines.*
+import kotlin.time.Duration.Companion.milliseconds
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
 import org.junit.Assert.*
@@ -52,12 +53,12 @@ class AccountDashboardTest {
         try {
             yield()
             repository.refresh()
-            val loaded = withTimeout(3000) { repository.state.first { !it.loading && it.channel != null && it.level != null && it.streak != null } }
+            val loaded = withTimeout(3000.milliseconds) { repository.state.first { !it.loading && it.channel != null && it.level != null && it.streak != null } }
             assertEquals(0, loaded.streak?.days)
             assertTrue(loaded.failures.isEmpty())
             assertEquals(3, paths.size)
             auth.signOut()
-            withTimeout(3000) { repository.state.first { it.channel == null && it.level == null && it.streak == null } }
+            withTimeout(3000.milliseconds) { repository.state.first { it.channel == null && it.level == null && it.streak == null } }
         } finally { job.cancelAndJoin() }
     }
 
@@ -74,7 +75,7 @@ class AccountDashboardTest {
         try {
             yield()
             repository.refresh()
-            val loaded = withTimeout(3000) { repository.state.first { !it.loading && it.level != null && it.channel != null } }
+            val loaded = withTimeout(3000.milliseconds) { repository.state.first { !it.loading && it.level != null && it.channel != null } }
             assertNull(loaded.streak)
             assertEquals(setOf(AccountDashboardSection.Streak), loaded.failures)
             assertTrue(auth.session.value.signedIn)

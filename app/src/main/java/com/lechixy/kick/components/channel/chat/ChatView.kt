@@ -136,6 +136,7 @@ fun ChatView(
     highTraffic: Boolean = false
 ) {
     val repository = LocalSettingsRepository.current
+    val chatActive = LocalChatContentActive.current
     val fontSize by repository
         .get(SettingsKeys.CHAT_FONT_SIZE)
         .collectAsStateWithLifecycle(initialValue = SettingsKeys.CHAT_FONT_SIZE.defaultValue)
@@ -497,7 +498,8 @@ fun ChatView(
                 tickerEventQueue.clear()
             }
 
-            LaunchedEffect(chatEvents) {
+            LaunchedEffect(chatEvents, chatActive) {
+                if (!chatActive) { tickerEventQueue.clear(); return@LaunchedEffect }
                 chatEvents.collect { wsEvent ->
                     val tickerItem = when (wsEvent) {
                         is ChatWebSocketEvent.StreamHosted -> {
@@ -1115,7 +1117,9 @@ private fun ChatEventTickerOverlay(
         onActiveHeightChanged(if (isShowing) measuredHeightPx else 0)
     }
 
-    LaunchedEffect(currentItem?.id) {
+    val chatActive = LocalChatContentActive.current
+    LaunchedEffect(currentItem?.id, chatActive) {
+        if (!chatActive) return@LaunchedEffect
         if (currentItem == null) {
             isShowing = false
             isUserScrolling = false
@@ -1348,8 +1352,9 @@ internal fun ContinuousTickerRow(
         onScrollingChanged(isUserScrolling)
     }
 
-    LaunchedEffect(speedPxPerSec, stridePx, isUserScrolling) {
-        if (stridePx <= 0f || speedPxPerSec <= 0f || isUserScrolling) return@LaunchedEffect
+    val chatActive = LocalChatContentActive.current
+    LaunchedEffect(speedPxPerSec, stridePx, isUserScrolling, chatActive) {
+        if (!chatActive || stridePx <= 0f || speedPxPerSec <= 0f || isUserScrolling) return@LaunchedEffect
         var lastFrameNanos = withFrameNanos { it }
         while (isActive) {
             withFrameNanos { frameNanos ->

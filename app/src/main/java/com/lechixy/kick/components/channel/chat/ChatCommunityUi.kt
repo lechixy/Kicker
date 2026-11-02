@@ -58,7 +58,6 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -231,8 +230,10 @@ fun KickUserProfileCard(
                 Row(Modifier.fillMaxWidth().padding(vertical = 16.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                     ProfileMetric(stringResource(R.string.chatter_joined), localizedProfileDate(uiState.createdAt), Modifier.weight(1f))
                     ProfileMetric(stringResource(R.string.chatter_followed), localizedProfileDate(uiState.followingSince), Modifier.weight(1f))
-                    ProfileMetric(stringResource(R.string.chatter_subscribed), uiState.subscribedMonths?.let {
-                        pluralStringResource(R.plurals.chatter_subscription_months, it, it) } ?: "—", Modifier.weight(1f))
+                    ProfileMetric(stringResource(R.string.chatter_subscribed), uiState.subscribedMonths?.let { months ->
+                        if (months == 1) stringResource(R.string.chatter_subscription_month, months)
+                        else stringResource(R.string.chatter_subscription_months, months)
+                    } ?: "—", Modifier.weight(1f))
                 }
                 uiState.error?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {

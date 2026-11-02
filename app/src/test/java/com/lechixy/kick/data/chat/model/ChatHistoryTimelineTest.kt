@@ -54,8 +54,8 @@ class ChatHistoryTimelineTest {
         assertEquals("parent", message.metadata?.originalMessage?.id)
         assertEquals("original", message.metadata?.originalMessage?.content)
         assertEquals(26670447L, message.chatId)
-        assertEquals("moderator", response.data!!.pinnedMessage?.pinnedBy?.username)
-        assertEquals("pinned", response.data!!.pinnedMessage?.message?.content)
+        assertEquals("moderator", response.data.pinnedMessage?.pinnedBy?.username)
+        assertEquals("pinned", response.data.pinnedMessage?.message?.content)
         assertTrue(mergeChatHistory(listOf(message), emptyList(), 250).single().isHistory)
         assertFalse(json.encodeToString(ChatMessage.serializer(), message.copy(isHistory = true)).contains("isHistory"))
     }

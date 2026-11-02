@@ -17,7 +17,7 @@
     <string name="developer_status_retrying">Bağlantı sorunu · yeniden deneniyor</string>
     <string name="developer_socket_times">Bağlantı: %1$s\nSon ping: %2$s\nSon pong: %3$s\nGecikme: %4$s ms\nHandshake: %5$s\nİzleme eventi: %6$s\nYeniden bağlantı: %7$d</string>
     <string name="developer_missing_vod">Kanal API yanıtında VOD kimliği yok; izleme eventinde vod_id gönderilmiyor</string>
-    <string name="settings_made_by">lechixy tarafından geliştirildi</string>
+    <string name="settings_made_by">\@lechixy tarafından geliştirildi</string>
     <string name="settings_for_you">Sadece senin için 💖</string>
     <string name="settings_version">Sürüm %1$s</string>
     <string name="settings_updated">Son güncelleme: %1$s</string>

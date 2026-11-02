@@ -34,6 +34,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import kotlin.time.Duration.Companion.milliseconds
 
 import com.lechixy.kick.components.account.KICK_LOGIN_URL
 import com.lechixy.kick.components.account.createKickLoginWebViewContainer
@@ -87,7 +88,7 @@ class KickWebLoginActivity : ComponentActivity() {
             repeatOnLifecycle(Lifecycle.State.RESUMED) {
                 while (isActive) {
                     if (ready) captureSession()
-                    delay(1000)
+                    delay(1000.milliseconds)
                 }
             }
         }

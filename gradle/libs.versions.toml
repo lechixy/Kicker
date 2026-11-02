@@ -3,6 +3,7 @@ agp = "9.4.1"
 appcompat = "1.8.0"
 coilCompose = "3.6.3"
 converterKotlinxSerialization = "3.0.0"
+core = "4.6.2"
 coreKtx = "1.19.1"
 coreSplashscreen = "1.2.0"
 datastorePreferences = "1.2.1"
@@ -51,6 +52,7 @@ coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coilCo
 coil-network-okhttp = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coilCompose" }
 coil-gif = { module = "io.coil-kt.coil3:coil-gif", version.ref = "coilCompose" }
 converter-kotlinx-serialization = { module = "com.squareup.retrofit2:converter-kotlinx-serialization", version.ref = "converterKotlinxSerialization" }
+core = { module = "io.noties.markwon:core", version.ref = "core" }
 hilt-android = { module = "com.google.dagger:hilt-android", version.ref = "hiltAndroid" }
 hilt-compiler = { module = "com.google.dagger:hilt-compiler", version.ref = "hiltAndroid" }
 hilt-navigation-compose = { module = "androidx.hilt:hilt-navigation-compose", version.ref = "hiltNavigationCompose" }

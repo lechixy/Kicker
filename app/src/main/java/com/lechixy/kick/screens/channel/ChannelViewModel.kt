@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.milliseconds
 
 import com.lechixy.kick.data.channel.model.ChannelClip
 import com.lechixy.kick.data.channel.model.ChannelDetail
@@ -209,7 +210,7 @@ class ChannelViewModel(
         liveRefreshJob = viewModelScope.launch {
             repeat(LIVE_METADATA_MAX_ATTEMPTS) { attempt ->
                 if (attempt > 0) {
-                    delay(LIVE_METADATA_RETRY_DELAY_MS)
+                    delay(LIVE_METADATA_RETRY_DELAY_MS.milliseconds)
                 }
                 try {
                     val freshChannel = repository.getChannel(slug)
@@ -431,7 +432,7 @@ class ChannelViewModel(
         viewersPollingJob?.cancel()
         viewersPollingJob = viewModelScope.launch {
             while (isActive) {
-                delay(VIEWERS_POLL_INTERVAL_MS)
+                delay(VIEWERS_POLL_INTERVAL_MS.milliseconds)
                 updateLivestreamViewers(livestreamId)
             }
         }
@@ -445,7 +446,7 @@ class ChannelViewModel(
                 catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
                 catch (_: Exception) { null }
                 _uiState.update { if (it.channel?.id == channelId) it.copy(lastHourGiftedSubsRank = rank) else it }
-                delay(60_000L)
+                delay(60_000L.milliseconds)
             }
         }
     }
