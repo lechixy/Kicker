@@ -4,100 +4,149 @@ on:
   push:
     tags:
       - 'v*'
-      - '[0-9]+.*'
+      - '[0-9]*.*'
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Sürüm etiketi / Version tag (örn: v1.0.0)'
-        required: false
-        default: 'v1.0.0'
+        description: 'Existing version tag (for example v1.0.0)'
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
 
 jobs:
   build-and-release:
-    name: Build & Release APKs
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
-      - name: Checkout repository
+      - name: Validate requested tag
+        id: version
+        env:
+          RAW_TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RAW_TAG" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+([.-][0-9A-Za-z]+)*)?$ ]]; then
+            echo "::error::Expected a version tag such as v1.0.0 or v1.0.0-beta.1."
+            exit 1
+          fi
+          echo "tag=$RAW_TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${RAW_TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout tagged source
         uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ steps.version.outputs.tag }}
+          persist-credentials: false
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
-          distribution: 'temurin'
+          distribution: temurin
           java-version: '21'
 
-      - name: Setup Gradle
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
-      - name: Build Release and Debug APKs
-        run: ./gradlew assembleRelease assembleDebug --stacktrace
-
-      - name: Prepare and rename APKs
+      - name: Build signed release and debug APKs
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/kicker-release.keystore
+          REQUIRE_RELEASE_SIGNING: 'true'
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
         run: |
-          # Sürüm adını al (tag push ise GITHUB_REF_NAME, manuel ise input)
-          if [ -n "${{ github.event.inputs.tag }}" ]; then
-            RAW_TAG="${{ github.event.inputs.tag }}"
-          else
-            RAW_TAG="${GITHUB_REF_NAME}"
-          fi
-
-          # Başındaki 'v' harfini temizle (örn. v1.0.0 -> 1.0.0)
-          VERSION="${RAW_TAG#v}"
-
-          mkdir -p dist
-
-          echo "Bulunan APK dosyaları:"
-          find app/build/outputs/apk -name "*.apk"
-
-          # APK'ları tara ve istenen isimlendirmeye göre dist klasörüne kopyala
-          find app/build/outputs/apk -name "*.apk" | while read -r apk_path; do
-            filename=$(basename "$apk_path")
-            parent_dir=$(basename "$(dirname "$apk_path")")
-
-            # release ya da debug türünü belirle
-            if [[ "$parent_dir" == "release" || "$filename" =~ -release ]]; then
-              build_type="release"
-            elif [[ "$parent_dir" == "debug" || "$filename" =~ -debug ]]; then
-              build_type="debug"
-            else
-              build_type="release"
+          set -euo pipefail
+          for name in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [[ -z "${!name}" ]]; then
+              echo "::error::Missing repository secret: $name"
+              exit 1
             fi
-
-            # Mimariyi (ABI) ayıkla: arm64-v8a, armeabi-v7a, x86_64, x86, universal
-            if [[ "$filename" =~ app-(.+)-${build_type}\.apk ]]; then
-              arch="${BASH_REMATCH[1]}"
-            elif [[ "$filename" =~ app-${build_type}\.apk ]]; then
-              arch="universal"
-            else
-              arch="all"
-            fi
-
-            target_name="kicker_${VERSION}_${arch}_${build_type}.apk"
-            echo "Paketleniyor: $filename -> $target_name"
-            cp "$apk_path" "dist/$target_name"
           done
+          umask 077
+          trap 'rm -f "$ANDROID_KEYSTORE_PATH"' EXIT
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
+          chmod +x gradlew
+          ./gradlew :app:assembleRelease :app:assembleDebug --no-configuration-cache --stacktrace
 
-          echo "Oluşturulan nihai paketler:"
-          ls -la dist/
+      - name: Verify and prepare APKs
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
+          test -n "$APKSIGNER"
+          export APKSIGNER
+          python3 <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+          import shutil
+          import subprocess
 
-          # SHA256 checksum dosyası oluştur
-          cd dist
-          sha256sum *.apk > sha256sums.txt
-          cd ..
+          dist = Path('dist')
+          dist.mkdir()
+          expected_abis = {'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64', 'universal'}
+          release_certificates = set()
+          for build_type in ('release', 'debug'):
+              output = Path('app/build/outputs/apk') / build_type
+              metadata = json.loads((output / 'output-metadata.json').read_text())
+              seen = set()
+              for element in metadata['elements']:
+                  if element['versionName'] != os.environ['RELEASE_VERSION']:
+                      raise RuntimeError('APK versionName does not match the tag')
+                  filters = element.get('filters', [])
+                  abi = next((f['value'] for f in filters if f['filterType'] == 'ABI'), 'universal')
+                  if abi not in expected_abis or abi in seen:
+                      raise RuntimeError(f'Unexpected or duplicate ABI: {abi}')
+                  seen.add(abi)
+                  apk = output / element['outputFile']
+                  result = subprocess.run(
+                      [os.environ['APKSIGNER'], 'verify', '--verbose', '--print-certs', str(apk)],
+                      check=True, capture_output=True, text=True,
+                  )
+                  if build_type == 'release':
+                      if 'CN=Android Debug' in result.stdout:
+                          raise RuntimeError('Release APK is signed with a debug certificate')
+                      digests = tuple(line for line in result.stdout.splitlines()
+                                      if 'certificate SHA-256 digest:' in line)
+                      if not digests:
+                          raise RuntimeError('Missing release signing certificate')
+                      release_certificates.add(digests)
+                  target = dist / f'kicker_{os.environ["RELEASE_VERSION"]}_{abi}_{build_type}.apk'
+                  shutil.copyfile(apk, target)
+                  print(target.name)
+              if seen != expected_abis:
+                  raise RuntimeError(f'Missing APKs for {build_type}: {expected_abis - seen}')
+          if len(release_certificates) != 1:
+              raise RuntimeError('Release APKs must share one signing certificate')
+          with (dist / 'sha256sums.txt').open('w', newline='\n') as checksums:
+              for apk in sorted(dist.glob('*.apk')):
+                  checksums.write(f'{hashlib.sha256(apk.read_bytes()).hexdigest()}  {apk.name}\n')
+          PY
+
+      - name: Remove temporary signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/kicker-release.keystore"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
           files: |
             dist/*.apk
             dist/sha256sums.txt
-          generate_release_notes: true
-          tag_name: ${{ github.ref_name || github.event.inputs.tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

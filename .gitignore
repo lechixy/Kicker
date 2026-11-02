@@ -16,3 +16,7 @@ local.properties
 /state
 /docs
 /.kotlin
+*.jks
+*.keystore
+/keystore.properties
+/dist/

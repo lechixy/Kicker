@@ -13,6 +13,20 @@ java {
     }
 }
 
+val releaseSigningValues = listOf(
+    "ANDROID_KEYSTORE_PATH",
+    "ANDROID_KEYSTORE_PASSWORD",
+    "ANDROID_KEY_ALIAS",
+    "ANDROID_KEY_PASSWORD",
+).associateWith { providers.environmentVariable(it).orNull }
+val hasReleaseSigning = releaseSigningValues.values.all { !it.isNullOrBlank() }
+require(releaseSigningValues.values.all { it.isNullOrBlank() } || hasReleaseSigning) {
+    "Release signing requires all ANDROID_KEYSTORE_* / ANDROID_KEY_* environment variables."
+}
+require(providers.environmentVariable("REQUIRE_RELEASE_SIGNING").orNull != "true" || hasReleaseSigning) {
+    "Release signing credentials are required for publishing."
+}
+
 android {
     namespace = "com.lechixy.kick"
     compileSdk {
@@ -31,9 +45,28 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    providers.environmentVariable("RELEASE_VERSION").orNull?.let { tagVersion ->
+        require(defaultConfig.versionName == tagVersion) {
+            "Tag version $tagVersion does not match versionName ${defaultConfig.versionName}. Update versionName and versionCode before tagging."
+        }
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = file(releaseSigningValues.getValue("ANDROID_KEYSTORE_PATH")!!)
+                storePassword = releaseSigningValues.getValue("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias = releaseSigningValues.getValue("ANDROID_KEY_ALIAS")
+                keyPassword = releaseSigningValues.getValue("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             optimization {
                 enable = false
             }
