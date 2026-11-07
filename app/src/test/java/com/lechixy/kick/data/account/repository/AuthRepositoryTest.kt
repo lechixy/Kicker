@@ -133,6 +133,23 @@ class AuthRepositoryTest {
         assertNull(auth.session.value.profile)
     }
 
+    @Test fun channelFollowUnauthorizedExpiresSessionOnlyWhenProfileAlsoRejectsIt() = runBlocking {
+        for (profileUnauthorized in listOf(false, true)) {
+            val requests = mutableListOf<String>()
+            val auth = signedInAuth { request ->
+                val path = request.url.encodedPath
+                requests.add(path)
+                if (path == "/api/v1/user" && !profileUnauthorized) objectJson(profile)
+                else throw AccountApiException(401)
+            }
+            val path = "/api/v2/channels/one/follow"
+            val failure = runCatching { auth.requestElement("https://kick.com$path", "POST") }.exceptionOrNull()
+            assertEquals(401, (failure as AccountApiException).status)
+            assertEquals(listOf(path, "/api/v1/user"), requests)
+            assertEquals(!profileUnauthorized, auth.session.value.signedIn)
+        }
+    }
+
     @Test fun stale401CannotInvalidateNewAccount() = runBlocking {
         val entered = CompletableDeferred<Unit>(); val finish = CompletableDeferred<Unit>()
         val auth = signedInAuth { request ->

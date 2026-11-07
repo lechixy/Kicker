@@ -45,9 +45,11 @@ object SettingsKeys {
     )
     val DYNAMIC_COLOR = SettingKey(
         key = booleanPreferencesKey("dynamic_color"),
-        defaultValue = true,
+        defaultValue = false,
         type = SettingType.BooleanType
     )
+    val NAVIGATION_ORDER = SettingKey(stringPreferencesKey("navigation_order"), "", SettingType.StringType)
+    val TOP_BAR_LOGO_ANIMATION = SettingKey(booleanPreferencesKey("top_bar_logo_animation"), true, SettingType.BooleanType)
 
     /*
      * Player & Playback
@@ -57,6 +59,12 @@ object SettingsKeys {
         defaultValue = true,
         type = SettingType.BooleanType
     )
+    val LAST_SLEEP_TIMER_MINUTES = SettingKey(
+        key = intPreferencesKey("last_sleep_timer_minutes"),
+        defaultValue = 30,
+        type = SettingType.IntType,
+        validator = { it in 5..60 && it % 5 == 0 }
+    )
     val PIP_ENABLED = SettingKey(
         key = booleanPreferencesKey("pip_enabled"),
         defaultValue = true,
@@ -64,7 +72,7 @@ object SettingsKeys {
     )
     val LOW_LATENCY = SettingKey(
         key = booleanPreferencesKey("low_latency_v2_enabled"),
-        defaultValue = true,
+        defaultValue = false,
         type = SettingType.BooleanType
     )
     val SYNC_PLAYER_VOLUME_WITH_DEVICE = SettingKey(
@@ -133,7 +141,10 @@ object SettingsKeys {
             APP_LANGUAGE,
             THEME,
             DYNAMIC_COLOR,
+            NAVIGATION_ORDER,
+            TOP_BAR_LOGO_ANIMATION,
             AUTOPLAY,
+            LAST_SLEEP_TIMER_MINUTES,
             PIP_ENABLED,
             SYNC_PLAYER_VOLUME_WITH_DEVICE,
             LOW_LATENCY,

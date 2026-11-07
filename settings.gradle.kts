@@ -24,4 +24,6 @@ dependencyResolutionManagement {
 
 rootProject.name = "Kick"
 include(":app")
-include(":baselineProfile")
+include(":baselineprofile")
+// Keep the IDE module name lowercase and resolve the checked-in directory on case-sensitive systems.
+project(":baselineprofile").projectDir = file("baselineProfile")

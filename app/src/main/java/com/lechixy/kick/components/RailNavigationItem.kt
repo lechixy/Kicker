@@ -37,6 +37,7 @@ internal fun RailNavigationItem(
     modifier: Modifier = Modifier,
     description: String = label,
     supportingText: String? = null,
+    muted: Boolean = false,
     icon: @Composable () -> Unit,
 ) {
     val progress by animateFloatAsState(if (expanded) 1f else 0f,
@@ -46,8 +47,13 @@ internal fun RailNavigationItem(
     val iconScale by animateFloatAsState(if (pressed) .92f else 1f,
         tween(140), label = "rail press")
     val color by animateColorAsState(
-        if (selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent,
+        when {
+            selected && muted -> MaterialTheme.colorScheme.surfaceVariant
+            selected -> MaterialTheme.colorScheme.secondaryContainer
+            else -> Color.Transparent
+        },
         tween(180), label = "rail selection")
+    val labelColor = if (muted) MaterialTheme.colorScheme.onSurfaceVariant else Color.Unspecified
     val density = LocalDensity.current
     val textMeasurer = rememberTextMeasurer()
     val hasSupportingText = !supportingText.isNullOrBlank()
@@ -91,6 +97,7 @@ internal fun RailNavigationItem(
             .graphicsLayer { alpha = (1f - progress * 3f).coerceIn(0f, 1f) }
             .clearAndSetSemantics {},
             style = MaterialTheme.typography.labelMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+            color = labelColor,
             maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
         // Measure at the final text width, so letters do not reflow during expansion.
         Box(Modifier.wrapContentWidth(Alignment.Start, unbounded = true).width(240.dp).fillMaxHeight()
@@ -101,6 +108,7 @@ internal fun RailNavigationItem(
             }, contentAlignment = Alignment.CenterStart) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(label, style = MaterialTheme.typography.labelLarge,
+                    color = labelColor,
                     fontWeight = if (supportingText != null) FontWeight.Bold else FontWeight.Medium,
                     maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                 if (hasSupportingText) Text(supportingText.orEmpty(),

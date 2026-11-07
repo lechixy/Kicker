@@ -84,6 +84,7 @@ import com.lechixy.kick.components.ExpansionSource
 import com.lechixy.kick.components.PlayerHost
 import com.lechixy.kick.components.PlayerMode
 import com.lechixy.kick.components.rememberPlayerHostState
+import com.lechixy.kick.data.settings.local.SettingsBackupManager
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 import com.lechixy.kick.data.settings.repository.SettingsRepository
@@ -94,6 +95,7 @@ import com.lechixy.kick.screens.following.FollowingScreen
 import com.lechixy.kick.screens.following.FollowingViewModel
 import com.lechixy.kick.screens.home.HomeScreen
 import com.lechixy.kick.screens.home.HomeViewModel
+import com.lechixy.kick.screens.settings.SettingsBackupHost
 import com.lechixy.kick.screens.settings.SettingsScreen
 import com.lechixy.kick.screens.settings.general.GeneralSettingsScreen
 import com.lechixy.kick.theme.KickTheme
@@ -113,6 +115,9 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var settingsRepository: SettingsRepository
+
+    @Inject
+    lateinit var settingsBackupManager: SettingsBackupManager
 
     override fun onStart() {
         super.onStart()
@@ -207,7 +212,9 @@ class MainActivity : ComponentActivity() {
 //                        playAnimation = nativeSplashDismissed,
 //                        onFinished = { launchSplashVisible = false }
 //                    ) { KickApp() }
-                    KickApp()
+                    SettingsBackupHost(settingsBackupManager) { restorePending ->
+                        KickApp(restorePending)
+                    }
                 }
             }
         }
@@ -252,7 +259,7 @@ enum class AppDestinations(
 }
 
 @Composable
-fun KickApp() {
+fun KickApp(restorePending: Boolean = false) {
     val releaseViewModel: com.lechixy.kick.screens.settings.ReleaseViewModel = hiltViewModel()
     val releaseDialogs by releaseViewModel.dialogs.collectAsStateWithLifecycle()
     var challengesOpen by remember { mutableStateOf(false) }
@@ -604,7 +611,7 @@ fun KickApp() {
                 if (!isInPipMode) {
                     com.lechixy.kick.components.InAppNotificationHost(
                         modifier = Modifier.align(Alignment.TopCenter),
-                        enabled = !challengesOpen && releaseDialogs.isEmpty(),
+                        enabled = !restorePending && !challengesOpen && releaseDialogs.isEmpty(),
                         onActivate = { notification ->
                             when (notification.kind) {
                                 com.lechixy.kick.data.notifications.NotificationKind.WatchTimeGoal -> challengesOpen =
@@ -621,7 +628,7 @@ fun KickApp() {
                     com.lechixy.kick.components.account.AccountChallengeDialogHost(
                         challengesOpen,
                         { challengesOpen = false })
-                    if (!challengesOpen) releaseDialogs.firstOrNull()?.let { request ->
+                    if (!restorePending && !challengesOpen) releaseDialogs.firstOrNull()?.let { request ->
                         com.lechixy.kick.components.ReleaseDialog(
                             request,
                             releaseViewModel::dismiss
@@ -643,6 +650,12 @@ fun KickApp() {
     }
 }
 
+internal fun orderedAppDestinations(savedOrder: String): List<AppDestinations> {
+    val byName = AppDestinations.entries.associateBy { it.name }
+    val savedDestinations = savedOrder.split(',').mapNotNull(byName::get)
+    return (savedDestinations + AppDestinations.entries).distinct()
+}
+
 @Composable
 internal fun KickNavScaffold(
     hidden: Boolean,
@@ -662,6 +675,9 @@ internal fun KickNavScaffold(
     val sharedContent = remember { movableContentOf { latestContent() } }
 
     val settings = LocalSettingsRepository.current
+    val savedOrder by settings.get(SettingsKeys.NAVIGATION_ORDER)
+        .collectAsStateWithLifecycle(SettingsKeys.NAVIGATION_ORDER.defaultValue)
+    val destinations = remember(savedOrder) { orderedAppDestinations(savedOrder) }
     val railExpanded by settings.get(SettingsKeys.NAVIGATION_RAIL_EXPANDED)
         .collectAsStateWithLifecycle(false)
     val scope = rememberCoroutineScope()
@@ -706,51 +722,55 @@ internal fun KickNavScaffold(
 
     @Composable
     fun RowScope.BottomBarItems() {
-        AppDestinations.entries.filter { it != AppDestinations.EVENTS }.forEach { destination ->
+        destinations.filter { it != AppDestinations.EVENTS }.forEach { destination ->
             val targetRoute = destination.name.lowercase()
             val isSelected = com.lechixy.kick.components.navigationDestinationSelected(
                 currentRoute,
                 activeChannelSlug,
                 targetRoute
             )
-            NavigationBarItem(
-                selected = isSelected,
-                onClick = { onNavigate(targetRoute) },
-                icon = {
-                    DestinationIcon(destination, isSelected)
-                },
-                label = { Text(stringResource(destination.label)) }
-            )
+            androidx.compose.runtime.key(destination) {
+                NavigationBarItem(
+                    selected = isSelected,
+                    onClick = { onNavigate(targetRoute) },
+                    icon = { DestinationIcon(destination, isSelected) },
+                    label = { Text(stringResource(destination.label)) }
+                )
+            }
         }
     }
 
     @Composable
     fun RailBarItems(expanded: Boolean) {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            AppDestinations.entries.forEach { destination ->
+            destinations.forEach { destination ->
                 val targetRoute = destination.name.lowercase()
                 val isSelected = com.lechixy.kick.components.navigationDestinationSelected(
                     currentRoute,
                     activeChannelSlug,
                     targetRoute
                 )
-                com.lechixy.kick.components.RailNavigationItem(
-                    expanded = expanded,
-                    selected = isSelected,
-                    label = stringResource(destination.label),
-                    onClick = { onNavigate(targetRoute) },
-                    icon = {
-                        androidx.compose.animation.Crossfade(
-                            isSelected,
-                            animationSpec = tween(180),
-                            label = "rail icon"
-                        ) { active ->
-                            Icon(
-                                painterResource(if (active) destination.activeIcon else destination.inactiveIcon),
-                                contentDescription = null, modifier = Modifier.size(24.dp)
-                            )
+                androidx.compose.runtime.key(destination) {
+                    com.lechixy.kick.components.RailNavigationItem(
+                        expanded = expanded,
+                        selected = isSelected,
+                        label = stringResource(destination.label),
+                        onClick = { onNavigate(targetRoute) },
+                        icon = {
+                            androidx.compose.animation.Crossfade(
+                                isSelected,
+                                animationSpec = tween(180),
+                                label = "rail icon"
+                            ) { active ->
+                                Icon(
+                                    painterResource(if (active) destination.activeIcon else destination.inactiveIcon),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
                         }
-                    })
+                    )
+                }
             }
         }
     }

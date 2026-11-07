@@ -31,7 +31,7 @@
     <string name="player_pip">Resim İçinde Resim (PiP)</string>
     <string name="player_pip_description">Uygulamadan çıkıldığında yayını küçük ekranda oynat</string>
     <string name="player_low_latency">Düşük gecikme modu</string>
-    <string name="player_low_latency_description">Canlı yayını düşük gecikmeyle izle (~2 sn - stabil bir bağlantı gerektirir)</string>
+    <string name="player_low_latency_description">Canlı yayına daha yakın başla. Bağlantı dalgalanıyorsa daha geniş tampon için kapat.</string>
     <string name="player_auto_fullscreen">Otomatik tam ekran</string>
     <string name="player_auto_fullscreen_description">Canlı kanal yüklendiğinde tam ekrana geç</string>
     <string name="account_title">Kick hesabı</string>

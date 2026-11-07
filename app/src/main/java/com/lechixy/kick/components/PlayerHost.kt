@@ -92,6 +92,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 import com.lechixy.kick.R
+import com.lechixy.kick.components.channel.OfflineBannerMinHeight
 import com.lechixy.kick.data.channel.model.getBannerUrl
 import com.lechixy.kick.data.common.remote.KickNetwork
 import com.lechixy.kick.data.common.repository.KickRepository
@@ -427,7 +428,7 @@ fun PlayerHost(
         val chatW = host.sideChatWidthPx(safeArea.width, hasSideChat = wide)
         val w = (safeArea.width - chatW).coerceAtLeast(0)
         val fullHeight = (w * 9f / 16f).roundToInt()
-        val compactHeight = px(84f).roundToInt().coerceAtMost(fullHeight)
+        val compactHeight = px(OfflineBannerMinHeight.value).roundToInt().coerceAtMost(fullHeight)
         val playerHeight = (fullHeight + (compactHeight - fullHeight) *
             (host.offlineCollapseProgress?.value ?: 0f)).roundToInt()
         val headerPx = if (host.channelHeaderHeightPx > 0) {

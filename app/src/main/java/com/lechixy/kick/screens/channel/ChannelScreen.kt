@@ -15,6 +15,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -44,6 +45,7 @@ import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -110,6 +112,7 @@ import com.lechixy.kick.components.account.rememberAccountFollowAction
 import com.lechixy.kick.components.channel.AnimatedCounterText
 import com.lechixy.kick.components.channel.ChannelAboutTabContent
 import com.lechixy.kick.components.channel.ChannelTabPager
+import com.lechixy.kick.components.channel.OfflineBannerMinHeight
 import com.lechixy.kick.components.channel.OfflineBannerScrollConnection
 import com.lechixy.kick.components.channel.OfflineBannerState
 import com.lechixy.kick.components.channel.OfflineChannelBanner
@@ -179,7 +182,7 @@ fun ChannelScreen(
     var wideSelectedTab by remember(channelSlug) { mutableStateOf(ChannelTab.HOME) }
     val selectedTab = if (initialIsWide) wideSelectedTab else compactSelectedTab
 
-    val followAction = rememberAccountFollowAction(channelSlug)
+    val followAction = rememberAccountFollowAction(state.channel?.slug ?: channelSlug)
 
     var isProfilePhotoExpanded by remember(channelSlug) { mutableStateOf(false) }
     val isControlsVisible = playerHost?.isControlsVisible ?: true
@@ -236,14 +239,11 @@ fun ChannelScreen(
             if (playerHost?.offlineCollapseProgress === offlineCollapse) playerHost.offlineCollapseProgress = null
         }
     }
-    val tabScrollStates = remember(channelSlug) { ChannelTab.entries.associateWith { LazyListState() } }
-    val channelContentState = tabScrollStates.getValue(selectedTab)
-    val offlineScroll = remember(offline, channelContentState) {
-        OfflineBannerScrollConnection(
-            enabled = { offline },
-            atTop = { !channelContentState.canScrollBackward },
-            state = offlineCollapse
-        )
+    val compactTabScrollStates = remember(channelSlug) {
+        ChannelTab.entries.associateWith { LazyListState() }
+    }
+    val wideTabScrollStates = remember(channelSlug) {
+        ChannelTab.entries.associateWith { LazyListState() }
     }
     var wasRecording by remember(viewModel) { mutableStateOf(false) }
     LaunchedEffect(playerHost?.recording?.id) {
@@ -290,6 +290,7 @@ fun ChannelScreen(
             ) {
                 val screenWidthDp = maxWidth
                 val isWide = screenWidthDp >= WIDE_BREAKPOINT_DP.dp
+                val tabScrollStates = if (isWide) wideTabScrollStates else compactTabScrollStates
                 val visibleTabs = remember(isWide) {
                     if (isWide) ChannelTab.entries.filter { it != ChannelTab.CHAT }
                     else ChannelTab.entries
@@ -298,6 +299,15 @@ fun ChannelScreen(
 
                 val pagerState = key(channelSlug, isWide, isFullScreen) {
                     rememberPagerState(initialPage = visibleTabs.indexOf(effectiveSelectedTab).coerceAtLeast(0)) { visibleTabs.size }
+                }
+                val offlineScroll = remember(offline, pagerState, tabScrollStates) {
+                    OfflineBannerScrollConnection(
+                        enabled = { offline },
+                        atTop = {
+                            !tabScrollStates.getValue(visibleTabs[pagerState.currentPage]).canScrollBackward
+                        },
+                        state = offlineCollapse
+                    )
                 }
                 LaunchedEffect(pagerState, isFullScreen) {
                     snapshotFlow { pagerState.settledPage }.collect {
@@ -370,7 +380,7 @@ fun ChannelScreen(
                                             .layout { measurable, constraints ->
                                                 val colWidth = constraints.maxWidth
                                                 val fullHeightPx = (colWidth * 9f / 16f).roundToInt()
-                                                val compactHeightPx = 84.dp.roundToPx().coerceAtMost(fullHeightPx)
+                                                val compactHeightPx = OfflineBannerMinHeight.roundToPx().coerceAtMost(fullHeightPx)
                                                 val normalHeightPx = (fullHeightPx + (compactHeightPx - fullHeightPx) * offlineCollapse.value).roundToInt()
                                                 val hPx = if (isWide) {
                                                     val totalH = constraints.maxHeight
@@ -408,8 +418,7 @@ fun ChannelScreen(
                                     }
 
                                     @Composable
-                                    fun Header() {
-                                        // ChannelHeaderInfo: geniş ekranda (tablet) theater mod dahil her zaman görünür, mobilde kontrollerle senkronize
+                                    fun Header(measureForTheater: Boolean = true) {
                                         AnimatedVisibility(
                                             visible = isProfilePhotoExpanded || if (isWide || !hasPlayback) true else isControlsVisible,
                                             enter = expandVertically(tween(300)) + fadeIn(tween(300)),
@@ -429,7 +438,7 @@ fun ChannelScreen(
                                                         }
                                                     }
                                                 },
-                                                onProfilePhotoExpandedChange = { isProfilePhotoExpanded = it },
+                                                onProfilePhotoExpandedChange = { if (!isWide) isProfilePhotoExpanded = it },
                                                 isLive = isLive,
                                                 lastLiveText = lastLiveText,
                                                 isFollowing = followAction.following,
@@ -438,7 +447,7 @@ fun ChannelScreen(
                                                 onFollowClick = followAction.onClick,
                                                 context = context,
                                                 onHeightMeasured = { heightPx ->
-                                                    if (heightPx > 0 && playerHost?.channelHeaderHeightPx != heightPx) {
+                                                    if (measureForTheater && heightPx > 0 && playerHost?.channelHeaderHeightPx != heightPx) {
                                                         playerHost?.channelHeaderHeightPx = heightPx
                                                     }
                                                 }
@@ -448,29 +457,28 @@ fun ChannelScreen(
                                     }
                                     @Composable
                                     fun Tabs() {
-                                        // Tabs remain available while scrolling; wide theater mode shows only the header.
-                                        AnimatedVisibility(
-                                            visible = !isWide || !isTheaterMode || !hasPlayback,
-                                            enter = expandVertically(tween(300)) + fadeIn(tween(300)),
-                                            exit = shrinkVertically(tween(300)) + fadeOut(tween(300))
-                                        ) {
-                                            ChannelTabsRow(
-                                                tabs = visibleTabs,
-                                                selectedTab = visibleTabs[pagerState.currentPage],
-                                                onTabSelected = { tab -> scope.launch { pagerState.animateScrollToPage(visibleTabs.indexOf(tab)) } }
-                                            )
-                                        }
-
+                                        ChannelTabsRow(
+                                            tabs = visibleTabs,
+                                            selectedTab = visibleTabs[pagerState.currentPage],
+                                            onTabSelected = { tab -> scope.launch { pagerState.animateScrollToPage(visibleTabs.indexOf(tab)) } }
+                                        )
                                     }
-                                    Header()
-                                    if (!(isWide && isTheaterMode && hasPlayback)) {
-                                        Tabs()
+                                    val headerOnly = isWide && isTheaterMode && hasPlayback
+                                    if (!isWide || headerOnly) Header()
+                                    if (!headerOnly) {
+                                        if (!isWide) Tabs()
                                         ChannelTabPager(state = pagerState, tabs = visibleTabs,
                                             modifier = Modifier.fillMaxWidth().weight(1f)) { pageTab ->
                                             if (pageTab == ChannelTab.CHAT && !hasSideChat) {
                                                 sharedChat(channel, null, Modifier.fillMaxSize())
                                             } else {
                                                 LazyColumn(state = tabScrollStates.getValue(pageTab), modifier = Modifier.fillMaxSize()) {
+                                                    if (isWide) {
+                                                        item(key = "channel_header") {
+                                                            Header(measureForTheater = pageTab == visibleTabs[pagerState.settledPage])
+                                                        }
+                                                        item(key = "channel_tabs") { Tabs() }
+                                                    }
                                                     item(key = "channel_content") {
                                                         ChannelTabContent(
                                                             tab = pageTab, channel = channel,
@@ -892,7 +900,12 @@ private fun ChannelHeaderInfo(
                 url = channel.user?.profilePic,
                 username = channel.user?.username,
                 onExpandedChange = onProfilePhotoExpandedChange,
-                modifier = Modifier.size(56.dp)
+                modifier = Modifier.size(56.dp).then(
+                    if (channel.livestream != null) {
+                        Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
+                            .padding(4.dp)
+                    } else Modifier
+                )
             )
 
             Column(

@@ -1,18 +1,22 @@
 package com.lechixy.kick.data.settings.repository
 
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import java.io.IOException
 import javax.inject.Inject
 import javax.inject.Singleton
 
 import com.lechixy.kick.data.settings.model.SettingKey
+import com.lechixy.kick.data.settings.model.SettingsKeys
+import com.lechixy.kick.util.kickLanguageCode
 
 @Singleton
 class SettingsRepository @Inject constructor(
@@ -34,16 +38,13 @@ class SettingsRepository @Inject constructor(
     }
 
     suspend fun <T> set(settingKey: SettingKey<T>, value: T) {
-        if (settingKey.key == com.lechixy.kick.data.settings.model.SettingsKeys.RECOMMENDED_LIVESTREAM_LANGUAGE.key && value is String) {
-            val code = com.lechixy.kick.util.kickLanguageCode(value) ?: return
-            dataStore.edit { it[com.lechixy.kick.data.settings.model.SettingsKeys.RECOMMENDED_LIVESTREAM_LANGUAGE.key] = code }
-            return
-        }
-        if (settingKey.validator?.invoke(value) == false) return
         dataStore.edit { preferences ->
-            preferences[settingKey.key] = value
+            preferences.setSetting(settingKey, value)
         }
     }
+
+    internal suspend fun editSettings(update: MutablePreferences.() -> Unit): Preferences =
+        dataStore.edit { it.update() }
 
     /** Persist the launch marker atomically before any release network request. */
     suspend fun recordStartupVersion(version: String): Boolean {
@@ -72,8 +73,18 @@ class SettingsRepository @Inject constructor(
         }
     }
 
-    val allPreferencesFlow: Flow<Preferences> = dataStore.data
-        .catch { exception ->
-            if (exception is IOException) emit(emptyPreferences()) else throw exception
-        }
+    internal val snapshots: Flow<Preferences> get() = dataStore.data
+
+    internal suspend fun snapshot(): Preferences = snapshots.first()
+}
+
+internal fun <T> MutablePreferences.setSetting(setting: SettingKey<T>, value: T): Boolean {
+    if (setting.key == SettingsKeys.RECOMMENDED_LIVESTREAM_LANGUAGE.key && value is String) {
+        val code = kickLanguageCode(value) ?: return false
+        this[SettingsKeys.RECOMMENDED_LIVESTREAM_LANGUAGE.key] = code
+        return true
+    }
+    if (setting.validator?.invoke(value) == false) return false
+    this[setting.key] = value
+    return true
 }

@@ -38,7 +38,7 @@
     <string name="rarity_legendary">Legendary</string>
     <string name="rarity_mythic">Mythic</string>
     <string name="channel_follow_title">Channel follow</string>
-    <string name="channel_follow_unavailable">Could not verify follow status</string>
+    <string name="channel_follow_unavailable">Following is unavailable in Kicker for this channel. You can open the channel on Kick.</string>
     <string name="channel_open_kick">Open on Kick</string>
     <string name="channel_follow_wait">Please wait…</string>
     <string name="account_my_account">My account</string>

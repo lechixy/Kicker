@@ -9,6 +9,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
@@ -22,10 +23,14 @@ import com.lechixy.kick.data.following.model.FollowedChannel
 @Composable
 internal fun FollowingRailItem(channel: FollowedChannel, selected: Boolean, onClick: () -> Unit,
     expanded: Boolean = false, modifier: Modifier = Modifier) {
-    val description = if (channel.live) stringResource(R.string.navigation_following_live, channel.username) else channel.username
+    val description = stringResource(
+        if (channel.live) R.string.navigation_following_live else R.string.navigation_following_offline,
+        channel.username
+    )
     RailNavigationItem(expanded = expanded, selected = selected, label = channel.username,
         description = description, onClick = onClick, modifier = modifier,
         supportingText = channel.title?.takeIf { channel.live }.orEmpty(),
+        muted = !channel.live,
         icon = { FollowingAvatar(channel) })
 }
 
@@ -33,8 +38,13 @@ internal fun FollowingRailItem(channel: FollowedChannel, selected: Boolean, onCl
 private fun FollowingAvatar(channel: FollowedChannel) {
     Box(Modifier.size(36.dp)) {
         AccountAvatar(channel.avatar, channel.username, Modifier.fillMaxSize())
-        if (channel.live) Box(Modifier.align(Alignment.BottomEnd).size(9.dp)
-            .background(MaterialTheme.colorScheme.primary, CircleShape))
+        if (channel.live) {
+            Box(Modifier.align(Alignment.BottomEnd).size(9.dp)
+                .background(MaterialTheme.colorScheme.primary, CircleShape))
+        } else {
+            Box(Modifier.matchParentSize().clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.42f)))
+        }
     }
 }
 

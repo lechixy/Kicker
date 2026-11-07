@@ -31,8 +31,7 @@ class KickLivePlaylistTest {
 
     @Test fun normalModeKeepsConservativeStartAndNeverRequestsPrefetch() {
         val result = transformKickLivePlaylist(live, false)
-        assertTrue(result.contains("#EXT-X-START:TIME-OFFSET=-5.000\n"))
-        assertFalse(result.contains("PRECISE=YES"))
+        assertTrue(result.contains("#EXT-X-START:TIME-OFFSET=-8.000,PRECISE=YES\n"))
         assertFalse(result.contains("active-44.ts"))
         assertFalse(result.contains("future-45.ts"))
     }
@@ -68,6 +67,15 @@ class KickLivePlaylistTest {
             "#EXTM3U\n#EXTINF:NaN,live\nsegment.ts"
         )
         examples.forEach { assertEquals(it, transformKickLivePlaylist(it, true)) }
+    }
+
+    @Test fun standardModeAddsReserveWithoutRewritingNativeLowLatencyTags() {
+        val native = live.substringBefore("#EXT-X-PREFETCH:") +
+            "#EXT-X-PART-INF:PART-TARGET=0.333\n#EXT-X-PART:DURATION=0.333,URI=\"part.m4s\""
+        val standard = transformKickLivePlaylist(native, false)
+        assertTrue(standard.contains("#EXT-X-START:TIME-OFFSET=-8.000,PRECISE=YES\n"))
+        assertEquals(native.trimEnd(), standard.lineSequence()
+            .filterNot { it.startsWith("#EXT-X-START:") }.joinToString("\n").trimEnd())
     }
 
     @Test fun windowsLineEndingsDoNotDisablePreciseStart() {

@@ -29,6 +29,8 @@ import kotlin.math.roundToInt
 import com.lechixy.kick.R
 import com.lechixy.kick.data.channel.model.ChannelDetail
 
+internal val OfflineBannerMinHeight = 128.dp
+
 @Composable
 internal fun OfflineChannelBanner(
     channel: ChannelDetail,
@@ -45,7 +47,7 @@ internal fun OfflineChannelBanner(
 ) {
     Box(modifier.fillMaxWidth().layout { measurable, constraints ->
         val normal = (constraints.maxWidth * 9f / 16f).roundToInt()
-        val compact = 84.dp.roundToPx().coerceAtMost(normal)
+        val compact = OfflineBannerMinHeight.roundToPx().coerceAtMost(normal)
         onTravelChanged((normal - compact).toFloat())
         val height = (normal + (compact - normal) * collapseProgress.value).roundToInt()
         val child = measurable.measure(Constraints.fixed(constraints.maxWidth, height))

@@ -95,6 +95,8 @@
     <string name="player_off">Off</string>
     <string name="player_minutes">%1$d minutes</string>
     <string name="player_minutes_left">%1$d min left</string>
+    <string name="player_sleep_timer_start">Start timer</string>
+    <string name="player_sleep_timer_stop">Stop timer</string>
     <string name="player_sync_volume">Sync player volume with device media volume</string>
     <string name="player_per_hour">/hour</string>
     <string name="player_back">Back</string>

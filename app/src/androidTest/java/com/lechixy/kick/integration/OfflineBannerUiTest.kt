@@ -134,6 +134,8 @@ class OfflineBannerUiTest {
         compose.runOnIdle { assertEquals(0f, banner.value, 0.001f); banner.drag(banner.travelPx * 0.98f); banner.settle() }
         compose.waitForIdle()
         compose.runOnIdle { assertEquals(1f, banner.value, 0.001f) }
+        val bannerBounds = compose.onNodeWithTag("banner").fetchSemanticsNode().boundsInRoot
+        assertEquals(with(compose.density) { 128.dp.toPx() }, bannerBounds.height, 1f)
         val button = compose.onNodeWithContentDescription(context.getString(R.string.offline_minimize)).fetchSemanticsNode().boundsInRoot
         val text = compose.onNodeWithText(context.getString(R.string.offline_channel_name, "tester"), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         assertTrue(text.left > button.right)

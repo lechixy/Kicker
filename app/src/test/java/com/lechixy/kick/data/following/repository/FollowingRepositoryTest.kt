@@ -24,7 +24,7 @@ class FollowingRepositoryTest {
                 methods.add(request.method)
                 if (failMutation) throw AccountApiException(403)
                 followed = request.method == "POST"
-                objectJson("{}")
+                Json.parseToJsonElement("null")
             } else if (followed) objectJson("""{"channels":[{"channel_slug":"one","is_live":true}]}""")
             else objectJson("""{"channels":[]}""")
         }

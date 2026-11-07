@@ -35,7 +35,6 @@ import androidx.media3.session.MediaSessionService
 import dagger.hilt.android.AndroidEntryPoint
 import java.io.ByteArrayInputStream
 import java.io.InputStream
-import javax.inject.Inject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -45,10 +44,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
 import com.lechixy.kick.BuildConfig
-import com.lechixy.kick.data.settings.model.SettingsKeys
-import com.lechixy.kick.data.settings.repository.SettingsRepository
 import com.lechixy.kick.service.player.DiagnosticLiveSpeedControl
-import com.lechixy.kick.service.player.BufferAwareLiveSpeedControl
 import com.lechixy.kick.service.player.LiveResumeListener
 import com.lechixy.kick.service.player.PlaybackDiagnosticTracker
 import com.lechixy.kick.service.player.PlaybackProgressTracker
@@ -59,12 +55,7 @@ import com.lechixy.kick.service.player.transformKickLivePlaylist
 @OptIn(UnstableApi::class)
 @AndroidEntryPoint
 class PlaybackService : MediaSessionService() {
-    @Inject
-    lateinit var settingsRepository: SettingsRepository
-
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    @Volatile
-    private var lowLatencyEnabled: Boolean = SettingsKeys.LOW_LATENCY.defaultValue
 
     private var mediaSession: MediaSession? = null
     private var progressTracker: PlaybackProgressTracker? = null
@@ -83,12 +74,6 @@ class PlaybackService : MediaSessionService() {
             com.lechixy.kick.data.account.AccountGraph.auth.session.map { it.generation }
                 .distinctUntilChanged().collect { viewerTracking.refreshAuthentication() }
         }
-        serviceScope.launch {
-            settingsRepository.get(SettingsKeys.LOW_LATENCY).collect { enabled ->
-                lowLatencyEnabled = enabled
-            }
-        }
-
         val dataSourceFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(
                 "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 " +
@@ -114,20 +99,17 @@ class PlaybackService : MediaSessionService() {
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
 
-        val liveSpeedControl = DiagnosticLiveSpeedControl(BufferAwareLiveSpeedControl(DefaultLivePlaybackSpeedControl.Builder()
-            .setFallbackMinPlaybackSpeed(0.95f)
-            .setFallbackMaxPlaybackSpeed(1.10f)
-            // Back off after a real stall; Media3 gradually reduces this target again
-            // when delivery improves, so this is not a permanent latency penalty.
-            .setTargetLiveOffsetIncrementOnRebufferMs(500L)
-            .build()))
+        val liveSpeedControl = DiagnosticLiveSpeedControl(DefaultLivePlaybackSpeedControl.Builder()
+            .setFallbackMinPlaybackSpeed(1f)
+            .setFallbackMaxPlaybackSpeed(1f)
+            .build())
 
-        val hlsParserFactory = KickHlsPlaylistParserFactory {
-            lowLatencyEnabled
-        }
-
-        val hlsMediaSourceFactory = HlsMediaSource.Factory(dataSourceFactory)
-            .setPlaylistParserFactory(hlsParserFactory)
+        // The item and every playlist reload use the same mode, even during a settings change.
+        val standardHlsFactory = HlsMediaSource.Factory(dataSourceFactory)
+            .setPlaylistParserFactory(KickHlsPlaylistParserFactory(lowLatency = false))
+            .setAllowChunklessPreparation(true)
+        val lowLatencyHlsFactory = HlsMediaSource.Factory(dataSourceFactory)
+            .setPlaylistParserFactory(KickHlsPlaylistParserFactory(lowLatency = true))
             .setAllowChunklessPreparation(true)
 
         val defaultMediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
@@ -136,7 +118,8 @@ class PlaybackService : MediaSessionService() {
             override fun setDrmSessionManagerProvider(
                 drmSessionManagerProvider: DrmSessionManagerProvider
             ): MediaSource.Factory {
-                hlsMediaSourceFactory.setDrmSessionManagerProvider(drmSessionManagerProvider)
+                standardHlsFactory.setDrmSessionManagerProvider(drmSessionManagerProvider)
+                lowLatencyHlsFactory.setDrmSessionManagerProvider(drmSessionManagerProvider)
                 defaultMediaSourceFactory.setDrmSessionManagerProvider(drmSessionManagerProvider)
                 return this
             }
@@ -144,7 +127,8 @@ class PlaybackService : MediaSessionService() {
             override fun setLoadErrorHandlingPolicy(
                 loadErrorHandlingPolicy: LoadErrorHandlingPolicy
             ): MediaSource.Factory {
-                hlsMediaSourceFactory.setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
+                standardHlsFactory.setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
+                lowLatencyHlsFactory.setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
                 defaultMediaSourceFactory.setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
                 return this
             }
@@ -155,8 +139,10 @@ class PlaybackService : MediaSessionService() {
                 val path = mediaItem.localConfiguration?.uri?.path.orEmpty()
                 return if (path.endsWith(".mp4", ignoreCase = true)) {
                     defaultMediaSourceFactory.createMediaSource(mediaItem)
+                } else if (mediaItem.mediaMetadata.extras?.getBoolean(EXTRA_LOW_LATENCY) == true) {
+                    lowLatencyHlsFactory.createMediaSource(mediaItem)
                 } else {
-                    hlsMediaSourceFactory.createMediaSource(mediaItem)
+                    standardHlsFactory.createMediaSource(mediaItem)
                 }
             }
         }
@@ -252,13 +238,13 @@ class PlaybackService : MediaSessionService() {
  */
 @UnstableApi
 private class KickHlsPlaylistParserFactory(
-    private val isLowLatencyEnabled: () -> Boolean
+    private val lowLatency: Boolean
 ) : HlsPlaylistParserFactory {
 
     private val delegate = DefaultHlsPlaylistParserFactory()
 
     override fun createPlaylistParser(): ParsingLoadable.Parser<HlsPlaylist> =
-        KickHlsPlaylistParser(delegate.createPlaylistParser(), isLowLatencyEnabled)
+        KickHlsPlaylistParser(delegate.createPlaylistParser(), lowLatency)
 
     override fun createPlaylistParser(
         multivariantPlaylist: HlsMultivariantPlaylist,
@@ -266,26 +252,27 @@ private class KickHlsPlaylistParserFactory(
     ): ParsingLoadable.Parser<HlsPlaylist> =
         KickHlsPlaylistParser(
             delegate.createPlaylistParser(multivariantPlaylist, previousMediaPlaylist),
-            isLowLatencyEnabled
+            lowLatency
         )
 }
 
 @UnstableApi
 private class KickHlsPlaylistParser(
     private val delegate: ParsingLoadable.Parser<HlsPlaylist>,
-    private val isLowLatencyEnabled: () -> Boolean
+    private val lowLatency: Boolean
 ) : ParsingLoadable.Parser<HlsPlaylist> {
 
     override fun parse(uri: Uri, inputStream: InputStream): HlsPlaylist {
         val rawBytes = inputStream.readBytes()
         val text = rawBytes.toString(Charsets.UTF_8)
 
-        val transformedText = transformKickLivePlaylist(text, isLowLatencyEnabled())
+        val transformedText = transformKickLivePlaylist(text, lowLatency)
         if (BuildConfig.DEBUG && text.contains("#EXT-X-PREFETCH:")) {
             val durations = text.lineSequence().filter { it.startsWith("#EXTINF:") }
                 .mapNotNull { it.substringAfter(':').substringBefore(',').toDoubleOrNull() }.toList()
             val target = transformedText.lineSequence().firstOrNull { it.startsWith("#EXT-X-TARGETDURATION:") }
-            Log.d("KickPlaylist", "segments=${durations.size} min=${durations.minOrNull()} max=${durations.maxOrNull()} last=${durations.lastOrNull()} $target")
+            val start = transformedText.lineSequence().firstOrNull { it.startsWith("#EXT-X-START:") }
+            Log.d("KickPlaylist", "lowLatency=$lowLatency segments=${durations.size} min=${durations.minOrNull()} max=${durations.maxOrNull()} last=${durations.lastOrNull()} $target $start")
         }
         return delegate.parse(
             uri,
@@ -350,7 +337,7 @@ fun buildPlaybackMediaItem(
             if (!isLive && vodDurationMs != null && vodDurationMs > 0) {
                 putLong(EXTRA_END_TIME_MS, if (startTimeMs > 0) startTimeMs + vodDurationMs else vodDurationMs)
             }
-            putBoolean(EXTRA_LOW_LATENCY, isLowLatency)
+            if (isLive) putBoolean(EXTRA_LOW_LATENCY, isLowLatency)
         })
         .build()
 
@@ -360,11 +347,10 @@ fun buildPlaybackMediaItem(
         .setMediaMetadata(metadata)
 
     if (isLive) {
-        // Target offset doğrudan manifest içine enjekte edilen #EXT-X-START:TIME-OFFSET
-        // üzerinden yayıncının segment süresine (2sn veya 4.167sn) göre dinamik hesaplanır.
+        // Use the playlist's start position and keep the audio clock at normal speed.
         val liveConfig = MediaItem.LiveConfiguration.Builder()
-            .setMinPlaybackSpeed(0.95f)
-            .setMaxPlaybackSpeed(if (isLowLatency) 1.10f else 1.03f)
+            .setMinPlaybackSpeed(1f)
+            .setMaxPlaybackSpeed(1f)
             .build()
         builder.setLiveConfiguration(liveConfig)
     }

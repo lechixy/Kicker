@@ -32,7 +32,7 @@
     <string name="player_pip">Picture in Picture (PiP)</string>
     <string name="player_pip_description">Keep playing in a small window when leaving the app</string>
     <string name="player_low_latency">Low latency mode</string>
-    <string name="player_low_latency_description">Stay close to the live broadcast (~2s delay - requires a stable connection)</string>
+    <string name="player_low_latency_description">Start closer to the live broadcast with less buffer. Turn off for a larger buffer on unstable connections.</string>
     <string name="player_auto_fullscreen">Automatic fullscreen</string>
     <string name="player_auto_fullscreen_description">Enter fullscreen when a live channel is loaded</string>
     <string name="account_title">Kick account</string>

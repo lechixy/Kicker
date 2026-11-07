@@ -130,14 +130,30 @@ class FollowingRepository(private val auth: AuthRepository, private val scope: C
     }
 
     /** Current status comes from /me; the paginated list alone cannot prove a negative. */
+    suspend fun isFollowing(slug: String): Boolean {
+        require(slug.matches(CHANNEL_SLUG))
+        val response = auth.request("https://kick.com/api/v2/channels/$slug/me")
+        val membership = (response["data"] as? JsonObject) ?: response
+        return (membership["is_following"] as? JsonPrimitive)?.booleanOrNull
+            ?: error("Missing follow status")
+    }
+
     suspend fun setFollowing(slug: String, following: Boolean) {
         val generation = auth.session.value.generation
         mutationMutex.withLock {
             check(auth.session.value.signedIn && generation == auth.session.value.generation) { "Session changed" }
-            require(slug.matches(Regex("[A-Za-z0-9_-]+")))
-            auth.request("https://kick.com/api/v2/channels/$slug/follow", if (following) "POST" else "DELETE")
-            refresh()
-            rail.invalidate()
+            require(slug.matches(CHANNEL_SLUG))
+            auth.requestElement("https://kick.com/api/v2/channels/$slug/follow", if (following) "POST" else "DELETE")
+            if (generation == auth.session.value.generation) refreshAfterFollowChange()
         }
+    }
+
+    fun refreshAfterFollowChange() {
+        refresh()
+        rail.invalidate()
+    }
+
+    private companion object {
+        val CHANNEL_SLUG = Regex("[A-Za-z0-9_-]+")
     }
 }

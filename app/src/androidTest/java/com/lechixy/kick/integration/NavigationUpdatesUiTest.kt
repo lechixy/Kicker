@@ -181,6 +181,20 @@ class NavigationUpdatesUiTest {
         compose.runOnIdle { assertEquals("rraenee", opened); active = null }
         compose.onNode(hasText("RRaenee") and isSelectable()).assertIsNotSelected()
     }
+    @Test fun navigationOrderSavesMovedDestinations() {
+        show { com.lechixy.kick.components.settings.NavigationOrderSetting() }
+        compose.onNodeWithText(label(R.string.settings_navigation_order)).performClick()
+        val moveHomeDown = compose.activity.getString(R.string.settings_navigation_move_down, label(R.string.home))
+        compose.onNodeWithContentDescription(moveHomeDown).performClick()
+        compose.onNodeWithText(label(R.string.settings_navigation_order_save)).performClick()
+        runBlocking {
+            val order = withTimeout(3_000) {
+                settings.get(SettingsKeys.NAVIGATION_ORDER).first { it.isNotBlank() }
+            }
+            assertEquals("FOLLOWING,HOME,SEARCH,BROWSE,EVENTS,SETTINGS", order)
+        }
+    }
+
     @Test fun expandedRailShowsTitleWithoutViewerCount() {
         var expanded by mutableStateOf(false)
         val channel = FollowedChannel("rraenee", "RRaenee", null, true, "A live stream title", null, 26233, true)

@@ -4,6 +4,7 @@ import com.lechixy.kick.data.account.model.StoredWebSession
 
 import android.content.Context
 import android.content.Intent
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -129,7 +130,8 @@ class AuthRepository(
 
     suspend fun requestArray(url: String): JsonArray = requestJson(url, "GET", null).jsonArray
 
-    suspend fun requestElement(url: String): JsonElement = requestJson(url, "GET", null)
+    suspend fun requestElement(url: String, method: String = "GET"): JsonElement =
+        requestJson(url, method, null)
 
     /** Viewer credentials are only sent to the two dedicated Kick viewer endpoints. */
     internal fun viewerRequest(address: okhttp3.HttpUrl): Request {
@@ -162,12 +164,26 @@ class AuthRepository(
             }
             return result
         } catch (failure: AccountApiException) {
-            if (failure.status == 401) synchronized(lock) {
-                if (generation == session.value.generation) clear(SessionStatus.ReauthenticationRequired)
+            if (failure.status == 401 && generation == session.value.generation) {
+                val channelFollowRequest = request.url.host == "kick.com" &&
+                    FOLLOW_SESSION_PATH.matches(request.url.encodedPath)
+                // A channel endpoint can reject the request while the Kick account is still valid.
+                if (!channelFollowRequest || profileRejectsSession(current)) synchronized(lock) {
+                    if (generation == session.value.generation) clear(SessionStatus.ReauthenticationRequired)
+                }
             }
             throw failure
         }
     }
+
+    private suspend fun profileRejectsSession(current: StoredWebSession): Boolean =
+        try {
+            execute(buildRequest(PROFILE_URL, "GET", null, current))
+            false
+        } catch (failure: Exception) {
+            if (failure is CancellationException) throw failure
+            failure is AccountApiException && failure.status == 401
+        }
 
     private fun profileFrom(response: JsonObject): AccountProfile {
         val user = (response["data"] as? JsonObject) ?: response
@@ -218,6 +234,7 @@ class AuthRepository(
     companion object {
         private const val VIEWER_CLIENT_TOKEN = "e1393935a959b4020a4491574f6490129f678acdaa92760471263db43487f823"
         private const val PROFILE_URL = "https://kick.com/api/v1/user"
+        private val FOLLOW_SESSION_PATH = Regex("/api/v2/channels/[A-Za-z0-9_-]+/(me|follow)")
         private val JSON_TYPE = "application/json".toMediaType()
         internal fun cookie(header: String, name: String): String? = header.split(';').map { it.trim().split('=', limit = 2) }
             .firstOrNull { it.size == 2 && it[0] == name }?.get(1)?.takeIf { it.isNotBlank() }

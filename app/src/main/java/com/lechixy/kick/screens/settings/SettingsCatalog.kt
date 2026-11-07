@@ -35,6 +35,7 @@ internal fun settingsCatalog(): List<SettingsEntry> {
     val playback = SettingsDestinations.PLAYBACK
     val chat = SettingsDestinations.CHAT
     val openChangelog = LocalOpenChangelog.current
+    val backup = LocalSettingsBackupActions.current
     return listOf(
         SettingsEntry("changelog", R.string.settings_changelog, R.string.settings_changelog_description, general) {
             SettingCard(title = stringResource(R.string.settings_changelog), description = stringResource(R.string.settings_changelog_description), onClick = openChangelog)
@@ -51,6 +52,33 @@ internal fun settingsCatalog(): List<SettingsEntry> {
             SettingTextField(SettingsKeys.RECOMMENDED_LIVESTREAM_LANGUAGE, stringResource(R.string.settings_recommended_language),
                 description = stringResource(R.string.settings_recommended_language_description), placeholder = "tr")
         },
+        SettingsEntry("backup-location", R.string.settings_backup_location, R.string.settings_backup_location_message, general) {
+            SettingCard(
+                title = stringResource(R.string.settings_backup_location),
+                description = stringResource(
+                    if (backup?.customLocationSelected == true) R.string.settings_backup_location_custom_summary
+                    else R.string.settings_backup_location_default_summary
+                ),
+                enabled = backup?.enabled == true,
+                onClick = backup?.chooseAutomaticLocation
+            )
+        },
+        SettingsEntry("import-settings", R.string.settings_backup_import, R.string.settings_backup_import_description, general) {
+            SettingCard(
+                title = stringResource(R.string.settings_backup_import),
+                description = stringResource(R.string.settings_backup_import_description),
+                enabled = backup?.enabled == true,
+                onClick = backup?.importSettings
+            )
+        },
+        SettingsEntry("export-settings", R.string.settings_backup_export, R.string.settings_backup_export_description, general) {
+            SettingCard(
+                title = stringResource(R.string.settings_backup_export),
+                description = stringResource(R.string.settings_backup_export_description),
+                enabled = backup?.enabled == true,
+                onClick = backup?.exportSettings
+            )
+        },
         SettingsEntry("theme", R.string.settings_theme, null, custom) {
             SettingDropdown(SettingsKeys.THEME, stringResource(R.string.settings_theme), options = listOf(
                 "system" to stringResource(R.string.settings_system), "light" to stringResource(R.string.settings_light),
@@ -58,6 +86,12 @@ internal fun settingsCatalog(): List<SettingsEntry> {
         },
         SettingsEntry("dynamic-color", R.string.settings_dynamic_color, null, custom) {
             SettingSwitch(SettingsKeys.DYNAMIC_COLOR, stringResource(R.string.settings_dynamic_color))
+        },
+        SettingsEntry("navigation-order", R.string.settings_navigation_order, R.string.settings_navigation_order_description, custom) {
+            NavigationOrderSetting()
+        },
+        SettingsEntry("top-bar-logo-animation", R.string.settings_top_bar_logo_animation, null, custom) {
+            SettingSwitch(SettingsKeys.TOP_BAR_LOGO_ANIMATION, stringResource(R.string.settings_top_bar_logo_animation))
         },
         SettingsEntry("autoplay", R.string.player_autoplay, null, playback) {
             SettingSwitch(SettingsKeys.AUTOPLAY, stringResource(R.string.player_autoplay))

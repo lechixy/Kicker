@@ -110,6 +110,8 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -135,6 +137,7 @@ import com.lechixy.kick.data.channel.model.getBannerUrl
 import com.lechixy.kick.data.player.local.PlaybackProgressStore
 import com.lechixy.kick.data.player.model.RecordedPlayback
 import com.lechixy.kick.data.settings.model.SettingsKeys
+import kotlin.math.roundToInt
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 import com.lechixy.kick.service.EXTRA_LOW_LATENCY
 import com.lechixy.kick.service.PlaybackService
@@ -219,6 +222,8 @@ fun KickPlayerView(
     val remainingTimerSeconds = sleepTimer.remainingSeconds
 
     val settingsRepository = LocalSettingsRepository.current
+    val lastSleepTimerMinutes by settingsRepository.get(SettingsKeys.LAST_SLEEP_TIMER_MINUTES)
+        .collectAsStateWithLifecycle(SettingsKeys.LAST_SLEEP_TIMER_MINUTES.defaultValue)
     val syncVolume by settingsRepository.get(SettingsKeys.SYNC_PLAYER_VOLUME_WITH_DEVICE)
         .collectAsStateWithLifecycle(initialValue = SettingsKeys.SYNC_PLAYER_VOLUME_WITH_DEVICE.defaultValue)
     val playerVolume = rememberPlayerVolume(syncVolume)
@@ -280,7 +285,7 @@ fun KickPlayerView(
     val pipEnabled by settingsRepository
         .get(SettingsKeys.PIP_ENABLED)
         .collectAsStateWithLifecycle(initialValue = SettingsKeys.PIP_ENABLED.defaultValue)
-    val lowLatencyEnabled by settingsRepository
+    val lowLatencySetting by settingsRepository
         .get(SettingsKeys.LOW_LATENCY)
         .collectAsStateWithLifecycle(initialValue = SettingsKeys.LOW_LATENCY.defaultValue)
     val autoFullscreenLive by settingsRepository
@@ -339,6 +344,7 @@ fun KickPlayerView(
     var liveOffsetMs by remember(stableId) { mutableLongStateOf(C.TIME_UNSET) }
     var isAtLiveEdge by remember(stableId) { mutableStateOf(false) }
     val isLiveStream = recording == null && (channel?.livestream != null || player?.isCurrentMediaItemLive == true)
+    val lowLatencyEnabled = isLiveStream && lowLatencySetting
     val latestIsLiveStream by rememberUpdatedState(isLiveStream)
     var positionMs by remember(stableId) { mutableLongStateOf(0L) }
     var durationMs by remember(stableId) { mutableLongStateOf(recording?.durationMs ?: 0L) }
@@ -490,10 +496,8 @@ fun KickPlayerView(
                 p.playbackState == Player.STATE_READY
         val alreadyLoaded = currentItem?.mediaId == stableId &&
                 (keepLiveSession || currentItem.localConfiguration?.uri?.toString() == playbackUrl) &&
-                currentItem.mediaMetadata.extras?.getBoolean(
-                    EXTRA_LOW_LATENCY,
-                    lowLatencyEnabled
-                ) == lowLatencyEnabled
+                (!isLiveStream ||
+                    (currentItem.mediaMetadata.extras?.getBoolean(EXTRA_LOW_LATENCY) == true) == lowLatencyEnabled)
         if (alreadyLoaded) {
             // ViewerTrackingClient resolves missing VOD metadata independently. Updating
             // tracking metadata must not replace the media item of an active HLS stream.
@@ -775,6 +779,9 @@ fun KickPlayerView(
             val selectSleepTimer: (Int) -> Unit = { mins ->
                 // Start before asking permission. Playback expiry never depends on the answer.
                 com.lechixy.kick.service.player.SleepTimer.start(mins)
+                if (mins > 0) coroutineScope.launch {
+                    settingsRepository.set(SettingsKeys.LAST_SLEEP_TIMER_MINUTES, mins)
+                }
                 closeSettings()
                 if (mins > 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                     ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -964,6 +971,10 @@ fun KickPlayerView(
                             }
 
                             PlayerSettingsPage.SLEEP_TIMER -> {
+                                val timerSlider = remember(lastSleepTimerMinutes) {
+                                    SliderState(value = lastSleepTimerMinutes.toFloat(), steps = 10, trackRange = 5f..60f)
+                                }
+                                val minutes = timerSlider.value.roundToInt()
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -971,14 +982,30 @@ fun KickPlayerView(
                                         .verticalScroll(rememberScrollState()),
                                     verticalArrangement = Arrangement.spacedBy(2.dp)
                                 ) {
-                                    listOf(0, 15, 30, 45, 60).forEach { mins ->
-                                        PlayerSettingsOptionRow(
-                                            title = if (mins == 0) stringResource(R.string.player_off) else stringResource(R.string.player_minutes, mins),
-                                            subtitle = if (mins != 0 && sleepTimerMinutes == mins)
-                                                stringResource(R.string.player_minutes_left, (remainingTimerSeconds + 59) / 60) else null,
-                                            selected = sleepTimerMinutes == mins,
-                                            onClick = { selectSleepTimer(mins) }
+                                    val duration = stringResource(R.string.player_minutes, minutes)
+                                    Text(duration, style = MaterialTheme.typography.titleMedium)
+                                    Slider(
+                                        state = timerSlider,
+                                        onValueChange = { timerSlider.value = it },
+                                        modifier = Modifier.semantics {
+                                            stateDescription = duration
+                                        }
+                                    )
+                                    if (sleepTimerMinutes > 0) {
+                                        Text(
+                                            stringResource(R.string.player_minutes_left, (remainingTimerSeconds + 59) / 60),
+                                            style = MaterialTheme.typography.bodySmall
                                         )
+                                    }
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                                        if (sleepTimerMinutes > 0) {
+                                            TextButton(onClick = { selectSleepTimer(0) }) {
+                                                Text(stringResource(R.string.player_sleep_timer_stop))
+                                            }
+                                        }
+                                        androidx.compose.material3.Button(onClick = { selectSleepTimer(minutes) }) {
+                                            Text(stringResource(R.string.player_sleep_timer_start))
+                                        }
                                     }
                                 }
                             }

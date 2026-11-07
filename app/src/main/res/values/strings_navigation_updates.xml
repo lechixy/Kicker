@@ -2,6 +2,7 @@
 <resources>
     <string name="navigation_back">Back</string>
     <string name="navigation_following_live">%1$s, live</string>
+    <string name="navigation_following_offline">%1$s, offline</string>
     <string name="navigation_following_empty">No followed channels</string>
     <string name="settings_changelog">Changelog</string>
     <string name="settings_changelog_description">Browse release notes and app changes</string>

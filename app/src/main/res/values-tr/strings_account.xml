@@ -38,7 +38,7 @@
     <string name="rarity_legendary">Efsanevi</string>
     <string name="rarity_mythic">Mitik</string>
     <string name="channel_follow_title">Kanal takibi</string>
-    <string name="channel_follow_unavailable">Takip durumu doğrulanamadı</string>
+    <string name="channel_follow_unavailable">Bu kanalın takip işlemi Kicker’da yapılamıyor. Kanalı Kick’te açabilirsin.</string>
     <string name="channel_open_kick">Kick’te aç</string>
     <string name="channel_follow_wait">Bekleyin…</string>
     <string name="account_my_account">Hesabım</string>

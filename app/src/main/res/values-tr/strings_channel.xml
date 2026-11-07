@@ -201,6 +201,8 @@
     <string name="player_hide_chat">Sohbeti gizle</string>
     <string name="player_minutes">%1$d dakika</string>
     <string name="player_minutes_left">%1$d dk kaldı</string>
+    <string name="player_sleep_timer_start">Zamanlayıcıyı başlat</string>
+    <string name="player_sleep_timer_stop">Durdur</string>
     <string name="player_more">Diğer</string>
     <string name="player_off">Kapalı</string>
     <string name="player_per_hour">/saat</string>
