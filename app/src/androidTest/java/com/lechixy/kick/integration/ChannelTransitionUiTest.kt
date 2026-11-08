@@ -131,6 +131,42 @@ class ChannelTransitionUiTest {
         compose.mainClock.autoAdvance = true
     }
 
+    @Test fun pictureInPictureResizeKeepsTheChannelPageOffscreenAndRestoresIt() {
+        val host = PlayerHostState().apply {
+            open("test")
+            onChannelLoaded("test", ChannelDetail(1, slug = "test", livestream = ChannelLivestream(1)))
+        }
+        var enteringPip by mutableStateOf(false)
+        var inPip by mutableStateOf(false)
+        var disposals = 0
+        val sizes = mutableListOf<IntSize>()
+        compose.setContent {
+            CompositionLocalProvider(LocalSettingsRepository provides settings) { MaterialTheme {
+                val frame = if (inPip) Modifier.size(180.dp, 102.dp) else Modifier.fillMaxSize()
+                Box(frame) {
+                    PlayerHost(host, inPip, host::minimize, host::expand, host::close,
+                        enteringPip = enteringPip, pageContent = {
+                            DisposableEffect(Unit) { onDispose { disposals++ } }
+                            Box(Modifier.fillMaxSize().onSizeChanged { sizes += it }.testTag("channel-page"))
+                        })
+                }
+            } }
+        }
+        val page = compose.onNodeWithTag("channel-page")
+        page.assertIsDisplayed()
+        compose.runOnIdle { enteringPip = true }
+        page.assertIsNotDisplayed()
+        compose.runOnIdle { enteringPip = false; inPip = true }
+        page.assertIsNotDisplayed()
+        compose.runOnIdle { inPip = false }
+        page.assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals(1, sizes.distinct().size)
+            assertEquals(0, disposals)
+            assertEquals(PlayerMode.Expanded, host.mode)
+        }
+    }
+
     @Test fun normalAndPinnedLinksOpenOnTouch() {
         val opened = mutableListOf<String>()
         compose.setContent {

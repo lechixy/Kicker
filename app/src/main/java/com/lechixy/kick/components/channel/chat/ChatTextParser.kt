@@ -366,7 +366,7 @@ object ChatTextParser {
 
             val annotatedString = buildAnnotatedString {
                 timestamp?.let {
-                    withStyle(SpanStyle(color = deletedColor, fontSize = (safeFontSizeSp - 2).sp)) {
+                    withStyle(SpanStyle(color = deletedColor, fontSize = (safeFontSizeSp - 2).sp, fontFeatureSettings = "tnum")) {
                         append(it)
                         append("  ")
                     }

@@ -11,12 +11,16 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.rememberScrollableState
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.gestures.scrollable
@@ -77,6 +81,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
@@ -107,6 +113,7 @@ import com.lechixy.kick.data.chat.remote.ChatConnectionState
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -133,7 +140,9 @@ fun ChatView(
     onOpenChannel: (String) -> Unit = {},
     onReplyTo: (ChatMessage) -> Unit = {},
     isReplay: Boolean = false,
-    highTraffic: Boolean = false
+    highTraffic: Boolean = false,
+    autoHideHeader: Boolean = false,
+    playerControlsVisible: Boolean = false
 ) {
     val repository = LocalSettingsRepository.current
     val chatActive = LocalChatContentActive.current
@@ -153,6 +162,16 @@ fun ChatView(
     val timestampZone = java.time.ZoneId.systemDefault()
 
     var showOptions by remember { mutableStateOf(false) }
+    var headerVisible by remember(autoHideHeader) { mutableStateOf(true) }
+    var chatInteraction by remember { mutableIntStateOf(0) }
+    var touchingChat by remember { mutableStateOf(false) }
+    LaunchedEffect(autoHideHeader, chatInteraction, touchingChat, showOptions, playerControlsVisible) {
+        if (autoHideHeader && playerControlsVisible) headerVisible = true
+        if (autoHideHeader && !touchingChat && !showOptions && !playerControlsVisible) {
+            delay(3_000)
+            headerVisible = false
+        }
+    }
     var showChatters by androidx.compose.runtime.saveable.rememberSaveable(streamerSlug) { mutableStateOf(false) }
     val community: ChatCommunityViewModel = androidx.lifecycle.viewmodel.compose.viewModel(key = "community-$streamerSlug")
     val activeChatters by community.chatters.collectAsStateWithLifecycle()
@@ -240,18 +259,38 @@ fun ChatView(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
+            .then(if (autoHideHeader) Modifier.pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                    touchingChat = true
+                    headerVisible = true
+                    try {
+                        do {
+                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                        } while (event.changes.any { it.pressed })
+                    } finally {
+                        touchingChat = false
+                        chatInteraction++
+                    }
+                }
+            } else Modifier)
     ) {
-        // Chat Header with Options button
-        ChatHeader(
-            connectionState = connectionState,
-            showOptions = showOptions,
-            onToggleOptions = { showOptions = true },
-            onHideChat = onHideChat,
-            showChatters = showChatters,
-            chatterCount = activeChatters?.totalCount,
-            onToggleChatters = { showChatters = !showChatters },
-            chattersEnabled = channelId != null && !isReplay
-        )
+        AnimatedVisibility(
+            visible = headerVisible,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            ChatHeader(
+                connectionState = connectionState,
+                showOptions = showOptions,
+                onToggleOptions = { showOptions = true },
+                onHideChat = onHideChat,
+                showChatters = showChatters,
+                chatterCount = activeChatters?.totalCount,
+                onToggleChatters = { showChatters = !showChatters },
+                chattersEnabled = channelId != null && !isReplay
+            )
+        }
 
         // Chat Options Modal BottomSheet
         if (showOptions) {
@@ -814,18 +853,20 @@ internal fun PinnedMessageOverlay(
                     }
 
                     // Row 2: Message content (1 line when collapsed, all lines when expanded)
-                    Text(
-                        text = parsedBody.annotatedString,
-                        inlineContent = parsedBody.inlineContent,
-                        style = MaterialTheme.typography.bodyMedium.copy(
-                            color = MaterialTheme.colorScheme.onSurface,
-                            fontSize = fontSizeSp.sp,
-                            lineHeight = (fontSizeSp + 5).sp
-                        ),
-                        maxLines = if (isExpanded) Int.MAX_VALUE else 2,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    ChatClipLinks(parsedBody.annotatedString, showPreviews = isExpanded) {
+                        Text(
+                            text = parsedBody.annotatedString,
+                            inlineContent = parsedBody.inlineContent,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                color = MaterialTheme.colorScheme.onSurface,
+                                fontSize = fontSizeSp.sp,
+                                lineHeight = (fontSizeSp + 5).sp
+                            ),
+                            maxLines = if (isExpanded) Int.MAX_VALUE else 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
 
                     // Row 3: Pinned by BADGES USERNAME (no icon, only when expanded)
                     if (isExpanded && pinnedBy != null) {
@@ -911,28 +952,29 @@ internal fun PinnedMessageOverlay(
                 .align(if (hideSide < 0) androidx.compose.ui.AbsoluteAlignment.TopLeft else androidx.compose.ui.AbsoluteAlignment.TopRight)
                 .padding(top = 6.dp, start = 10.dp, end = 10.dp)
         ) {
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                shadowElevation = 4.dp,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .clickable { restoreSequence++; isHidden = false }
-            ) {
-                Box(
-                    modifier = Modifier.padding(8.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.push_pin_24dp),
-                        contentDescription = stringResource(R.string.chat_show_pinned),
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+            ChatRestoreButton(R.drawable.push_pin_24dp, stringResource(R.string.chat_show_pinned)) {
+                restoreSequence++
+                isHidden = false
             }
         }
+    }
+}
+
+@Composable
+internal fun ChatRestoreButton(@DrawableRes icon: Int, label: String, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(10.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        shadowElevation = 4.dp
+    ) {
+        Icon(
+            painter = painterResource(icon),
+            contentDescription = label,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(8.dp).size(18.dp)
+        )
     }
 }
 

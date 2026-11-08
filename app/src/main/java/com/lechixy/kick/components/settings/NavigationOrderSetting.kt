@@ -39,6 +39,7 @@ internal fun NavigationOrderSetting() {
     val title = stringResource(R.string.settings_navigation_order)
     SettingCard(
         title = title,
+        icon = R.drawable.menu_24dp,
         description = stringResource(R.string.settings_navigation_order_description),
         onClick = { draft = savedOrder }
     )

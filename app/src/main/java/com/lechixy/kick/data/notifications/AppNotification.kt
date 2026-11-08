@@ -4,10 +4,14 @@ import kotlinx.serialization.json.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-enum class NotificationKind { WatchTimeGoal, StreamStarted }
+enum class NotificationKind {
+    WatchTimeGoal, StreamStarted, SleepTimerStarted, SleepTimerStopped;
+
+    internal val isSleepTimer get() = this == SleepTimerStarted || this == SleepTimerStopped
+}
 data class AppNotification(val id: String, val kind: NotificationKind, val userId: Long, val generation: Long,
     val title: String = "", val description: String = "", val channelSlug: String? = null,
-    val thresholdMinutes: Int = 60, val preview: Boolean = false)
+    val thresholdMinutes: Int = 60, val preview: Boolean = false, val timerMinutes: Int = 0)
 
 internal fun decodeAccountNotification(source: String?, event: String, raw: JsonElement, userId: Long, generation: Long): AppNotification? {
     val payload = runCatching {
@@ -42,9 +46,17 @@ internal class NotificationQueue {
         if (mutable.value.any { it.id == item.id } || seen[item.id]?.let { nowMs - it < 60_000 } == true) return
         seen[item.id] = nowMs
         while (seen.size > 100) seen.remove(seen.keys.first())
-        // Keep the visible notification stable when dropping overflow.
-        mutable.value = if (mutable.value.size < 5) mutable.value + item else mutable.value.take(1) + mutable.value.drop(2) + item
+        // Timer feedback is immediate. A newer timer action supersedes the previous one.
+        val pending = mutable.value
+        mutable.value = when {
+            item.kind.isSleepTimer -> listOf(item) + pending.filterNot { it.kind.isSleepTimer }.take(4)
+            pending.size < 5 -> pending + item
+            else -> pending.take(1) + pending.drop(2) + item
+        }
     }
     @Synchronized fun dismiss(id: String) { mutable.value = mutable.value.filterNot { it.id == id } }
-    @Synchronized fun clear() { mutable.value = emptyList(); seen.clear() }
+    @Synchronized fun clearAccountNotifications() {
+        mutable.value = mutable.value.filter { it.kind.isSleepTimer }
+        seen.clear()
+    }
 }

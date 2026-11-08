@@ -24,6 +24,10 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -35,13 +39,42 @@ import org.junit.Assert.*
 import com.lechixy.kick.KickNavScaffold
 import com.lechixy.kick.R
 import com.lechixy.kick.components.ConnectionNoticeBar
+import com.lechixy.kick.components.PlayerSleepTimerSettings
 import com.lechixy.kick.components.channel.ExpandableProfilePhoto
 import com.lechixy.kick.data.common.remote.ConnectionNotice
+import com.lechixy.kick.service.player.SleepTimerState
 
 @RunWith(AndroidJUnit4::class)
 class PlayerFeaturesUiTest {
     @get:Rule val compose = createComposeRule()
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
+
+    @Test fun sleepTimerOffersStopAndUpdatesOnlyWhenTheNewDurationIsApplied() {
+        var timer by mutableStateOf(SleepTimerState())
+        val start = context.getString(R.string.player_sleep_timer_start)
+        val stop = context.getString(R.string.player_sleep_timer_stop)
+        val update = context.getString(R.string.player_sleep_timer_update)
+        compose.setContent {
+            MaterialTheme {
+                PlayerSleepTimerSettings(timer, lastMinutes = 15, enabled = true) { minutes ->
+                    timer = SleepTimerState(minutes, minutes * 60)
+                }
+            }
+        }
+        compose.onNodeWithText(start).performClick()
+        compose.onNodeWithText(stop).assertIsDisplayed()
+        compose.onNodeWithText(start).assertDoesNotExist()
+        compose.onNodeWithText(update).assertDoesNotExist()
+        compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.SetProgress))
+            .performSemanticsAction(SemanticsActions.SetProgress) { it(25f) }
+        compose.onNodeWithText(update).assertIsDisplayed()
+        compose.runOnIdle { assertEquals(15, timer.selectedMinutes) }
+        compose.onNodeWithText(update).performClick()
+        compose.runOnIdle { assertEquals(25, timer.selectedMinutes) }
+        compose.onNodeWithText(stop).performClick()
+        compose.onNodeWithText(start).assertIsDisplayed()
+        compose.runOnIdle { assertEquals(0, timer.remainingSeconds) }
+    }
 
     @Test fun scaffoldUpdatesKeepPlayerContentAlive() {
         var hidden by mutableStateOf(false)

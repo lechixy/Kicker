@@ -117,7 +117,11 @@ fun HomeScreen(
                 }
             ) {
                 val streams = remember(state.streams) { state.streams.distinctBy { it.id } }
-                ContentGrid(state = gridState, modifier = Modifier.fillMaxSize().nestedScroll(totalsScrollConnection)) { columns ->
+                ContentGrid(
+                    state = gridState,
+                    modifier = Modifier.fillMaxSize().nestedScroll(totalsScrollConnection),
+                    minCardWidth = 200.dp
+                ) { columns ->
                     val loading = state.isLoading || state.isRefreshing
                     if (history.isNotEmpty()) {
                         item(key = "continue_header", span = { GridItemSpan(maxLineSpan) }) {

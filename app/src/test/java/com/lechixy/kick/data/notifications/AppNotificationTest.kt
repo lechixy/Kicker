@@ -48,9 +48,23 @@ class AppNotificationTest {
         assertEquals(4, queue.items.value.size)
         queue.add(item(99), 60_100)
         assertEquals(5, queue.items.value.size)
-        queue.clear()
+        queue.clearAccountNotifications()
         assertTrue(queue.items.value.isEmpty())
         queue.add(item(99), 60_101)
         assertEquals(1, queue.items.value.size)
+    }
+
+    @Test fun timerFeedbackReplacesThePreviousActionAndSurvivesAccountChanges() {
+        val queue = NotificationQueue()
+        val remote = AppNotification("goal", NotificationKind.WatchTimeGoal, 1, 1)
+        val started = AppNotification("start", NotificationKind.SleepTimerStarted, -1, -1, timerMinutes = 15)
+        val stopped = AppNotification("stop", NotificationKind.SleepTimerStopped, -1, -1)
+        queue.add(remote, 1)
+        queue.add(started, 2)
+        assertEquals(listOf(started, remote), queue.items.value)
+        queue.add(stopped, 3)
+        assertEquals(listOf(stopped, remote), queue.items.value)
+        queue.clearAccountNotifications()
+        assertEquals(listOf(stopped), queue.items.value)
     }
 }

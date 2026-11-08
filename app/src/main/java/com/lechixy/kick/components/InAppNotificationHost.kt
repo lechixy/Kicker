@@ -1,11 +1,14 @@
 package com.lechixy.kick.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -23,6 +26,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,6 +43,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -59,7 +65,7 @@ fun InAppNotificationHost(onActivate: (AppNotification) -> Unit, modifier: Modif
     val repository = AccountGraph.notifications
     val notifications by repository.notifications.collectAsStateWithLifecycle()
     val session by AccountGraph.auth.session.collectAsStateWithLifecycle()
-    val next = if (!enabled) null else notifications.firstOrNull { it.preview ||
+    val next = if (!enabled) null else notifications.firstOrNull { it.kind.isSleepTimer || it.preview ||
         (session.signedIn && session.generation == it.generation && session.profile?.userId == it.userId) }
     var displayed by remember { mutableStateOf<AppNotification?>(null) }
     var visible by remember { mutableStateOf(false) }
@@ -92,13 +98,21 @@ fun InAppNotificationHost(onActivate: (AppNotification) -> Unit, modifier: Modif
 
 @Composable
 internal fun NotificationCard(notification: AppNotification, onClick: () -> Unit, onDismiss: () -> Unit) {
-    val title = if (notification.kind == NotificationKind.WatchTimeGoal) stringResource(R.string.notification_reward_title)
-        else notification.title.takeIf { it.isNotBlank() }?.let {
+    val title = when (notification.kind) {
+        NotificationKind.WatchTimeGoal -> stringResource(R.string.notification_reward_title)
+        NotificationKind.SleepTimerStarted -> stringResource(R.string.sleep_timer_started_title)
+        NotificationKind.SleepTimerStopped -> stringResource(R.string.sleep_timer_stopped_title)
+        NotificationKind.StreamStarted -> notification.title.takeIf { it.isNotBlank() }?.let {
             HtmlCompat.fromHtml(it, HtmlCompat.FROM_HTML_MODE_LEGACY).toString().trim()
         } ?: stringResource(R.string.notification_live_title, notification.channelSlug.orEmpty())
-    val description = if (notification.kind == NotificationKind.WatchTimeGoal)
-        stringResource(R.string.notification_reward_description, notification.thresholdMinutes)
-        else notification.description.takeIf { it.isNotBlank() } ?: stringResource(R.string.notification_live_description)
+    }
+    val description = when (notification.kind) {
+        NotificationKind.WatchTimeGoal -> stringResource(R.string.notification_reward_description, notification.thresholdMinutes)
+        NotificationKind.SleepTimerStarted -> stringResource(R.string.sleep_timer_started_description, notification.timerMinutes)
+        NotificationKind.SleepTimerStopped -> stringResource(R.string.sleep_timer_stopped_description)
+        NotificationKind.StreamStarted -> notification.description.takeIf { it.isNotBlank() }
+            ?: stringResource(R.string.notification_live_description)
+    }
     key(notification.id) {
     SwipeDismissBox(allowUp = true, onDismiss = { onDismiss() }, modifier = Modifier.widthIn(max = 460.dp).fillMaxWidth()) {
     Surface(onClick = onClick, modifier = Modifier.fillMaxWidth(),
@@ -107,10 +121,17 @@ internal fun NotificationCard(notification: AppNotification, onClick: () -> Unit
         Row(Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-                if (notification.kind == NotificationKind.WatchTimeGoal) RewardAvailability(true) else LiveNotificationIcon()
+                when (notification.kind) {
+                    NotificationKind.WatchTimeGoal -> RewardAvailability(true)
+                    NotificationKind.StreamStarted -> LiveNotificationIcon()
+                    NotificationKind.SleepTimerStarted ->
+                        ActiveSleepTimerIcon(Modifier.size(28.dp), contentDescription = null)
+                    NotificationKind.SleepTimerStopped -> StoppedSleepTimerIcon()
+                }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold,
+                    maxLines = if (notification.kind.isSleepTimer) 2 else 1, overflow = TextOverflow.Ellipsis)
                 Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
@@ -119,6 +140,26 @@ internal fun NotificationCard(notification: AppNotification, onClick: () -> Unit
     }
     }
     }
+}
+
+@Composable
+private fun StoppedSleepTimerIcon() {
+    val impact = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        impact.animateTo(1f, tween(durationMillis = 100, delayMillis = 160, easing = FastOutSlowInEasing))
+        impact.animateTo(0f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium))
+    }
+    Icon(
+        painterResource(R.drawable.timer_off_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
+        contentDescription = null,
+        modifier = Modifier.size(28.dp).graphicsLayer {
+            val press = impact.value
+            scaleX = 1f + .06f * press
+            scaleY = 1f - .19f * press
+            rotationZ = -9f * press
+        },
+        tint = MaterialTheme.colorScheme.primary,
+    )
 }
 
 @Composable

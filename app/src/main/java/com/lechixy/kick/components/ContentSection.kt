@@ -104,10 +104,16 @@ fun SectionHeader(title: String, onMore: (() -> Unit)? = null, moreEnabled: Bool
 fun ContentGrid(
     modifier: Modifier = Modifier,
     state: LazyGridState = rememberLazyGridState(),
+    minCardWidth: Dp? = null,
     content: LazyGridScope.(columns: Int) -> Unit
 ) {
     BoxWithConstraints(modifier.fillMaxSize()) {
-        val columns = contentColumns(maxWidth - 32.dp)
+        val availableWidth = maxWidth - 32.dp
+        val columns = if (minCardWidth != null && availableWidth < minCardWidth * 2 + 12.dp) {
+            1
+        } else {
+            contentColumns(availableWidth)
+        }
         LazyVerticalGrid(columns = GridCells.Fixed(columns), state = state,
             modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),

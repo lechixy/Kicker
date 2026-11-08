@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="clip_preview_label">Kick clip</string>
+    <string name="clip_metadata">Clipped by %1$s • %2$s views • %3$s</string>
+    <string name="clip_playback_failed">Could not play this clip</string>
+    <string name="clip_play">Play clip</string>
+    <string name="clip_pause">Pause clip</string>
+    <string name="clip_mute">Mute clip</string>
+    <string name="clip_unmute">Unmute clip</string>
+    <string name="clip_fullscreen">Fullscreen</string>
+    <string name="clip_exit_fullscreen">Exit fullscreen</string>
+    <string name="clip_share">Share clip</string>
+    <string name="clip_live_badge">LIVE</string>
+    <string name="clip_verified">Verified channel</string>
+    <string name="clip_watch_live">Watch livestream</string>
+    <string name="clip_open_channel">Open channel</string>
+    <string name="clip_watch_full_video">Watch full video</string>
+    <string name="clip_chat_empty">No chat messages during this clip</string>
+    <string name="clip_chat_waiting">Waiting for chat messages…</string>
+</resources>

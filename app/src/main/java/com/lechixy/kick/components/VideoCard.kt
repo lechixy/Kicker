@@ -7,9 +7,13 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -21,6 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -45,6 +50,7 @@ fun VideoCard(
     video: ChannelVideo,
     modifier: Modifier = Modifier,
     progressId: String? = video.video?.uuid ?: video.uuid ?: video.playbackId,
+    onDownload: (() -> Unit)? = null,
     onClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -81,6 +87,23 @@ fun VideoCard(
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
+
+                if (onDownload != null) {
+                    IconButton(
+                        onClick = onDownload,
+                        modifier = Modifier.align(Alignment.TopEnd).padding(4.dp),
+                        colors = IconButtonDefaults.iconButtonColors(
+                            containerColor = Color.Black.copy(alpha = .7f),
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Icon(
+                            painterResource(R.drawable.download_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
+                            stringResource(R.string.recording_download),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
 
                 // Süre etiketi (Sağ alt)
                 Surface(

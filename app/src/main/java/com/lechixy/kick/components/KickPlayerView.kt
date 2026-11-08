@@ -2,6 +2,7 @@ package com.lechixy.kick.components
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.app.PictureInPictureParams
 import android.content.ComponentName
 import android.content.pm.PackageManager
@@ -9,9 +10,8 @@ import android.graphics.Rect
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.util.Rational
-import android.view.LayoutInflater
-import android.view.ViewGroup
 import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -53,14 +53,13 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentWidth
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -71,13 +70,12 @@ import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.SliderState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.SheetValue
 import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -85,7 +83,6 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -93,29 +90,28 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -127,17 +123,15 @@ import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
-import androidx.media3.ui.PlayerView
 import coil3.compose.AsyncImage
 import com.lechixy.kick.R
-import com.lechixy.kick.components.settings.SettingCard
 import com.lechixy.kick.components.settings.SettingSwitch
+import com.lechixy.kick.data.account.AccountGraph
 import com.lechixy.kick.data.channel.model.ChannelDetail
 import com.lechixy.kick.data.channel.model.getBannerUrl
 import com.lechixy.kick.data.player.local.PlaybackProgressStore
 import com.lechixy.kick.data.player.model.RecordedPlayback
 import com.lechixy.kick.data.settings.model.SettingsKeys
-import kotlin.math.roundToInt
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 import com.lechixy.kick.service.EXTRA_LOW_LATENCY
 import com.lechixy.kick.service.PlaybackService
@@ -159,6 +153,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
 
 @SuppressLint("UseKtx")
@@ -217,6 +212,9 @@ fun KickPlayerView(
 
     var showSettingsDialog by remember { mutableStateOf(false) }
     var settingsPage by remember { mutableStateOf(PlayerSettingsPage.MAIN) }
+    var showStats by rememberSaveable { mutableStateOf(false) }
+    var viewport by remember { mutableStateOf(IntSize.Zero) }
+    val downloadRecording = rememberRecordingDownloadAction()
     val sleepTimer by com.lechixy.kick.service.player.SleepTimer.state.collectAsStateWithLifecycle()
     val sleepTimerMinutes = sleepTimer.selectedMinutes
     val remainingTimerSeconds = sleepTimer.remainingSeconds
@@ -294,12 +292,19 @@ fun KickPlayerView(
     var showCastDialog by remember { mutableStateOf(false) }
     var playerBounds by remember { mutableStateOf<Rect?>(null) }
 
-    LaunchedEffect(isPlaying, pipEnabled, activity) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || activity == null) return@LaunchedEffect
+    val clipOwnsAudio = com.lechixy.kick.service.ClipAudioHandoff.active
+    LaunchedEffect(isPlaying, pipEnabled, activity, isInPipMode, clipOwnsAudio) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || activity == null || isInPipMode) {
+            return@LaunchedEffect
+        }
+        if (clipOwnsAudio) {
+            activity.updatePlayerPipParams(buildPipParams(autoEnter = false, sourceRect = null))
+            return@LaunchedEffect
+        }
         snapshotFlow { playerBounds }
             .debounce(150.milliseconds)
             .collect { bounds ->
-                activity.setPictureInPictureParams(
+                activity.updatePlayerPipParams(
                     buildPipParams(autoEnter = isPlaying && pipEnabled, sourceRect = bounds)
                 )
             }
@@ -308,7 +313,7 @@ fun KickPlayerView(
     DisposableEffect(activity) {
         onDispose {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                activity?.setPictureInPictureParams(
+                activity?.updatePlayerPipParams(
                     buildPipParams(
                         autoEnter = false,
                         sourceRect = null
@@ -600,7 +605,7 @@ fun KickPlayerView(
             .onGloballyPositioned { coordinates ->
                 val b = coordinates.boundsInWindow()
                 val rect = Rect(b.left.toInt(), b.top.toInt(), b.right.toInt(), b.bottom.toInt())
-                if (playerBounds != rect) {
+                if (!isInPipMode && !rect.isEmpty && playerBounds != rect) {
                     playerBounds = rect
                     onPlayerCoordinatesChanged(rect)
                 }
@@ -615,25 +620,8 @@ fun KickPlayerView(
             },
         contentAlignment = Alignment.Center
     ) {
-        AndroidView(
-            factory = { ctx ->
-                // Keep video in Compose's rendering layer while PlayerHost animates/clips it.
-                // surface_type must be supplied at inflation time; PlayerView has no setter.
-                (LayoutInflater.from(ctx).inflate(R.layout.kick_player_view, null) as PlayerView).apply {
-                    layoutParams = ViewGroup.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT
-                    )
-                }
-            },
-            update = { playerView ->
-                if (playerView.player !== player) {
-                    playerView.player = player
-                }
-                playerView.keepScreenOn = isPlaying
-            },
-            onRelease = { it.player = null },
-            modifier = Modifier.fillMaxSize()
+        PlayerVideoSurface(
+            player, isPlaying, Modifier.fillMaxSize().onSizeChanged { viewport = it }
         )
 
         val overlayThumbnail = remember(previewThumbnailUrl, channel, recording?.id) {
@@ -711,8 +699,8 @@ fun KickPlayerView(
             }
         }
 
-        AnimatedVisibility(
-            visible = showControls && playbackError == null && !isInPipMode && !isMini,
+        if (!isInPipMode) AnimatedVisibility(
+            visible = showControls && playbackError == null && !isMini,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.fillMaxSize()
@@ -770,28 +758,58 @@ fun KickPlayerView(
             )
         }
 
-        if (showSettingsDialog) {
+        if (showStats && !isMini && !isInPipMode) {
+            PlayerStatsOverlay(
+                videoId = recording?.progressId ?: channel?.livestream?.id?.toString(),
+                viewport = viewport,
+                volumePercent = if (isMuted) 0 else (volume * 100).roundToInt(),
+                onClose = { showStats = false },
+                modifier = Modifier.align(Alignment.TopStart).padding(8.dp).widthIn(max = 540.dp).fillMaxWidth(.86f)
+            )
+        }
+
+        if (showSettingsDialog && !isInPipMode) {
+            val sheetState = rememberBottomSheetState(
+                initialValue = SheetValue.Hidden,
+                enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded)
+            )
+            var dismissing by remember { mutableStateOf(false) }
             val closeSettings: () -> Unit = {
                 showSettingsDialog = false
                 settingsPage = PlayerSettingsPage.MAIN
             }
-
-            val selectSleepTimer: (Int) -> Unit = { mins ->
-                // Start before asking permission. Playback expiry never depends on the answer.
-                com.lechixy.kick.service.player.SleepTimer.start(mins)
-                if (mins > 0) coroutineScope.launch {
-                    settingsRepository.set(SettingsKeys.LAST_SLEEP_TIMER_MINUTES, mins)
-                }
-                closeSettings()
-                if (mins > 0 && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-                    ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                    notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            fun dismissSettings(afterDismiss: () -> Unit = {}) {
+                if (dismissing) return
+                dismissing = true
+                coroutineScope.launch {
+                    try {
+                        sheetState.hide()
+                        closeSettings()
+                        afterDismiss()
+                    } finally {
+                        dismissing = false
+                    }
                 }
             }
 
-            val sheetState = rememberBottomSheetState(initialValue = SheetValue.Hidden, enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded))
+            val selectSleepTimer: (Int) -> Unit = { mins ->
+                dismissSettings {
+                    // Playback expiry never depends on the notification permission answer.
+                    com.lechixy.kick.service.player.SleepTimer.start(mins)
+                    AccountGraph.notifications.postSleepTimer(mins)
+                    if (mins > 0) {
+                        coroutineScope.launch { settingsRepository.set(SettingsKeys.LAST_SLEEP_TIMER_MINUTES, mins) }
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+                            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    }
+                }
+            }
+
             ModalBottomSheet(
-                onDismissRequest = closeSettings,
+                onDismissRequest = { if (!dismissing) closeSettings() },
                 sheetState = sheetState,
                 sheetMaxWidth = 640.dp,
                 dragHandle = { BottomSheetDefaults.DragHandle() },
@@ -848,7 +866,8 @@ fun KickPlayerView(
 //                    HorizontalDivider(modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
 
                     AnimatedVisibility(
-                        visible = settingsPage != PlayerSettingsPage.MAIN
+                        visible = settingsPage != PlayerSettingsPage.MAIN,
+                        modifier = Modifier.padding(bottom = 8.dp)
                     ) {
                         Row(
                             modifier = Modifier
@@ -860,7 +879,8 @@ fun KickPlayerView(
                                 onClick = {
                                     settingsPage = PlayerSettingsPage.MAIN
                                 },
-                                modifier = Modifier.size(36.dp)
+                                modifier = Modifier.size(36.dp),
+                                enabled = !dismissing
                             ) {
                                 Icon(
                                     painter = painterResource(id = R.drawable.arrow_back_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
@@ -901,6 +921,7 @@ fun KickPlayerView(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .padding(horizontal = 16.dp)
+                                        .verticalScroll(rememberScrollState())
                                 ) {
                                     PlayerSettingsCategoryRow(
                                         icon = R.drawable.hd_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
@@ -914,6 +935,15 @@ fun KickPlayerView(
                                         value = if (sleepTimerMinutes > 0) stringResource(R.string.player_minutes, (remainingTimerSeconds + 59) / 60) else stringResource(R.string.player_off),
                                         onClick = { settingsPage = PlayerSettingsPage.SLEEP_TIMER }
                                     )
+                                    if (recording != null) {
+                                        PlayerSettingsCategoryRow(
+                                            icon = R.drawable.download_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+                                            title = stringResource(R.string.recording_download),
+                                            value = null,
+                                            showChevron = false,
+                                            onClick = { dismissSettings { downloadRecording(recording) } }
+                                        )
+                                    }
                                     PlayerSettingsCategoryRow(
                                         icon = R.drawable.tune_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
                                         title = stringResource(R.string.player_more),
@@ -941,7 +971,7 @@ fun KickPlayerView(
                                                 settingsRepository.set(SettingsKeys.VIDEO_QUALITY, -1)
                                             }
                                             applyQualityToPlayer(player, -1, availableQualities)
-                                            closeSettings()
+                                            dismissSettings()
                                         }
                                     )
 
@@ -963,7 +993,7 @@ fun KickPlayerView(
                                                     quality.height,
                                                     availableQualities
                                                 )
-                                                closeSettings()
+                                                dismissSettings()
                                             }
                                         )
                                     }
@@ -971,43 +1001,12 @@ fun KickPlayerView(
                             }
 
                             PlayerSettingsPage.SLEEP_TIMER -> {
-                                val timerSlider = remember(lastSleepTimerMinutes) {
-                                    SliderState(value = lastSleepTimerMinutes.toFloat(), steps = 10, trackRange = 5f..60f)
-                                }
-                                val minutes = timerSlider.value.roundToInt()
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp)
-                                        .verticalScroll(rememberScrollState()),
-                                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                                ) {
-                                    val duration = stringResource(R.string.player_minutes, minutes)
-                                    Text(duration, style = MaterialTheme.typography.titleMedium)
-                                    Slider(
-                                        state = timerSlider,
-                                        onValueChange = { timerSlider.value = it },
-                                        modifier = Modifier.semantics {
-                                            stateDescription = duration
-                                        }
-                                    )
-                                    if (sleepTimerMinutes > 0) {
-                                        Text(
-                                            stringResource(R.string.player_minutes_left, (remainingTimerSeconds + 59) / 60),
-                                            style = MaterialTheme.typography.bodySmall
-                                        )
-                                    }
-                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                                        if (sleepTimerMinutes > 0) {
-                                            TextButton(onClick = { selectSleepTimer(0) }) {
-                                                Text(stringResource(R.string.player_sleep_timer_stop))
-                                            }
-                                        }
-                                        androidx.compose.material3.Button(onClick = { selectSleepTimer(minutes) }) {
-                                            Text(stringResource(R.string.player_sleep_timer_start))
-                                        }
-                                    }
-                                }
+                                PlayerSleepTimerSettings(
+                                    timer = sleepTimer,
+                                    lastMinutes = lastSleepTimerMinutes,
+                                    enabled = !dismissing,
+                                    onApply = selectSleepTimer
+                                )
                             }
 
                             PlayerSettingsPage.MORE -> {
@@ -1019,26 +1018,37 @@ fun KickPlayerView(
                                     verticalArrangement = Arrangement.spacedBy(10.dp)
                                 ) {
                                     SettingSwitch(
+                                        title = stringResource(R.string.player_stats_for_nerds),
+                                        checked = showStats,
+                                        onCheckedChange = { checked -> dismissSettings { showStats = checked } },
+                                        icon = R.drawable.eyeglasses_3_24dp_e3e3e3_fill0_wght400_grad0_opsz24
+                                    )
+
+                                    SettingSwitch(
                                         key = SettingsKeys.SYNC_PLAYER_VOLUME_WITH_DEVICE,
-                                        title = stringResource(R.string.player_sync_volume)
+                                        title = stringResource(R.string.player_sync_volume),
+                                        icon = R.drawable.volume_up_24dp_e3e3e3_fill0_wght400_grad0_opsz24
                                     )
 
                                     SettingSwitch(
                                         key = SettingsKeys.PIP_ENABLED,
                                         title = stringResource(R.string.player_pip),
-                                        description = stringResource(R.string.player_pip_description)
+                                        description = stringResource(R.string.player_pip_description),
+                                        icon = R.drawable.picture_in_picture_alt_24dp_e3e3e3_fill0_wght400_grad0_opsz24
                                     )
 
                                     SettingSwitch(
                                         key = SettingsKeys.LOW_LATENCY,
                                         title = stringResource(R.string.player_low_latency),
-                                        description = stringResource(R.string.player_low_latency_description)
+                                        description = stringResource(R.string.player_low_latency_description),
+                                        icon = R.drawable.bolt_24dp_e3e3e3_fill0_wght400_grad0_opsz24
                                     )
 
                                     SettingSwitch(
                                         key = SettingsKeys.AUTO_FULLSCREEN_LIVE,
                                         title = stringResource(R.string.player_auto_fullscreen),
-                                        description = stringResource(R.string.player_auto_fullscreen_description)
+                                        description = stringResource(R.string.player_auto_fullscreen_description),
+                                        icon = R.drawable.fullscreen_24dp_e3e3e3_fill0_wght400_grad0_opsz24
                                     )
                                 }
                             }
@@ -1050,7 +1060,7 @@ fun KickPlayerView(
             }
         }
 
-        if (showCastDialog) {
+        if (showCastDialog && !isInPipMode) {
             PlayerCastDialog(
                 onDismiss = { showCastDialog = false },
                 onGoogleCast = {
@@ -1140,12 +1150,31 @@ private fun applyQualityToPlayer(
 }
 
 @RequiresApi(Build.VERSION_CODES.S)
+private fun Activity.updatePlayerPipParams(params: PictureInPictureParams) {
+    if (isFinishing || isDestroyed || isInPictureInPictureMode ||
+        !packageManager.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)) return
+    try {
+        setPictureInPictureParams(params)
+    } catch (error: IllegalStateException) {
+        Log.w("KickPlayerView", "PiP parameters rejected during activity transition", error)
+    }
+}
+
+@RequiresApi(Build.VERSION_CODES.S)
 private fun buildPipParams(autoEnter: Boolean, sourceRect: Rect?): PictureInPictureParams =
     PictureInPictureParams.Builder()
         .setAspectRatio(Rational(16, 9))
         .setAutoEnterEnabled(autoEnter)
-        .setSeamlessResizeEnabled(false) // video içerik için daha doğru geçiş
-        .apply { sourceRect?.takeIf { !it.isEmpty }?.let { setSourceRectHint(it) } }
+        .setSeamlessResizeEnabled(true)
+        .apply {
+            sourceRect?.let { bounds ->
+                val width = minOf(bounds.width(), (bounds.height() * 16f / 9f).roundToInt())
+                val height = minOf(bounds.height(), (width * 9f / 16f).roundToInt())
+                val left = bounds.left + (bounds.width() - width) / 2
+                val top = bounds.top + (bounds.height() - height) / 2
+                if (width > 0 && height > 0) setSourceRectHint(Rect(left, top, left + width, top + height))
+            }
+        }
         .build()
 
 @androidx.annotation.OptIn(UnstableApi::class)
@@ -1180,6 +1209,7 @@ private fun PlayerSettingsCategoryRow(
     icon: Int,
     title: String,
     value: String?,
+    showChevron: Boolean = true,
     onClick: () -> Unit
 ) {
     Row(
@@ -1210,12 +1240,14 @@ private fun PlayerSettingsCategoryRow(
             )
             Spacer(modifier = Modifier.width(8.dp))
         }
-        Icon(
-            painter = painterResource(id = R.drawable.arrow_forward_ios_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
-            contentDescription = null,
-            tint = MaterialTheme.colorScheme.outline,
-            modifier = Modifier.size(14.dp)
-        )
+        if (showChevron) {
+            Icon(
+                painter = painterResource(id = R.drawable.arrow_forward_ios_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.size(14.dp)
+            )
+        }
     }
 }
 
@@ -1305,10 +1337,8 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
         if (sleepRemainingSeconds > 0) {
             Row(Modifier.align(Alignment.TopCenter).offset(y = maxHeight / 4).offset(y = (-12).dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Icon(painterResource(R.drawable.bedtime_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
-                    stringResource(R.string.player_sleep_timer), Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
-                Text(com.lechixy.kick.util.player.sleepTimerRemainingText(LocalResources.current, sleepRemainingSeconds),
-                    color = Color.White, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Medium)
+                ActiveSleepTimerIcon()
+                PlayerSleepTimerRemainingLabel(sleepRemainingSeconds)
             }
         }
         val isCompact = !isFullScreen

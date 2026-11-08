@@ -30,7 +30,7 @@ class AccountNotificationsRepository(private val auth: AuthRepository, private v
             combine(auth.session, foreground) { session, visible ->
                 Triple(session.signedIn && visible, session.generation, session.profile?.userId)
             }.distinctUntilChanged().collectLatest { (active, generation, userId) ->
-                queue.clear()
+                queue.clearAccountNotifications()
                 if (!active || userId == null) return@collectLatest
                 var backoff = 1_000L
                 while (currentCoroutineContext().isActive) {
@@ -45,13 +45,21 @@ class AccountNotificationsRepository(private val auth: AuthRepository, private v
     }
     fun setForeground(visible: Boolean) { foreground.value = visible }
     fun dismiss(id: String) = queue.dismiss(id)
+    fun postSleepTimer(minutes: Int) {
+        val kind = if (minutes > 0) NotificationKind.SleepTimerStarted else NotificationKind.SleepTimerStopped
+        queue.add(
+            AppNotification("sleep-timer:${System.nanoTime()}", kind, -1, -1, timerMinutes = minutes),
+            SystemClock.elapsedRealtime()
+        )
+    }
     fun preview(kind: NotificationKind) {
         queue.add(AppNotification("preview:${System.nanoTime()}", kind, -1, -1,
             channelSlug = if (kind == NotificationKind.StreamStarted) "rraenee" else null, preview = true), SystemClock.elapsedRealtime())
     }
     fun accepts(item: AppNotification): Boolean {
         val session = auth.session.value
-        return item.preview || (session.signedIn && session.generation == item.generation && session.profile?.userId == item.userId)
+        return item.kind.isSleepTimer || item.preview ||
+            (session.signedIn && session.generation == item.generation && session.profile?.userId == item.userId)
     }
     private suspend fun connect(userId: Long, generation: Long) = coroutineScope {
         val metadata = auth.request("https://web.kick.com/api/v1/realtime/connection", "POST",

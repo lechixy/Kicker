@@ -342,14 +342,16 @@ fun DeveloperToolsOverlay(isInPipMode: Boolean, onTriggerLive: () -> Unit, canTr
                 }
             }
         }
-        fun attach() {
-            if (!view.isAttachedToWindow && !activity.isFinishing) {
-                params.token = activity.window.decorView.windowToken
-                if (params.token != null) try { manager.addView(view, params) }
-                catch (_: WindowManager.BadTokenException) { /* Parent window has just closed. Retry on focus change. */ }
-            }
+        fun attach(token: android.os.IBinder? = activity.window.decorView.windowToken) {
+            if (token == null || activity.isFinishing || view in WindowInspector.getGlobalWindowViews()) return
+            params.token = token
+            try { manager.addView(view, params) }
+            catch (_: WindowManager.BadTokenException) { /* Parent window has just closed. Retry on focus change. */ }
         }
-        fun detach() { if (view.isAttachedToWindow) manager.removeViewImmediate(view) }
+        fun detach() {
+            // A root can already be registered while its first frame is still pending.
+            if (view in WindowInspector.getGlobalWindowViews()) manager.removeViewImmediate(view)
+        }
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) attach()
             if (event == Lifecycle.Event.ON_PAUSE) detach()
@@ -373,11 +375,9 @@ fun DeveloperToolsOverlay(isInPipMode: Boolean, onTriggerLive: () -> Unit, canTr
                 val focused = roots.lastOrNull {
                     it !== view && it.hasWindowFocus() && it.isAttachedToWindow
                 } ?: continue
-                if (params.token != focused.windowToken || !view.isAttachedToWindow) {
+                if (params.token != focused.windowToken || view !in roots) {
                     detach()
-                    params.token = focused.windowToken
-                    try { manager.addView(view, params) }
-                    catch (_: WindowManager.BadTokenException) { /* Dialog closed during attachment. */ }
+                    attach(focused.windowToken)
                 }
             }
         }

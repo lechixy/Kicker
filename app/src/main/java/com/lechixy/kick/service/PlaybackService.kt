@@ -6,9 +6,7 @@ import android.os.Bundle
 import android.util.Log
 import androidx.annotation.OptIn
 import androidx.core.net.toUri
-import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
-import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -47,6 +45,7 @@ import com.lechixy.kick.BuildConfig
 import com.lechixy.kick.service.player.DiagnosticLiveSpeedControl
 import com.lechixy.kick.service.player.LiveResumeListener
 import com.lechixy.kick.service.player.PlaybackDiagnosticTracker
+import com.lechixy.kick.service.player.PlaybackNetworkCounter
 import com.lechixy.kick.service.player.PlaybackProgressTracker
 import com.lechixy.kick.service.player.SleepTimer
 import com.lechixy.kick.service.player.distanceBehindLiveTargetMs
@@ -74,17 +73,8 @@ class PlaybackService : MediaSessionService() {
             com.lechixy.kick.data.account.AccountGraph.auth.session.map { it.generation }
                 .distinctUntilChanged().collect { viewerTracking.refreshAuthentication() }
         }
-        val dataSourceFactory = DefaultHttpDataSource.Factory()
-            .setUserAgent(
-                "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 " +
-                    "(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
-            )
-            .setConnectTimeoutMs(8000)
-            .setReadTimeoutMs(8000)
-            .setAllowCrossProtocolRedirects(true)
-            .setDefaultRequestProperties(
-                mapOf("Origin" to "https://kick.com", "Referer" to "https://kick.com/")
-            )
+        val networkCounter = PlaybackNetworkCounter()
+        val dataSourceFactory = playbackHttpDataSourceFactory().setTransferListener(networkCounter)
 
         // Keep recovery below one typical 2s segment; shrinking this further risks stalls.
         val allocator = DefaultAllocator(true, C.DEFAULT_BUFFER_SEGMENT_SIZE)
@@ -152,10 +142,7 @@ class PlaybackService : MediaSessionService() {
             .setLoadControl(loadControl)
             .setLivePlaybackSpeedControl(liveSpeedControl)
             .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
-                    .build(),
+                kickPlaybackAudioAttributes,
                 /* handleAudioFocus = */ true
             )
             .setSeekBackIncrementMs(10_000)
@@ -199,10 +186,12 @@ class PlaybackService : MediaSessionService() {
                 }
             }
         })
-        diagnosticTracker = PlaybackDiagnosticTracker(player, liveSpeedControl, serviceScope, allocator)
+        diagnosticTracker = PlaybackDiagnosticTracker(player, liveSpeedControl, serviceScope, allocator, networkCounter)
         SleepTimer.attach(this, player, serviceScope)
         progressTracker = PlaybackProgressTracker(player)
-        mediaSession = MediaSession.Builder(this, LiveAwarePlayer(player)).build()
+        val sessionPlayer = StreamSessionPlayer(player)
+        ClipAudioHandoff.attach(sessionPlayer)
+        mediaSession = MediaSession.Builder(this, sessionPlayer).build()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = mediaSession
@@ -218,6 +207,7 @@ class PlaybackService : MediaSessionService() {
         progressTracker = null
         serviceScope.cancel()
         mediaSession?.run {
+            (player as? StreamSessionPlayer)?.let(ClipAudioHandoff::detach)
             player.release()
             release()
         }
@@ -292,6 +282,17 @@ const val EXTRA_VIEWER_VOD_ID = "kick_viewer_vod_id"
 const val EXTRA_VIEWER_CHANNEL_SLUG = "kick_viewer_channel_slug"
 
 @OptIn(UnstableApi::class)
+@UnstableApi
+internal fun playbackHttpDataSourceFactory() = DefaultHttpDataSource.Factory()
+    .setUserAgent(
+        "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 " +
+            "(KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+    )
+    .setConnectTimeoutMs(8000)
+    .setReadTimeoutMs(8000)
+    .setAllowCrossProtocolRedirects(true)
+    .setDefaultRequestProperties(mapOf("Origin" to "https://kick.com", "Referer" to "https://kick.com/"))
+
 fun buildPlaybackMediaItem(
     playbackUrl: String,
     mediaId: String,
@@ -357,7 +358,4 @@ fun buildPlaybackMediaItem(
 
     return builder.build()
 }
-
-@UnstableApi
-class LiveAwarePlayer(player: Player) : ForwardingPlayer(player)
 

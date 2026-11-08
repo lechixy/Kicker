@@ -68,13 +68,7 @@ fun SettingCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 if (icon != null) {
-                    Icon(
-                        painter = painterResource(id = icon),
-                        contentDescription = null,
-                        tint = if (enabled) iconTint else iconTint.copy(alpha = iconTint.alpha * 0.38f),
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
+                    SettingLeadingIcon(icon, enabled, iconTint)
                 }
 
                 if (image != null) {
@@ -108,4 +102,18 @@ fun SettingCard(
             }
         }
     }
+}
+
+@Composable
+internal fun SettingLeadingIcon(
+    icon: Int,
+    enabled: Boolean = true,
+    tint: Color = MaterialTheme.colorScheme.primary
+) {
+    Icon(
+        painter = painterResource(icon),
+        contentDescription = null,
+        tint = if (enabled) tint else tint.copy(alpha = tint.alpha * 0.38f),
+        modifier = Modifier.padding(end = 16.dp).size(22.dp)
+    )
 }

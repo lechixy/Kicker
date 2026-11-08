@@ -14,7 +14,7 @@ class PlayerHostStateTest {
     @Test fun theaterNavigationCanOpenAfterChatClosesAndCloseAgain() {
         val host = liveHost()
         host.toggleTheaterMode()
-        host.setSideChatVisible(false, isWide = true)
+        host.updateChatVisibility(false)
         assertTrue(host.isTheaterMode)
         assertFalse(host.isSideChatOpen(isWide = true))
         host.updatePlayerNavigationVisibility(true)
@@ -44,7 +44,7 @@ class PlayerHostStateTest {
     @Test fun fullscreenChatGesturesDoNotOverwriteInlineLayout() {
         val host = liveHost()
         host.setFullscreen(true)
-        host.setSideChatVisible(false, isWide = true)
+        host.updateChatVisibility(false)
         host.updateFullscreenNavigationVisibility(true)
         host.setFullscreen(false)
         assertEquals(PlayerMode.Expanded, host.mode)
@@ -58,7 +58,7 @@ class PlayerHostStateTest {
         host.isTheaterMode = true
         host.isChatVisible = false
         host.consumeAutoFullscreen(true)
-        host.setSideChatVisible(true, isWide = true)
+        host.updateChatVisibility(true)
         host.setFullscreen(false)
         assertTrue(host.isTheaterMode)
         assertFalse(host.isChatVisible)
@@ -67,7 +67,7 @@ class PlayerHostStateTest {
     @Test fun minimizingFromFullscreenRestoresInlineLayoutBeforeExpanding() {
         val host = liveHost()
         host.setFullscreen(true)
-        host.setSideChatVisible(false, isWide = true)
+        host.updateChatVisibility(false)
         host.minimize()
         assertEquals(PlayerMode.Mini, host.mode)
         host.expand()

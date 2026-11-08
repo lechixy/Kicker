@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="clip_preview_label">Kick klibi</string>
+    <string name="clip_metadata">%1$s klipledi • %2$s görüntüleme • %3$s</string>
+    <string name="clip_playback_failed">Bu klip oynatılamadı</string>
+    <string name="clip_play">Klibi oynat</string>
+    <string name="clip_pause">Klibi duraklat</string>
+    <string name="clip_mute">Klibi sustur</string>
+    <string name="clip_unmute">Klibin sesini aç</string>
+    <string name="clip_fullscreen">Tam ekran</string>
+    <string name="clip_exit_fullscreen">Tam ekrandan çık</string>
+    <string name="clip_share">Klibi paylaş</string>
+    <string name="clip_live_badge">CANLI</string>
+    <string name="clip_verified">Doğrulanmış kanal</string>
+    <string name="clip_watch_live">Canlı yayını izle</string>
+    <string name="clip_open_channel">Kanalı aç</string>
+    <string name="clip_watch_full_video">Kaydın tamamını izle</string>
+    <string name="clip_chat_empty">Bu klip sırasında sohbet mesajı yok</string>
+    <string name="clip_chat_waiting">Sohbet mesajları bekleniyor…</string>
+</resources>

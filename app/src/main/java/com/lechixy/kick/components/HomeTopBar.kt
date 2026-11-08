@@ -2,12 +2,15 @@ package com.lechixy.kick.components
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
 import com.lechixy.kick.components.account.AccountButton
 import com.lechixy.kick.components.account.ChallengesButton
+
+internal val LocalRailBrandVisible = compositionLocalOf { false }
 
 @Composable
 fun HomeTopBar(
@@ -27,7 +30,9 @@ fun HomeTopBar(
         modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(if (center == null) Modifier.weight(1f) else Modifier.widthIn(max = 180.dp)) { ColoredAppText() }
+        Box(if (center == null) Modifier.weight(1f) else Modifier.widthIn(max = 180.dp)) {
+            FadingAppBrand(visible = !LocalRailBrandVisible.current)
+        }
         if (center != null) Box(Modifier.weight(1f).padding(horizontal = 16.dp), contentAlignment = Alignment.Center) { center() }
         Row(Modifier.widthIn(max = 232.dp), horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically) {

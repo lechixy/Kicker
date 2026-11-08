@@ -34,17 +34,17 @@ import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 
 @Composable
 fun SettingSlider(key: SettingKey<Int>, title: String, valueRange: ClosedFloatingPointRange<Float>,
-    modifier: Modifier = Modifier, steps: Int = 0, description: String? = null,
+    modifier: Modifier = Modifier, steps: Int = 0, description: String? = null, icon: Int? = null,
     valueFormatter: (Int) -> String = { it.toString() }) {
     NumberSettingSlider(key, title, { it.toFloat() }, { it.roundToInt() }, valueRange,
-        modifier, steps, description, valueFormatter)
+        modifier, steps, description, icon, valueFormatter)
 }
 
 @Composable
 fun SettingFloatSlider(key: SettingKey<Float>, title: String, valueRange: ClosedFloatingPointRange<Float>,
-    modifier: Modifier = Modifier, steps: Int = 0, description: String? = null,
+    modifier: Modifier = Modifier, steps: Int = 0, description: String? = null, icon: Int? = null,
     valueFormatter: (Float) -> String = { it.toString() }) {
-    NumberSettingSlider(key, title, { it }, { it }, valueRange, modifier, steps, description, valueFormatter)
+    NumberSettingSlider(key, title, { it }, { it }, valueRange, modifier, steps, description, icon, valueFormatter)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -58,6 +58,7 @@ private fun <T> NumberSettingSlider(
     modifier: Modifier = Modifier,
     steps: Int = 0,
     description: String? = null,
+    icon: Int? = null,
     valueFormatter: (T) -> String = { it.toString() }
 ) {
     val repository = LocalSettingsRepository.current
@@ -91,6 +92,7 @@ private fun <T> NumberSettingSlider(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                if (icon != null) SettingLeadingIcon(icon)
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = title,
@@ -107,6 +109,7 @@ private fun <T> NumberSettingSlider(
                 }
                 Text(
                     text = valueFormatter(fromFloat(sliderPosition)),
+                    modifier = Modifier.padding(start = 12.dp),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary
                 )

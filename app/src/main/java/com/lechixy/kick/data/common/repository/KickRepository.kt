@@ -15,6 +15,7 @@ import com.lechixy.kick.data.common.remote.KickApi
 import com.lechixy.kick.data.player.model.CurrentViewersResponse
 import com.lechixy.kick.data.player.model.PlaybackRequest
 import com.lechixy.kick.data.player.model.PlaybackResponse
+import com.lechixy.kick.data.player.model.RecordedPlayback
 
 class KickRepository(
     private val api: KickApi
@@ -69,8 +70,28 @@ class KickRepository(
 
     suspend fun getClip(id: String) = api.getClip(id).clip
 
-    suspend fun getChannelClips(slug: String) =
-        api.getChannelClips("https://kick.com/api/v2/channels/$slug/clips").clips
+    suspend fun resolveRecording(recording: RecordedPlayback): RecordedPlayback {
+        if (!recording.directUrl.isNullOrBlank()) return recording
+        if (recording.id.startsWith("clip_")) {
+            val clip = getClip(recording.id)
+            check(!clip.clipUrl.isNullOrBlank())
+            return recording.copy(
+                directUrl = clip.clipUrl,
+                title = clip.title.ifBlank { recording.title },
+                durationMs = (clip.duration * 1000).toLong().takeIf { it > 0 } ?: recording.durationMs
+            )
+        }
+        val response = getRecordedPlayback(recording.id, recording.videoUuid)
+        check(response.playbackUrl.vod.isNotBlank())
+        return recording.copy(
+            directUrl = response.playbackUrl.vod,
+            title = response.videoSession.title.ifBlank { recording.title },
+            durationMs = (response.videoSession.durationSeconds * 1000).takeIf { it > 0 } ?: recording.durationMs
+        )
+    }
+
+    suspend fun getChannelClips(channelId: Long, sort: String, time: String, cursor: String?) =
+        api.getPopularChannelClips(channelId, sort, time, cursor).data
 
     val chatWebSocketClient: KickChatWebSocketClient by lazy {
         KickChatWebSocketClient(api)

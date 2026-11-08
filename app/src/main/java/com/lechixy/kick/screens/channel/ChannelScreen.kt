@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -49,11 +50,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -66,13 +71,13 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
@@ -97,6 +102,7 @@ import com.lechixy.kick.components.channel.chat.collectAsChatState
 import com.lechixy.kick.components.CHAT_WIDTH_FRACTION
 import com.lechixy.kick.components.CardSection
 import com.lechixy.kick.components.ChannelCardSkeleton
+import com.lechixy.kick.components.ChannelTabSpace
 import com.lechixy.kick.components.ContentState
 import com.lechixy.kick.components.LiveBadge
 import com.lechixy.kick.components.LocalContentNavigation
@@ -109,15 +115,16 @@ import com.lechixy.kick.components.VideoCard
 import com.lechixy.kick.components.VideoSkeletonGrid
 import com.lechixy.kick.components.WIDE_BREAKPOINT_DP
 import com.lechixy.kick.components.account.rememberAccountFollowAction
+import com.lechixy.kick.components.rememberRecordingDownloadAction
 import com.lechixy.kick.components.channel.AnimatedCounterText
 import com.lechixy.kick.components.channel.ChannelAboutTabContent
 import com.lechixy.kick.components.channel.ChannelTabPager
 import com.lechixy.kick.components.channel.OfflineBannerMinHeight
-import com.lechixy.kick.components.channel.OfflineBannerScrollConnection
 import com.lechixy.kick.components.channel.OfflineBannerState
 import com.lechixy.kick.components.channel.OfflineChannelBanner
 import com.lechixy.kick.components.channel.TagChip
 import com.lechixy.kick.components.channel.chat.ChatView
+import com.lechixy.kick.components.channel.chat.ChatRestoreButton
 import com.lechixy.kick.components.channel.resolveEventChipColors
 import com.lechixy.kick.components.channel.resolveLanguageChipColors
 import com.lechixy.kick.data.channel.model.ChannelClip
@@ -158,6 +165,8 @@ fun ChannelScreen(
     onBackClick: () -> Unit = {}
 ) {
     val state by viewModel.uiState.collectAsState()
+    var videoSort by rememberSaveable(channelSlug) { mutableStateOf(ChannelMediaSort.RECENT) }
+    val downloadRecording = rememberRecordingDownloadAction()
     val raidNavigation = LocalContentNavigation.current
     state.raid?.let { raid ->
         com.lechixy.kick.components.channel.RaidDialog(
@@ -254,16 +263,19 @@ fun ChannelScreen(
         if (returningLive && settingsRepository.get(SettingsKeys.AUTO_CONNECT_CHAT).first()) viewModel.connectChat()
     }
     val sharedChat = remember(viewModel, channel?.id, playerHost?.recording?.id) {
-        movableContentOf<ChannelDetail, (() -> Unit)?, Modifier> { ch, onHide, chatMod ->
+        movableContentOf<ChannelDetail, (() -> Unit)?, Modifier, Boolean> { ch, onHide, chatMod, autoHideHeader ->
             if (playerHost?.recording != null) {
                 com.lechixy.kick.components.channel.chat.RecordedChatView(
                     ch, playerHost.recording!!, playerHost, modifier = chatMod,
-                    onHideChat = onHide, onOpenChannel = { slug -> playerHost.open(slug) })
+                    onHideChat = onHide, onOpenChannel = { slug -> playerHost.open(slug) },
+                    autoHideHeader = autoHideHeader)
             } else {
                 ChannelChatSection(
                     viewModel = viewModel,
                     channel = ch,
                     onHideChat = onHide,
+                    autoHideHeader = autoHideHeader,
+                    playerControlsVisible = playerHost?.isControlsVisible == true,
                     modifier = chatMod,
                     onOpenChannel = { slug -> playerHost?.open(slug) }
                 )
@@ -289,6 +301,7 @@ fun ChannelScreen(
                     .windowInsetsPadding(inlineInsets)
             ) {
                 val screenWidthDp = maxWidth
+                val screenHeightDp = maxHeight
                 val isWide = screenWidthDp >= WIDE_BREAKPOINT_DP.dp
                 val tabScrollStates = if (isWide) wideTabScrollStates else compactTabScrollStates
                 val visibleTabs = remember(isWide) {
@@ -297,17 +310,8 @@ fun ChannelScreen(
                 }
                 val effectiveSelectedTab = if (isWide) wideSelectedTab else compactSelectedTab
 
-                val pagerState = key(channelSlug, isWide, isFullScreen) {
+                val pagerState = key(channelSlug, isWide) {
                     rememberPagerState(initialPage = visibleTabs.indexOf(effectiveSelectedTab).coerceAtLeast(0)) { visibleTabs.size }
-                }
-                val offlineScroll = remember(offline, pagerState, tabScrollStates) {
-                    OfflineBannerScrollConnection(
-                        enabled = { offline },
-                        atTop = {
-                            !tabScrollStates.getValue(visibleTabs[pagerState.currentPage]).canScrollBackward
-                        },
-                        state = offlineCollapse
-                    )
                 }
                 LaunchedEffect(pagerState, isFullScreen) {
                     snapshotFlow { pagerState.settledPage }.collect {
@@ -341,9 +345,7 @@ fun ChannelScreen(
                 Layout(
                     contents = listOf(
                         {
-                            Column(
-                                Modifier.fillMaxSize().nestedScroll(offlineScroll)
-                            ) {
+                            Column(Modifier.fillMaxSize()) {
                                 // Player'ın oturduğu yer (PlayerHost bu alanı işliyor)
                                 if (channel != null && channel.livestream == null && playerHost?.recording == null) {
                                     val bannerUrl = remember(channel, bannerWidthPx) {
@@ -352,6 +354,11 @@ fun ChannelScreen(
                                     OfflineChannelBanner(
                                         channel = channel,
                                         bannerUrl = bannerUrl,
+                                        modifier = if (isWide) Modifier.heightIn(max = with(density) {
+                                            val viewportHeight = screenHeightDp.roundToPx()
+                                            (playerHost?.channelMediaHeightLimit(viewportHeight, ChannelTabSpace.roundToPx())
+                                                ?: (viewportHeight - ChannelTabSpace.roundToPx()).coerceAtLeast(0)).toDp()
+                                        }) else Modifier,
                                         collapseProgress = offlineCollapse,
                                         onCollapse = { offlineCollapse.animateTo(1f) },
                                         onBackClick = onBackClick,
@@ -379,7 +386,12 @@ fun ChannelScreen(
                                             .fillMaxWidth()
                                             .layout { measurable, constraints ->
                                                 val colWidth = constraints.maxWidth
-                                                val fullHeightPx = (colWidth * 9f / 16f).roundToInt()
+                                                val naturalHeightPx = (colWidth * 9f / 16f).roundToInt()
+                                                val fullHeightPx = if (isWide) {
+                                                    minOf(naturalHeightPx, playerHost?.channelMediaHeightLimit(
+                                                        constraints.maxHeight, ChannelTabSpace.roundToPx()
+                                                    ) ?: constraints.maxHeight)
+                                                } else naturalHeightPx
                                                 val compactHeightPx = OfflineBannerMinHeight.roundToPx().coerceAtMost(fullHeightPx)
                                                 val normalHeightPx = (fullHeightPx + (compactHeightPx - fullHeightPx) * offlineCollapse.value).roundToInt()
                                                 val hPx = if (isWide) {
@@ -418,7 +430,7 @@ fun ChannelScreen(
                                     }
 
                                     @Composable
-                                    fun Header(measureForTheater: Boolean = true) {
+                                    fun Header() {
                                         AnimatedVisibility(
                                             visible = isProfilePhotoExpanded || if (isWide || !hasPlayback) true else isControlsVisible,
                                             enter = expandVertically(tween(300)) + fadeIn(tween(300)),
@@ -447,7 +459,7 @@ fun ChannelScreen(
                                                 onFollowClick = followAction.onClick,
                                                 context = context,
                                                 onHeightMeasured = { heightPx ->
-                                                    if (measureForTheater && heightPx > 0 && playerHost?.channelHeaderHeightPx != heightPx) {
+                                                    if (heightPx > 0 && playerHost?.channelHeaderHeightPx != heightPx) {
                                                         playerHost?.channelHeaderHeightPx = heightPx
                                                     }
                                                 }
@@ -464,32 +476,48 @@ fun ChannelScreen(
                                         )
                                     }
                                     val headerOnly = isWide && isTheaterMode && hasPlayback
-                                    if (!isWide || headerOnly) Header()
+                                    Header()
                                     if (!headerOnly) {
-                                        if (!isWide) Tabs()
+                                        Tabs()
                                         ChannelTabPager(state = pagerState, tabs = visibleTabs,
                                             modifier = Modifier.fillMaxWidth().weight(1f)) { pageTab ->
                                             if (pageTab == ChannelTab.CHAT && !hasSideChat) {
-                                                sharedChat(channel, null, Modifier.fillMaxSize())
+                                                Box(Modifier.fillMaxSize()) {
+                                                    if (isChatVisible) {
+                                                        sharedChat(channel, playerHost?.let { host ->
+                                                            { host.updateChatVisibility(visible = false) }
+                                                        }, Modifier.fillMaxSize(), true)
+                                                    }
+                                                    androidx.compose.animation.AnimatedVisibility(
+                                                        visible = !isChatVisible,
+                                                        enter = fadeIn(),
+                                                        exit = fadeOut(),
+                                                        modifier = Modifier.align(Alignment.TopEnd).padding(10.dp)
+                                                    ) {
+                                                        ChatRestoreButton(
+                                                            R.drawable.chat_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+                                                            stringResource(R.string.player_show_chat)
+                                                        ) {
+                                                            playerHost?.updateChatVisibility(visible = true)
+                                                        }
+                                                    }
+                                                }
                                             } else {
                                                 LazyColumn(state = tabScrollStates.getValue(pageTab), modifier = Modifier.fillMaxSize()) {
-                                                    if (isWide) {
-                                                        item(key = "channel_header") {
-                                                            Header(measureForTheater = pageTab == visibleTabs[pagerState.settledPage])
-                                                        }
-                                                        item(key = "channel_tabs") { Tabs() }
-                                                    }
                                                     item(key = "channel_content") {
                                                         ChannelTabContent(
                                                             tab = pageTab, channel = channel,
                                                             linksState = state.links, goalState = state.goals,
                                                             onRetryAbout = { viewModel.loadAbout(retry = true) },
-                                                            videos = state.videos, clips = state.clips,
+                                                            videos = state.videos,
+                                                            videoSort = videoSort, onVideoSort = { videoSort = it },
+                                                            clipState = state, onClipFilters = viewModel::updateClipFilters,
+                                                            onLoadMoreClips = viewModel::loadMoreClips,
                                                             popularClips = state.popularClips, recentCategories = state.recentCategories,
                                                             onRetryHome = viewModel::loadHomeSections,
-                                                            clipsError = state.clipsError, isClipsLoading = state.isClipsLoading,
                                                             onRetryClips = viewModel::retryClips,
                                                             onPlayRecording = { playerHost?.playRecording(it) },
+                                                            onDownloadRecording = downloadRecording,
                                                             onNavigateToTab = { target -> scope.launch {
                                                                 pagerState.animateScrollToPage(visibleTabs.indexOf(target))
                                                             } }
@@ -544,8 +572,9 @@ fun ChannelScreen(
                                     CompositionLocalProvider(LocalChatContentActive provides sideChatActive) {
                                         sharedChat(
                                             channel,
-                                            { playerHost?.setSideChatVisible(visible = false, isWide = isWide) },
-                                            Modifier.fillMaxSize()
+                                            { playerHost?.updateChatVisibility(visible = false) },
+                                            Modifier.fillMaxSize(),
+                                            configuration.smallestScreenWidthDp < 600
                                         )
                                     }
 
@@ -577,10 +606,7 @@ fun ChannelScreen(
                                                     val newFraction = dragStartFraction + deltaFraction
                                                     if (newFraction < 0.18f) {
                                                         playerHost?.updateChatWidthFraction(dragStartFraction)
-                                                        playerHost?.setSideChatVisible(
-                                                            visible = false,
-                                                            isWide = isWide
-                                                        )
+                                                        playerHost?.updateChatVisibility(visible = false)
                                                         isDraggingHandle = false
                                                     } else {
                                                         playerHost?.updateChatWidthFraction(newFraction)
@@ -652,6 +678,8 @@ private fun ChannelChatSection(
     viewModel: ChannelViewModel,
     channel: ChannelDetail,
     onHideChat: (() -> Unit)?,
+    autoHideHeader: Boolean,
+    playerControlsVisible: Boolean,
     modifier: Modifier = Modifier,
     onOpenChannel: (String) -> Unit = {}
 ) {
@@ -686,6 +714,8 @@ private fun ChannelChatSection(
         onConnectClick = viewModel::connectChat,
         onDisconnectClick = viewModel::disconnectChat,
         onHideChat = onHideChat,
+        autoHideHeader = autoHideHeader,
+        playerControlsVisible = playerControlsVisible,
         onOpenChannel = onOpenChannel,
         composer = { com.lechixy.kick.components.channel.chat.AccountChatComposer(
             channel, chatConnectionState, chatSettings, pointsUpdated,
@@ -1034,11 +1064,14 @@ private fun ChannelTabContent(
     goalState: com.lechixy.kick.data.channel.model.ChannelSectionState<List<com.lechixy.kick.data.channel.model.KickGoalDto>>,
     onRetryAbout: () -> Unit,
     videos: List<ChannelVideo>,
-    clips: List<ChannelClip>,
-    clipsError: String?,
-    isClipsLoading: Boolean,
+    videoSort: ChannelMediaSort,
+    onVideoSort: (ChannelMediaSort) -> Unit,
+    clipState: ChannelUiState,
+    onClipFilters: (ChannelMediaSort, ChannelClipTime) -> Unit,
+    onLoadMoreClips: () -> Unit,
     onRetryClips: () -> Unit,
     onPlayRecording: (RecordedPlayback) -> Unit,
+    onDownloadRecording: (RecordedPlayback) -> Unit,
     popularClips: com.lechixy.kick.data.channel.model.ChannelSectionState<List<ChannelClip>>,
     recentCategories: com.lechixy.kick.data.channel.model.ChannelSectionState<List<com.lechixy.kick.data.browse.model.BrowseCategory>>,
     onRetryHome: () -> Unit,
@@ -1054,7 +1087,7 @@ private fun ChannelTabContent(
                 title = stringResource(R.string.recent_broadcasts), data = videos,
                 modifier = Modifier.padding(16.dp), previewRows = 1,
                 onMore = { onNavigateToTab(ChannelTab.VIDEOS) }) { video ->
-                VideoCard(video = video, onClick = { video.toRecording()?.let(onPlayRecording) })
+                ChannelRecordingCard(video, onPlayRecording, onDownloadRecording)
             } else ContentState(stringResource(R.string.no_recent_broadcasts))
 
             Column(Modifier.padding(16.dp)) {
@@ -1064,7 +1097,7 @@ private fun ChannelTabContent(
                     popularClips.failed -> ContentState(stringResource(R.string.channel_section_error), onRetryHome)
                     popularClips.loaded && popularClips.value.orEmpty().isEmpty() -> ContentState(stringResource(R.string.media_no_clips))
                     else -> CardSection(title = null, data = popularClips.value.orEmpty(), previewRows = 1,
-                        loading = popularClips.loading) { clip -> ChannelClipCard(clip, onPlayRecording) }
+                        loading = popularClips.loading) { clip -> ChannelClipCard(clip, onPlayRecording, onDownloadRecording) }
                 }
             }
             ChannelCategoriesSection(recentCategories, onRetryHome, preview = true,
@@ -1075,30 +1108,99 @@ private fun ChannelTabContent(
 
         ChannelTab.ABOUT -> ChannelAboutTabContent(channel, linksState, goalState, onRetryAbout)
 
-        ChannelTab.VIDEOS -> {
+        ChannelTab.VIDEOS -> Column {
+            Row(Modifier.padding(horizontal = 16.dp)) {
+                ChannelMediaFilter(ChannelMediaSort.entries, videoSort, { it.label }, onVideoSort)
+            }
+            val sortedVideos = remember(videos, videoSort) {
+                if (videoSort == ChannelMediaSort.VIEWS) videos.sortedByDescending { it.views } else videos
+            }
             if (videos.isEmpty()) ContentState(stringResource(R.string.media_no_videos))
-            else CardSection(title = null, data = videos, modifier = Modifier.padding(16.dp)) { video ->
-                VideoCard(video = video, onClick = { video.toRecording()?.let(onPlayRecording) })
+            else CardSection(title = null, data = sortedVideos, modifier = Modifier.padding(16.dp)) { video ->
+                ChannelRecordingCard(video, onPlayRecording, onDownloadRecording)
             }
         }
-        ChannelTab.CLIPS -> {
-            when {
-                clipsError != null -> ContentState(stringResource(R.string.channel_clips_error), onRetryClips)
-                !isClipsLoading && clips.isEmpty() -> ContentState(stringResource(R.string.media_no_clips))
-                else -> CardSection(title = null, data = clips, modifier = Modifier.padding(16.dp),
-                    loading = isClipsLoading, skeleton = { com.lechixy.kick.components.VideoCardSkeleton() }) { clip ->
-                    ChannelClipCard(clip, onPlayRecording)
+        ChannelTab.CLIPS -> Column {
+            val clips = clipState.clips
+            FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ChannelMediaFilter(ChannelMediaSort.entries, clipState.clipSort, { it.label }) {
+                    onClipFilters(it, clipState.clipTime)
                 }
+                ChannelMediaFilter(ChannelClipTime.entries, clipState.clipTime, { it.label }) {
+                    onClipFilters(clipState.clipSort, it)
+                }
+            }
+            if (clips.isNotEmpty() || clipState.isClipsLoading) {
+                CardSection(title = null, data = clips, modifier = Modifier.padding(16.dp),
+                    loading = clipState.isClipsLoading && clips.isEmpty(),
+                    skeleton = { com.lechixy.kick.components.VideoCardSkeleton() }) { clip ->
+                    ChannelClipCard(clip, onPlayRecording, onDownloadRecording)
+                }
+            }
+            when {
+                clipState.clipsError != null -> ContentState(stringResource(R.string.channel_clips_error), onRetryClips)
+                clipState.isClipsLoading && clips.isEmpty() -> Unit
+                clips.isEmpty() -> ContentState(stringResource(R.string.media_no_clips))
+                clipState.clipCursor != null -> TextButton(
+                    onClick = onLoadMoreClips,
+                    enabled = !clipState.isClipsLoading,
+                    modifier = Modifier.align(Alignment.CenterHorizontally)
+                ) { Text(stringResource(R.string.channel_clips_load_more)) }
             }
         }
     }
 }
 
 @Composable
-private fun ChannelClipCard(clip: ChannelClip, onPlayRecording: (RecordedPlayback) -> Unit) {
+private fun <T> ChannelMediaFilter(
+    options: List<T>,
+    selected: T,
+    label: (T) -> Int,
+    onSelect: (T) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        FilterChip(
+            selected = true,
+            onClick = { expanded = true },
+            label = { Text(stringResource(label(selected))) },
+            trailingIcon = {
+                Icon(painterResource(R.drawable.keyboard_arrow_down_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
+                    contentDescription = null, modifier = Modifier.size(18.dp))
+            }
+        )
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            options.forEach { option ->
+                DropdownMenuItem(text = { Text(stringResource(label(option))) }, onClick = {
+                    expanded = false
+                    onSelect(option)
+                })
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChannelRecordingCard(
+    video: ChannelVideo,
+    onPlayRecording: (RecordedPlayback) -> Unit,
+    onDownloadRecording: (RecordedPlayback) -> Unit
+) {
+    val recording = remember(video) { video.toRecording() }
+    VideoCard(video = video, onDownload = recording?.let { { onDownloadRecording(it) } },
+        onClick = { recording?.let(onPlayRecording) })
+}
+
+@Composable
+private fun ChannelClipCard(
+    clip: ChannelClip,
+    onPlayRecording: (RecordedPlayback) -> Unit,
+    onDownloadRecording: (RecordedPlayback) -> Unit
+) {
+    val recording = remember(clip) { clip.toRecording() }
     VideoCard(video = ChannelVideo(id = 0, sessionTitle = clip.title, duration = (clip.duration * 1000).toLong(),
         views = clip.views, thumbnail = VideoThumbnail(src = clip.thumbnailUrl)), progressId = clip.id,
-        onClick = { onPlayRecording(clip.toRecording()) })
+        onDownload = { onDownloadRecording(recording) }, onClick = { onPlayRecording(recording) })
 }
 
 @Composable

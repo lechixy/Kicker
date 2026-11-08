@@ -7,13 +7,10 @@ import com.lechixy.kick.data.common.model.Channel
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.test.*
@@ -21,7 +18,6 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import kotlinx.coroutines.launch
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Rule
@@ -38,7 +34,6 @@ import com.lechixy.kick.R
 import com.lechixy.kick.components.PlayerHost
 import com.lechixy.kick.components.PlayerHostState
 import com.lechixy.kick.components.PlayerMode
-import com.lechixy.kick.components.channel.OfflineBannerScrollConnection
 import com.lechixy.kick.components.channel.OfflineChannelBanner
 import com.lechixy.kick.data.channel.model.ChannelDetail
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
@@ -56,65 +51,22 @@ class OfflineBannerUiTest {
         }
     }
 
-    @Test fun draggingHoldsAnIntermediateHeightAndOnlyExpandsAtTheTop() {
-        lateinit var state: com.lechixy.kick.components.channel.OfflineBannerState
-        lateinit var jump: (Int) -> Unit
-        lateinit var firstIndex: () -> Int
-        lateinit var contentHasMoved: () -> Boolean
+    @Test fun draggingTheOfflineBannerItselfStillCollapsesIt() {
+        lateinit var state: OfflineBannerState
         compose.setContent { MaterialTheme {
-            val list = rememberLazyListState()
             val scope = rememberCoroutineScope()
-            val banner = remember { com.lechixy.kick.components.channel.OfflineBannerState(scope) }
-            SideEffect {
-                state = banner
-                jump = { index -> scope.launch { list.scrollToItem(index) } }
-                firstIndex = { list.firstVisibleItemIndex }
-                contentHasMoved = { list.canScrollBackward }
-            }
-            val connection = remember { OfflineBannerScrollConnection({ true }, { !list.canScrollBackward }, banner) }
-            Column(Modifier.width(700.dp).fillMaxHeight().nestedScroll(connection)) {
+            val banner = remember { OfflineBannerState(scope) }
+            SideEffect { state = banner }
+            Box(Modifier.width(700.dp)) {
                 OfflineChannelBanner(ChannelDetail(1, slug = "tester"), null, banner,
                     { banner.animateTo(1f) }, {}, Modifier.testTag("banner"),
                     onTravelChanged = { banner.travelPx = it }, onDrag = { banner.drag(it) }, onDragFinished = banner::settle)
-                LazyColumn(Modifier.weight(1f).testTag("content"), state = list) {
-                    items(80) { Text("Channel content $it", Modifier.fillMaxWidth().height(48.dp)) }
-                }
             }
         } }
-        compose.onNodeWithTag("content").performTouchInput {
-            swipe(center, center - androidx.compose.ui.geometry.Offset(0f, 140f), durationMillis = 700)
+        compose.onNodeWithTag("banner").performTouchInput {
+            swipe(center, center - androidx.compose.ui.geometry.Offset(0f, center.y * 0.6f), durationMillis = 400)
         }
-        var held = 0f
-        compose.runOnIdle { held = state.value; assertTrue(held > 0.06f && held < 0.94f) }
-        compose.mainClock.advanceTimeBy(1000)
-        compose.runOnIdle { assertEquals(held, state.value, 0.001f) }
-        // Release a short, fast swipe while the header is still partially expanded.
-        // Kinetic frames must finish collapsing it before scrolling the list underneath.
-        compose.mainClock.autoAdvance = false
-        compose.onNodeWithTag("content").performTouchInput {
-            swipe(center, center - androidx.compose.ui.geometry.Offset(0f, 180f), durationMillis = 60)
-        }
-        repeat(90) {
-            compose.mainClock.advanceTimeByFrame()
-            compose.runOnUiThread {
-                if (contentHasMoved()) assertEquals("Content must not outrun the collapsing banner", 1f, state.value, 0.001f)
-            }
-        }
-        compose.mainClock.autoAdvance = true
-        compose.waitForIdle()
-        compose.runOnIdle {
-            assertEquals("Fling must continue moving the banner after release", 1f, state.value, 0.001f)
-            assertTrue("The remaining fling should reach the content", contentHasMoved())
-            jump(30)
-        }
-        compose.waitUntil(3_000) { firstIndex() == 30 }
-        compose.onNodeWithTag("content").performTouchInput {
-            swipe(center, center + androidx.compose.ui.geometry.Offset(0f, 80f), durationMillis = 700)
-        }
-        compose.runOnIdle { assertTrue(firstIndex() > 0); assertEquals(1f, state.value, 0.001f); jump(2) }
-        compose.waitForIdle()
-        compose.onNodeWithTag("content").performTouchInput { swipeDown() }
-        compose.runOnIdle { assertTrue("Returning to the top must expand the banner progressively", state.value < 1f) }
+        compose.runOnIdle { assertTrue(state.value > 0f) }
     }
 
     @Test fun nearEndpointsSettleAndLabelClearsMinimizeButton() {

@@ -353,25 +353,27 @@ fun ChatMessageItem(
             )
         }
 
-        Text(
-            text = androidx.compose.ui.text.buildAnnotatedString {
-                append(parsedMessage.annotatedString.withMentionLinks(onEventUserClick))
-                val start = parsedMessage.annotatedString.text.indexOf(senderName)
-                if (start >= 0 && onUserClick != null && message.sender != null) {
-                    addLink(androidx.compose.ui.text.LinkAnnotation.Clickable("chatter",
-                        styles = chatterLinkStyles(androidx.compose.ui.text.SpanStyle(color = effectiveSenderColor, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)),
-                        linkInteractionListener = {
-                        onUserClick(message.sender)
-                    }), start, start + senderName.length)
-                }
-            },
-            fontStyle = FontStyle.Normal,
-            inlineContent = parsedMessage.inlineContent,
-            fontSize = fontSizeSp.sp,
-            lineHeight = (fontSizeSp + 5).sp,
-            color = effectiveBodyTextColor,
-            modifier = Modifier.fillMaxWidth()
-        )
+        ChatClipLinks(parsedMessage.annotatedString) {
+            Text(
+                text = androidx.compose.ui.text.buildAnnotatedString {
+                    append(parsedMessage.annotatedString.withMentionLinks(onEventUserClick))
+                    val start = parsedMessage.annotatedString.text.indexOf(senderName)
+                    if (start >= 0 && onUserClick != null && message.sender != null) {
+                        addLink(androidx.compose.ui.text.LinkAnnotation.Clickable("chatter",
+                            styles = chatterLinkStyles(androidx.compose.ui.text.SpanStyle(color = effectiveSenderColor, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)),
+                            linkInteractionListener = {
+                                onUserClick(message.sender)
+                            }), start, start + senderName.length)
+                    }
+                },
+                fontStyle = FontStyle.Normal,
+                inlineContent = parsedMessage.inlineContent,
+                fontSize = fontSizeSp.sp,
+                lineHeight = (fontSizeSp + 5).sp,
+                color = effectiveBodyTextColor,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
     }
 }
 
@@ -515,14 +517,16 @@ fun ChatEventBaseItem(
                 streamerMentionShadow = streamerMentionShadow
             )
 
-            Text(
-                text = parsedBody.annotatedString.withMentionLinks(onUsernameClick),
-                inlineContent = parsedBody.inlineContent,
-                fontSize = fontSizeSp.sp,
-                lineHeight = (fontSizeSp + 5).sp,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.fillMaxWidth()
-            )
+            ChatClipLinks(parsedBody.annotatedString) {
+                Text(
+                    text = parsedBody.annotatedString.withMentionLinks(onUsernameClick),
+                    inlineContent = parsedBody.inlineContent,
+                    fontSize = fontSizeSp.sp,
+                    lineHeight = (fontSizeSp + 5).sp,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
     }
 }

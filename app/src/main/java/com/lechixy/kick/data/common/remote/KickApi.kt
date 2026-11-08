@@ -8,10 +8,10 @@ import retrofit2.http.Query
 import retrofit2.http.Url
 
 import com.lechixy.kick.data.browse.model.SearchResponse
-import com.lechixy.kick.data.channel.model.ChannelClips
 import com.lechixy.kick.data.channel.model.ChannelDetail
 import com.lechixy.kick.data.channel.model.ChannelEventResponse
 import com.lechixy.kick.data.channel.model.ChannelVideo
+import com.lechixy.kick.data.channel.model.ClipDetailResponse
 import com.lechixy.kick.data.channel.model.ClipResponse
 import com.lechixy.kick.data.channel.model.VideoDetailResponse
 import com.lechixy.kick.data.chat.model.ChatHistoryResponse
@@ -29,7 +29,8 @@ import com.lechixy.kick.data.player.model.PlaybackResponse
 interface KickApi {
     @GET("https://web.kick.com/api/v1/channels/{channelId}/clips")
     suspend fun getPopularChannelClips(@Path("channelId") channelId: Long,
-        @Query("sort") sort: String = "views", @Query("time") time: String = "all"
+        @Query("sort") sort: String = "views", @Query("time") time: String = "all",
+        @Query("cursor") cursor: String? = null
     ): com.lechixy.kick.data.channel.model.PopularClipsResponse
 
     @GET("https://web.kick.com/api/v1/channels/{channelId}/recent-categories")
@@ -88,8 +89,8 @@ interface KickApi {
     @GET("https://kick.com/api/v2/clips/{id}")
     suspend fun getClip(@Path("id") id: String): ClipResponse
 
-    @GET
-    suspend fun getChannelClips(@Url url: String): ChannelClips
+    @GET("https://web.kick.com/api/v1/clips/{id}")
+    suspend fun getClipDetail(@Path("id") id: String): ClipDetailResponse
 
     @GET("api/v1/livestreams/featured")
     suspend fun getLivestreams(

@@ -1,11 +1,15 @@
 package com.lechixy.kick
 
 import android.animation.ValueAnimator
+import android.app.PictureInPictureUiState
 import android.content.Context
+import android.content.res.Configuration
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.annotation.RequiresApi
 import androidx.annotation.StringRes
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.animation.AnimatedVisibility
@@ -27,6 +31,7 @@ import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -46,6 +51,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,10 +70,8 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
-import androidx.core.app.PictureInPictureModeChangedInfo
 import androidx.core.os.LocaleListCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import androidx.core.util.Consumer
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
@@ -112,6 +116,22 @@ import kotlin.time.Duration.Companion.milliseconds
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+    internal var inPipMode by mutableStateOf(false)
+        private set
+    internal var enteringPip by mutableStateOf(false)
+        private set
+
+    @RequiresApi(Build.VERSION_CODES.S)
+    override fun onPictureInPictureUiStateChanged(pipState: PictureInPictureUiState) {
+        super.onPictureInPictureUiStateChanged(pipState)
+        if (Build.VERSION.SDK_INT >= 35) enteringPip = pipState.isTransitioningToPip && !inPipMode
+    }
+
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        inPipMode = isInPictureInPictureMode
+        enteringPip = false
+    }
 
     @Inject
     lateinit var settingsRepository: SettingsRepository
@@ -150,6 +170,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
+        inPipMode = isInPictureInPictureMode
         enableEdgeToEdge()
         var nativeSplashDismissed by mutableStateOf(false)
         splashScreen.setOnExitAnimationListener { provider ->
@@ -291,22 +312,18 @@ fun KickApp(restorePending: Boolean = false) {
 
     // Tek yerde tutulan player oturumu; ChannelScreen, mini player ve nav bar buradan beslenir.
     val playerHost = rememberPlayerHostState()
+    var chatClipId by rememberSaveable { mutableStateOf<String?>(null) }
+    val openChatClip: (String) -> Unit = remember { { chatClipId = it } }
     val settingsRepository = LocalSettingsRepository.current
     LaunchedEffect(settingsRepository) {
         settingsRepository.get(SettingsKeys.CHAT_WIDTH_FRACTION).collect { savedFraction ->
             playerHost.updateChatWidthFraction(savedFraction)
         }
     }
-    var isInPipMode by remember { mutableStateOf(false) }
-
-    DisposableEffect(activity) {
-        val listener = Consumer<PictureInPictureModeChangedInfo> { info ->
-            isInPipMode = info.isInPictureInPictureMode
-        }
-        val componentActivity = activity as? ComponentActivity
-        componentActivity?.addOnPictureInPictureModeChangedListener(listener)
-        onDispose { componentActivity?.removeOnPictureInPictureModeChangedListener(listener) }
-    }
+    val pipActivity = activity as? MainActivity
+    val pipActive = pipActivity?.inPipMode == true
+    val enteringPip = pipActivity?.enteringPip == true
+    val isInPipMode = pipActive || enteringPip
 
     val openChannel: (String, ExpansionSource?) -> Unit =
         { slug, source -> playerHost.open(slug, source) }
@@ -335,6 +352,7 @@ fun KickApp(restorePending: Boolean = false) {
         contentColor = MaterialTheme.colorScheme.onBackground
     ) {
         CompositionLocalProvider(
+            com.lechixy.kick.components.channel.chat.LocalOpenChatClip provides openChatClip,
             com.lechixy.kick.screens.settings.LocalOpenChangelog provides {
                 navController.navigate("settings/changelog") {
                     launchSingleTop = true
@@ -591,7 +609,8 @@ fun KickApp(restorePending: Boolean = false) {
                         PlayerHost(
                             host = playerHost,
                             navigationRailAvailable = !useBottomBar,
-                            isInPipMode = isInPipMode,
+                            isInPipMode = pipActive,
+                            enteringPip = enteringPip,
                             onMinimize = playerHost::minimize,
                             onExpand = playerHost::expand,
                             onClose = playerHost::close,
@@ -623,6 +642,8 @@ fun KickApp(restorePending: Boolean = false) {
                                         null
                                     )
                                 }
+                                com.lechixy.kick.data.notifications.NotificationKind.SleepTimerStarted,
+                                com.lechixy.kick.data.notifications.NotificationKind.SleepTimerStopped -> Unit
                             }
                         })
                     com.lechixy.kick.components.account.AccountChallengeDialogHost(
@@ -645,6 +666,33 @@ fun KickApp(restorePending: Boolean = false) {
                     onTriggerLive = { playerHost.triggerLiveAnnouncement(System.nanoTime()) },
                     canTriggerLive = playerHost.channel?.livestream != null && playerHost.recording == null && playerHost.mode != PlayerMode.Hidden
                 )
+                if (!isInPipMode) chatClipId?.let { id ->
+                    key(id) {
+                        com.lechixy.kick.screens.clip.ClipPlayerDialog(
+                            clipId = id,
+                            onClose = { chatClipId = null },
+                            onWatchLivestream = { clip ->
+                                chatClipId = null
+                                openChannel(clip.channel.slug, null)
+                                playerHost.playLive()
+                            },
+                            onWatchFullVideo = { clip ->
+                                clip.video?.let { video ->
+                                    chatClipId = null
+                                    openChannel(clip.channel.slug, null)
+                                    playerHost.playRecording(
+                                        com.lechixy.kick.data.player.model.RecordedPlayback(
+                                            id = video.id,
+                                            title = video.title,
+                                            durationMs = 0,
+                                            videoUuid = video.id,
+                                        )
+                                    )
+                                }
+                            },
+                        )
+                    }
+                }
             }
         }
     }
@@ -829,18 +877,33 @@ internal fun KickNavScaffold(
                             animationSpec = tween(220),
                             label = "rail toggle"
                         )
-                        androidx.compose.material3.IconButton(onClick = {
-                            scope.launch {
-                                settings.set(
-                                    SettingsKeys.NAVIGATION_RAIL_EXPANDED,
-                                    !railExpanded
+                        Box(Modifier.fillMaxWidth().height(64.dp)) {
+                            com.lechixy.kick.components.FadingAppBrand(
+                                visible = railExpanded && !hidden,
+                                modifier = Modifier.align(Alignment.CenterStart).padding(start = 20.dp, end = 56.dp),
+                                enter = androidx.compose.animation.fadeIn(tween(180, delayMillis = 120)),
+                                exit = androidx.compose.animation.fadeOut(tween(120))
+                            )
+                            val toggleBias by androidx.compose.animation.core.animateFloatAsState(
+                                if (railExpanded) 1f else 0f,
+                                animationSpec = tween(320, easing = FastOutSlowInEasing),
+                                label = "rail toggle alignment"
+                            )
+                            androidx.compose.material3.IconButton(
+                                onClick = {
+                                    scope.launch {
+                                        settings.set(SettingsKeys.NAVIGATION_RAIL_EXPANDED, !railExpanded)
+                                    }
+                                },
+                                modifier = Modifier.align(androidx.compose.ui.BiasAlignment(toggleBias, 0f))
+                                    .padding(end = if (railExpanded) 8.dp else 0.dp)
+                            ) {
+                                Icon(
+                                    painterResource(R.drawable.menu_24dp),
+                                    stringResource(if (railExpanded) R.string.navigation_collapse else R.string.navigation_expand),
+                                    modifier = Modifier.graphicsLayer { rotationZ = menuRotation }
                                 )
                             }
-                        }, modifier = Modifier.padding(vertical = 8.dp)) {
-                            Icon(
-                                painterResource(R.drawable.menu_24dp),
-                                androidx.compose.ui.res.stringResource(if (railExpanded) R.string.navigation_collapse else R.string.navigation_expand),
-                                modifier = Modifier.graphicsLayer { rotationZ = menuRotation })
                         }
                         val session by com.lechixy.kick.data.account.AccountGraph.auth.session.collectAsStateWithLifecycle()
                         val following = com.lechixy.kick.data.account.AccountGraph.following.rail
@@ -916,7 +979,11 @@ internal fun KickNavScaffold(
                     }
                 }
             },
-            content = { sharedContent() }
+            content = {
+                CompositionLocalProvider(
+                    com.lechixy.kick.components.LocalRailBrandVisible provides (railExpanded && !hidden)
+                ) { sharedContent() }
+            }
         )
     }
 }

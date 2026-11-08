@@ -69,4 +69,16 @@ class ChannelHomeDataTest {
         assertEquals("category", repository.getRecentChannelCategories(26239555).single().slug)
         assertEquals(listOf("getPopularChannelClips", "getRecentChannelCategories"), calls)
     }
+
+    @Test fun filteredClipsForwardSortTimeAndCursor() = runBlocking {
+        val api = Proxy.newProxyInstance(KickApi::class.java.classLoader, arrayOf(KickApi::class.java)) { _, method, args ->
+            assertEquals("getPopularChannelClips", method.name)
+            assertEquals(listOf(26239555L, "date", "week", "previous"), args.take(4))
+            PopularClipsResponse(PopularClipsData(listOf(ChannelClip("filtered")), cursor = "next"))
+        } as KickApi
+
+        val page = KickRepository(api).getChannelClips(26239555L, "date", "week", "previous")
+        assertEquals("filtered", page.clips.single().id)
+        assertEquals("next", page.cursor)
+    }
 }

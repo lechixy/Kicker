@@ -3,6 +3,7 @@ package com.lechixy.kick.screens.channel
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.lechixy.kick.R
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -46,6 +47,9 @@ data class ChannelUiState(
     val recentCategories: ChannelSectionState<List<com.lechixy.kick.data.browse.model.BrowseCategory>> = ChannelSectionState(loading = true),
     val clipsError: String? = null,
     val isClipsLoading: Boolean = true,
+    val clipSort: ChannelMediaSort = ChannelMediaSort.RECENT,
+    val clipTime: ChannelClipTime = ChannelClipTime.ALL,
+    val clipCursor: String? = null,
     val chatHistory: ChatHistoryData? = null,
     val error: String? = null,
     val liveAnnouncementId: Long? = null,
@@ -81,6 +85,8 @@ class ChannelViewModel(
     val emotes = _emotes.asStateFlow()
     private var emotesJob: Job? = null
     private var livePlaybackRefreshJob: Job? = null
+    private var channelLoadJob: Job? = null
+    private var clipsJob: Job? = null
     private val emoteCache = mutableMapOf<String, List<com.lechixy.kick.data.chat.model.EmoteCategory>>()
 
     fun loadEmotes(retry: Boolean = false) {
@@ -283,12 +289,14 @@ class ChannelViewModel(
     }
 
     fun loadChannel(slug: String, autoConnectChat: Boolean = true) {
-        viewModelScope.launch {
+        channelLoadJob?.cancel()
+        channelLoadJob = viewModelScope.launch {
             if (loadedSlug != null && !loadedSlug.equals(slug, ignoreCase = true)) {
                 repository.chatWebSocketClient.disconnect()
                 _chatSettings.value = kotlinx.serialization.json.JsonObject(emptyMap())
             }
             aboutJob?.cancel()
+            clipsJob?.cancel()
             loadedSlug = slug
             emotesJob?.cancel()
             loadEmotes()
@@ -327,6 +335,7 @@ class ChannelViewModel(
                 val event = eventDeferred.await()
                 val history = historyDeferred.await()
 
+                if (loadedSlug != slug) return@launch
                 _uiState.value = ChannelUiState(
                     isLoading = false,
                     channel = channel,
@@ -338,7 +347,7 @@ class ChannelViewModel(
 
                 // Clip loading must not delay live playback or channel metadata.
                 startLeaderboardPolling(channel.id)
-                loadClips(slug)
+                loadClips()
                 loadHomeSections()
                 channel.chatroom?.id?.let { chatroomId ->
                     repository.chatWebSocketClient.seedHistory(channel.id, chatroomId, history?.messages.orEmpty())
@@ -353,6 +362,8 @@ class ChannelViewModel(
                 channel.livestream?.id?.let { livestreamId ->
                     startViewersPolling(livestreamId)
                 }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
             } catch (e: Exception) {
                 _uiState.value = ChannelUiState(
                     isLoading = false,
@@ -409,15 +420,45 @@ class ChannelViewModel(
     }
 
     fun retryClips() {
-        loadedSlug?.let { loadClips(it) }
+        loadClips(append = _uiState.value.clips.isNotEmpty())
     }
 
-    private fun loadClips(slug: String) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isClipsLoading = true, clipsError = null) }
+    fun updateClipFilters(sort: ChannelMediaSort, time: ChannelClipTime) {
+        val state = _uiState.value
+        if (state.isLoading || (state.clipSort == sort && state.clipTime == time)) return
+        _uiState.update { it.copy(clipSort = sort, clipTime = time) }
+        loadClips()
+    }
+
+    fun loadMoreClips() {
+        if (!_uiState.value.isClipsLoading) loadClips(append = true)
+    }
+
+    private fun loadClips(append: Boolean = false) {
+        val state = _uiState.value
+        if (state.isLoading) return
+        val channel = state.channel ?: return
+        val slug = loadedSlug ?: return
+        val cursor = if (append) state.clipCursor ?: return else null
+        clipsJob?.cancel()
+        _uiState.update {
+            it.copy(
+                clips = if (append) it.clips else emptyList(),
+                clipCursor = cursor,
+                isClipsLoading = true,
+                clipsError = null
+            )
+        }
+        clipsJob = viewModelScope.launch {
             try {
-                val clips = repository.getChannelClips(slug)
-                if (loadedSlug == slug) _uiState.update { it.copy(clips = clips, isClipsLoading = false) }
+                val page = repository.getChannelClips(channel.id, state.clipSort.query, state.clipTime.query, cursor)
+                if (loadedSlug == slug) _uiState.update {
+                    it.copy(
+                        clips = (it.clips + page.clips).distinctBy(ChannelClip::id),
+                        clipCursor = page.cursor?.takeIf { it.isNotBlank() && it != cursor },
+                        isClipsLoading = false
+                    )
+                }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
@@ -542,4 +583,15 @@ class ChannelViewModel(
         viewersPollingJob?.cancel()
         repository.chatWebSocketClient.disconnect()
     }
+}
+enum class ChannelMediaSort(val label: Int, val query: String) {
+    RECENT(R.string.channel_sort_recent, "date"),
+    VIEWS(R.string.channel_sort_views, "views")
+}
+
+enum class ChannelClipTime(val label: Int, val query: String) {
+    ALL(R.string.channel_clip_all_time, "all"),
+    DAY(R.string.channel_clip_day, "day"),
+    WEEK(R.string.channel_clip_week, "week"),
+    MONTH(R.string.channel_clip_month, "month")
 }

@@ -2,13 +2,10 @@ package com.lechixy.kick.data.channel.model
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonObject
 
 import com.lechixy.kick.data.common.model.Category
 import com.lechixy.kick.data.player.model.RecordedPlayback
 
-@Serializable
-data class ChannelClips(val clips: List<ChannelClip> = emptyList())
 @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 @Serializable
 data class ChannelClip(

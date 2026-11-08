@@ -41,6 +41,17 @@ class RecordedChatTimelineTest {
         assertEquals(listOf("seek"), timeline.visible(300_000).map { it.id })
     }
 
+    @Test fun clipReplayKeepsOnlyMessagesInsideTheClipEvenAtTheLastBucket() {
+        val timeline = RecordedChatTimeline(start.plusSeconds(4), endMs = 12_000)
+        timeline.add(listOf(message("before", 3), message("start", 4)), 0)
+        timeline.add(listOf(message("last", 16), message("after", 17)), 11_000)
+
+        assertEquals(listOf("start"), timeline.visible(11_999).map { it.id })
+        assertEquals(listOf("start", "last"), timeline.visible(12_000).map { it.id })
+        assertEquals(listOf("start", "last"), timeline.visible(13_000).map { it.id })
+        assertEquals(listOf("start"), timeline.visible(0).map { it.id })
+    }
+
     @Test fun replayUsesExistingHistoryParserIncludingEncodedMetadataAndSelectedBadges() {
         val json = Json { ignoreUnknownKeys = true }
         val response = json.decodeFromString<ChatHistoryResponse>("""{"data":{"messages":[{"id":"sample","chat_id":27496659,"user_id":121013363,"content":"hello [emote:1:Hi]","type":"message","metadata":"{\"message_ref\":\"1793485064512\"}","sender":{"id":121013363,"slug":"ekiiny","username":"ekiiny","identity":{"color":"#FEA0CF","badges":[],"badges_v2":[{"name":"level","badge_type":"global","selected":true,"metadata":{"level":33},"sort_order":1},{"name":"hidden","selected":false,"sort_order":2}]}},"created_at":"2026-10-31T22:17:45Z","thread_parent_id":null}],"cursor":"1793485075782353","pinned_message":null},"message":"OK"}""")

@@ -22,7 +22,8 @@ import kotlin.time.Duration.Companion.milliseconds
 @Composable
 internal fun RecordedChatView(
     channel: ChannelDetail, recording: RecordedPlayback, playerHost: PlayerHostState,
-    modifier: Modifier = Modifier, onHideChat: (() -> Unit)? = null, onOpenChannel: (String) -> Unit = {}
+    modifier: Modifier = Modifier, onHideChat: (() -> Unit)? = null, onOpenChannel: (String) -> Unit = {},
+    autoHideHeader: Boolean = false
 ) {
     // Clip creation time is not the source stream's timeline; only full recordings have this anchor.
     val start = remember(recording.id, recording.startTime) {
@@ -79,6 +80,8 @@ internal fun RecordedChatView(
             subscriberBadges = channel.subscriberBadges, streamerUsername = channel.user?.username,
             streamerSlug = channel.slug, channelId = channel.id, isReplay = true,
             onHideChat = onHideChat, onOpenChannel = onOpenChannel, modifier = modifier,
+            autoHideHeader = autoHideHeader,
+            playerControlsVisible = playerHost.isControlsVisible,
             composer = {
                 if (failed) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween) {

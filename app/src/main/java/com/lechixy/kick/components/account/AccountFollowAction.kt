@@ -20,7 +20,7 @@ import kotlinx.coroutines.launch
 data class AccountFollowAction(val following: Boolean, val label: String, val enabled: Boolean, val onClick: () -> Unit)
 
 @Composable
-fun rememberAccountFollowAction(slug: String): AccountFollowAction {
+fun rememberAccountFollowAction(slug: String, optimistic: Boolean = false): AccountFollowAction {
     val session by AccountGraph.auth.session.collectAsStateWithLifecycle()
     val repository = AccountGraph.following
     val scope = rememberCoroutineScope()
@@ -96,17 +96,19 @@ fun rememberAccountFollowAction(slug: String): AccountFollowAction {
         }
     }
     return AccountFollowAction(following == true, when {
-        busy -> stringResource(R.string.channel_follow_wait)
+        busy && (!optimistic || following == null) -> stringResource(R.string.channel_follow_wait)
         blocked -> stringResource(R.string.channel_open_kick)
         session.signedIn && following == null -> stringResource(R.string.chat_retry)
-        following == true -> stringResource(R.string.channel_unfollow)
+        following == true -> stringResource(if (optimistic) R.string.following else R.string.channel_unfollow)
         else -> stringResource(R.string.follow)
     }, !busy) {
         when {
             !session.signedIn || blocked -> dialog = true
             following == null && !busy -> retryStatus()
             !busy -> {
-                val next = following != true
+                val previous = following
+                val next = previous != true
+                if (optimistic) following = next
                 busy = true
                 scope.launch {
                     try {
@@ -116,6 +118,7 @@ fun rememberAccountFollowAction(slug: String): AccountFollowAction {
                         if (failure is CancellationException) throw failure
                         if (generation == AccountGraph.auth.session.value.generation) {
                             recordFailure(failure)
+                            if (optimistic) following = previous
                             dialog = true
                         }
                     } finally { busy = false }

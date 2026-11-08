@@ -180,7 +180,7 @@ class PlayerHostState(
         }
     }
 
-    fun setSideChatVisible(visible: Boolean, isWide: Boolean) {
+    fun updateChatVisibility(visible: Boolean) {
         if (mode == PlayerMode.Fullscreen) {
             if (visible) {
                 if (!isTheaterMode || !isChatVisible) {
@@ -193,11 +193,7 @@ class PlayerHostState(
                     isTheaterMode = false
                 }
             }
-        } else if (isWide) {
-            if (isChatVisible != visible) {
-                isChatVisible = visible
-            }
-        }
+        } else isChatVisible = visible
     }
 
     fun toggleTheaterMode() {
@@ -224,6 +220,11 @@ class PlayerHostState(
 
     fun updateChatWidthFraction(fraction: Float) {
         chatWidthFraction = fraction.coerceIn(0.18f, 0.60f)
+    }
+
+    fun channelMediaHeightLimit(viewportHeight: Int, tabSpace: Int): Int {
+        val headerHeight = channelHeaderHeightPx.takeIf { it > 0 } ?: (viewportHeight * 0.24f).roundToInt()
+        return (viewportHeight - headerHeight - tabSpace).coerceAtLeast(0)
     }
 
     var expansionSource by mutableStateOf<com.lechixy.kick.components.ExpansionSource?>(null)

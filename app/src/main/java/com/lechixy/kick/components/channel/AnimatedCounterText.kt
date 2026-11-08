@@ -56,7 +56,8 @@ fun AnimatedCounterText(
     style: TextStyle = MaterialTheme.typography.bodySmall,
     fontWeight: FontWeight = FontWeight.Bold,
     color: Color = MaterialTheme.colorScheme.primary,
-    formatViewers: Boolean = true
+    formatViewers: Boolean = true,
+    animateEntrance: Boolean = true
 ) {
     val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
     val formatted = remember(count, formatViewers, locale) {
@@ -64,7 +65,8 @@ fun AnimatedCounterText(
     }
 
     val tracker = remember { CountTracker() }
-    val initialEntrance = remember(count) { !tracker.hasRendered }
+    val firstValue = remember(count) { !tracker.hasRendered }
+    val initialEntrance = firstValue && animateEntrance
     val isIncreasing = remember(count) {
         if (!tracker.hasRendered) true else count >= tracker.last
     }
@@ -108,6 +110,7 @@ fun AnimatedCounterText(
                         spinGeneration = spinGeneration,
                         isIncreasing = isIncreasing,
                         initialEntrance = initialEntrance,
+                        startAtDigit = firstValue && !animateEntrance,
                         startDelayMs = if (initialEntrance) index * DIGIT_STAGGER_MS else 0L,
                         style = textStyle
                     )
@@ -126,11 +129,12 @@ private fun OdometerDigit(
     spinGeneration: Int,
     isIncreasing: Boolean,
     initialEntrance: Boolean,
+    startAtDigit: Boolean,
     startDelayMs: Long,
     style: TextStyle
 ) {
     // Sürekli (sınırsız) tekerlek pozisyonu: 12.4f → "2" ile "3" arasında, %40 kaymış
-    val position = remember { Animatable(0f) }
+    val position = remember { Animatable(if (startAtDigit) digit.toFloat() else 0f) }
 
     LaunchedEffect(digit, spinGeneration) {
         val from = position.value

@@ -46,7 +46,7 @@ internal fun OfflineChannelBanner(
     onDismissDragFinished: (velocity: Float, cancelled: Boolean) -> Unit = { _, _ -> }
 ) {
     Box(modifier.fillMaxWidth().layout { measurable, constraints ->
-        val normal = (constraints.maxWidth * 9f / 16f).roundToInt()
+        val normal = (constraints.maxWidth * 9f / 16f).roundToInt().coerceAtMost(constraints.maxHeight)
         val compact = OfflineBannerMinHeight.roundToPx().coerceAtMost(normal)
         onTravelChanged((normal - compact).toFloat())
         val height = (normal + (compact - normal) * collapseProgress.value).roundToInt()
