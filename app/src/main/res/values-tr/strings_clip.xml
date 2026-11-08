@@ -17,4 +17,24 @@
     <string name="clip_watch_full_video">Kaydın tamamını izle</string>
     <string name="clip_chat_empty">Bu klip sırasında sohbet mesajı yok</string>
     <string name="clip_chat_waiting">Sohbet mesajları bekleniyor…</string>
+    <string name="clip_create">Klip oluştur</string>
+    <string name="clip_title_required">Klibine bir başlık ekle (zorunlu)</string>
+    <string name="clip_title_counter">%1$d/%2$d</string>
+    <string name="clip_publish">Yayınla</string>
+    <string name="clip_published">Klibin yayınlandı. Artık paylaşabilirsin.</string>
+    <string name="clip_copy_url">Klip bağlantısını kopyala</string>
+    <string name="clip_create_failed">Klip önizlemesi oluşturulamadı.</string>
+    <string name="clip_publish_failed">Klip yayınlanamadı.</string>
+    <string name="clip_share_failed">Paylaşım sayfası açılamadı.</string>
+    <string name="clip_preview_retry">Önizlemeyi yeniden yükle</string>
+    <string name="clip_position_unavailable">Oynatma konumu alınamadı. Biraz sonra tekrar dene.</string>
+    <string name="clip_sign_in_required">Klip oluşturmak için giriş yap.</string>
+    <string name="clip_trim_summary">%1$d sn / %2$d sn · %3$s</string>
+    <string name="clip_trim_timeline">Klip kesme aralığı</string>
+    <string name="clip_trim_move_earlier">Seçimi geriye taşı</string>
+    <string name="clip_trim_move_later">Seçimi ileriye taşı</string>
+    <string name="clip_trim_start_earlier">Başlangıcı geriye taşı</string>
+    <string name="clip_trim_start_later">Başlangıcı ileriye taşı</string>
+    <string name="clip_trim_end_earlier">Bitişi geriye taşı</string>
+    <string name="clip_trim_end_later">Bitişi ileriye taşı</string>
 </resources>

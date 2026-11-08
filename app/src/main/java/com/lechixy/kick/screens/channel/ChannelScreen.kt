@@ -14,10 +14,15 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.rememberScrollableState
+import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -77,7 +82,9 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
@@ -118,13 +125,14 @@ import com.lechixy.kick.components.account.rememberAccountFollowAction
 import com.lechixy.kick.components.rememberRecordingDownloadAction
 import com.lechixy.kick.components.channel.AnimatedCounterText
 import com.lechixy.kick.components.channel.ChannelAboutTabContent
+import com.lechixy.kick.components.channel.ChannelHeaderScrollConnection
 import com.lechixy.kick.components.channel.ChannelTabPager
-import com.lechixy.kick.components.channel.OfflineBannerMinHeight
 import com.lechixy.kick.components.channel.OfflineBannerState
 import com.lechixy.kick.components.channel.OfflineChannelBanner
 import com.lechixy.kick.components.channel.TagChip
 import com.lechixy.kick.components.channel.chat.ChatView
 import com.lechixy.kick.components.channel.chat.ChatRestoreButton
+import com.lechixy.kick.components.channel.offlineBannerCompactHeight
 import com.lechixy.kick.components.channel.resolveEventChipColors
 import com.lechixy.kick.components.channel.resolveLanguageChipColors
 import com.lechixy.kick.data.channel.model.ChannelClip
@@ -303,6 +311,21 @@ fun ChannelScreen(
                 val screenWidthDp = maxWidth
                 val screenHeightDp = maxHeight
                 val isWide = screenWidthDp >= WIDE_BREAKPOINT_DP.dp
+                val scrollWideHeader = isWide && !isFullScreen && !isTheaterMode &&
+                    channel?.livestream != null && playerHost?.recording == null
+                var headerOffsetPx by remember(channelSlug, scrollWideHeader) { mutableFloatStateOf(0f) }
+                var headerHeightPx by remember(channelSlug, scrollWideHeader) { mutableFloatStateOf(0f) }
+                val headerScroll = remember(offline, offlineCollapse, scrollWideHeader, channelSlug) {
+                    when {
+                        offline -> ChannelHeaderScrollConnection(offlineCollapse::drag, offlineCollapse::settle)
+                        scrollWideHeader -> ChannelHeaderScrollConnection(drag = { delta ->
+                            val previous = headerOffsetPx.coerceAtMost(headerHeightPx)
+                            headerOffsetPx = (previous + delta).coerceIn(0f, headerHeightPx)
+                            headerOffsetPx - previous
+                        })
+                        else -> null
+                    }
+                }
                 val tabScrollStates = if (isWide) wideTabScrollStates else compactTabScrollStates
                 val visibleTabs = remember(isWide) {
                     if (isWide) ChannelTab.entries.filter { it != ChannelTab.CHAT }
@@ -345,9 +368,11 @@ fun ChannelScreen(
                 Layout(
                     contents = listOf(
                         {
-                            Column(Modifier.fillMaxSize()) {
+                            Column(Modifier.fillMaxSize().then(
+                                if (headerScroll != null) Modifier.nestedScroll(headerScroll) else Modifier
+                            )) {
                                 // Player'ın oturduğu yer (PlayerHost bu alanı işliyor)
-                                if (channel != null && channel.livestream == null && playerHost?.recording == null) {
+                                if (offline) {
                                     val bannerUrl = remember(channel, bannerWidthPx) {
                                         channel.getBannerUrl(targetWidthPx = bannerWidthPx)
                                     }
@@ -360,7 +385,7 @@ fun ChannelScreen(
                                                 ?: (viewportHeight - ChannelTabSpace.roundToPx()).coerceAtLeast(0)).toDp()
                                         }) else Modifier,
                                         collapseProgress = offlineCollapse,
-                                        onCollapse = { offlineCollapse.animateTo(1f) },
+                                        onToggle = offlineCollapse::toggle,
                                         onBackClick = onBackClick,
                                         onTravelChanged = { offlineCollapse.travelPx = it },
                                         onDrag = { offlineCollapse.drag(it) },
@@ -378,7 +403,9 @@ fun ChannelScreen(
                                                         animationSpec = tween(300)) { value, _ -> host.dragOffsetY = value }
                                                 }
                                             }
-                                        }
+                                        },
+                                        isWide = isWide,
+                                        targetWidthPx = bannerWidthPx
                                     )
                                 } else {
                                     Spacer(
@@ -392,7 +419,7 @@ fun ChannelScreen(
                                                         constraints.maxHeight, ChannelTabSpace.roundToPx()
                                                     ) ?: constraints.maxHeight)
                                                 } else naturalHeightPx
-                                                val compactHeightPx = OfflineBannerMinHeight.roundToPx().coerceAtMost(fullHeightPx)
+                                                val compactHeightPx = offlineBannerCompactHeight(fullHeightPx)
                                                 val normalHeightPx = (fullHeightPx + (compactHeightPx - fullHeightPx) * offlineCollapse.value).roundToInt()
                                                 val hPx = if (isWide) {
                                                     val totalH = constraints.maxHeight
@@ -432,6 +459,13 @@ fun ChannelScreen(
                                     @Composable
                                     fun Header() {
                                         AnimatedVisibility(
+                                            modifier = if (scrollWideHeader) Modifier.clipToBounds().layout { measurable, constraints ->
+                                                val header = measurable.measure(constraints)
+                                                val hidden = headerOffsetPx.roundToInt().coerceIn(0, header.height)
+                                                layout(header.width, header.height - hidden) {
+                                                    header.placeRelative(0, -hidden)
+                                                }
+                                            } else Modifier,
                                             visible = isProfilePhotoExpanded || if (isWide || !hasPlayback) true else isControlsVisible,
                                             enter = expandVertically(tween(300)) + fadeIn(tween(300)),
                                             exit = shrinkVertically(tween(300)) + fadeOut(tween(300))
@@ -459,6 +493,7 @@ fun ChannelScreen(
                                                 onFollowClick = followAction.onClick,
                                                 context = context,
                                                 onHeightMeasured = { heightPx ->
+                                                    if (scrollWideHeader) headerHeightPx = heightPx.toFloat()
                                                     if (heightPx > 0 && playerHost?.channelHeaderHeightPx != heightPx) {
                                                         playerHost?.channelHeaderHeightPx = heightPx
                                                     }
@@ -482,7 +517,11 @@ fun ChannelScreen(
                                         ChannelTabPager(state = pagerState, tabs = visibleTabs,
                                             modifier = Modifier.fillMaxWidth().weight(1f)) { pageTab ->
                                             if (pageTab == ChannelTab.CHAT && !hasSideChat) {
-                                                Box(Modifier.fillMaxSize()) {
+                                                // Empty chat still needs to dispatch vertical swipes to the offline banner.
+                                                val chatScroll = if (offline) {
+                                                    Modifier.scrollable(rememberScrollableState { 0f }, Orientation.Vertical)
+                                                } else Modifier
+                                                Box(Modifier.fillMaxSize().then(chatScroll)) {
                                                     if (isChatVisible) {
                                                         sharedChat(channel, playerHost?.let { host ->
                                                             { host.updateChatVisibility(visible = false) }
@@ -490,9 +529,9 @@ fun ChannelScreen(
                                                     }
                                                     androidx.compose.animation.AnimatedVisibility(
                                                         visible = !isChatVisible,
-                                                        enter = fadeIn(),
-                                                        exit = fadeOut(),
-                                                        modifier = Modifier.align(Alignment.TopEnd).padding(10.dp)
+                                                        enter = slideInHorizontally(tween(250)) { it } + fadeIn(tween(200)),
+                                                        exit = slideOutHorizontally(tween(180)) { it } + fadeOut(tween(150)),
+                                                        modifier = Modifier.align(Alignment.TopEnd).padding(top = 6.dp, end = 10.dp)
                                                     ) {
                                                         ChatRestoreButton(
                                                             R.drawable.chat_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
@@ -1198,8 +1237,8 @@ private fun ChannelClipCard(
     onDownloadRecording: (RecordedPlayback) -> Unit
 ) {
     val recording = remember(clip) { clip.toRecording() }
-    VideoCard(video = ChannelVideo(id = 0, sessionTitle = clip.title, duration = (clip.duration * 1000).toLong(),
-        views = clip.views, thumbnail = VideoThumbnail(src = clip.thumbnailUrl)), progressId = clip.id,
+    VideoCard(video = ChannelVideo(id = 0, sessionTitle = clip.title, duration = recording.durationMs,
+        createdAt = clip.createdAt, views = clip.views, thumbnail = VideoThumbnail(src = clip.thumbnailUrl)), progressId = clip.id,
         onDownload = { onDownloadRecording(recording) }, onClick = { onPlayRecording(recording) })
 }
 

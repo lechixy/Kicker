@@ -8,8 +8,8 @@ import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,9 +30,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
@@ -40,7 +40,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.graphics.ColorUtils
-
 import com.lechixy.kick.R
 import com.lechixy.kick.data.channel.model.SubscriberBadge
 import com.lechixy.kick.data.chat.model.ChatMessage
@@ -236,7 +235,7 @@ fun ChatMessageItem(
     val effectiveSenderColor = broadcasterPalette?.senderColor ?: usernameColor
     val effectiveBodyTextColor = broadcasterPalette?.contentColor ?: MaterialTheme.colorScheme.onSurface
 
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
     val badges = remember(message.sender?.identity, subscriberBadges, context) {
         ChatTextParser.resolveBadges(message.sender?.identity, subscriberBadges, context = context)
     }

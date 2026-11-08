@@ -115,7 +115,7 @@ fun ContentGrid(
             contentColumns(availableWidth)
         }
         LazyVerticalGrid(columns = GridCells.Fixed(columns), state = state,
-            modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp),
+            modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)) { content(columns) }
     }

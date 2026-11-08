@@ -45,18 +45,22 @@ class KickRepository(
         return session.copy(vodId = vodId)
     }
 
-    suspend fun getRecordedPlayback(id: String, videoUuid: String? = null): PlaybackResponse {
+    suspend fun getRecordedPlayback(id: String, videoUuid: String? = null): PlaybackResponse =
+        resolveRecordedPlayback(id, videoUuid).second
+
+    private suspend fun resolveRecordedPlayback(id: String, videoUuid: String?): Pair<String, PlaybackResponse> {
         if (videoUuid != null) {
-            return api.getRecordedPlayback(resolveVodId(videoUuid), PlaybackRequest())
+            val vodId = resolveVodId(videoUuid)
+            return vodId to api.getRecordedPlayback(vodId, PlaybackRequest())
         }
         return try {
-            api.getRecordedPlayback(id, PlaybackRequest())
+            id to api.getRecordedPlayback(id, PlaybackRequest())
         } catch (error: HttpException) {
             if (error.code() != 404) throw error
             // Sessions saved before video UUIDs and stream IDs were separated may contain a UUID here.
             val vodId = resolveVodId(id)
             if (vodId == id) throw error
-            api.getRecordedPlayback(vodId, PlaybackRequest())
+            vodId to api.getRecordedPlayback(vodId, PlaybackRequest())
         }
     }
 
@@ -81,12 +85,16 @@ class KickRepository(
                 durationMs = (clip.duration * 1000).toLong().takeIf { it > 0 } ?: recording.durationMs
             )
         }
-        val response = getRecordedPlayback(recording.id, recording.videoUuid)
+        val (vodId, response) = resolveRecordedPlayback(
+            recording.vodId ?: recording.id,
+            recording.videoUuid.takeIf { recording.vodId == null },
+        )
         check(response.playbackUrl.vod.isNotBlank())
         return recording.copy(
             directUrl = response.playbackUrl.vod,
             title = response.videoSession.title.ifBlank { recording.title },
-            durationMs = (response.videoSession.durationSeconds * 1000).takeIf { it > 0 } ?: recording.durationMs
+            durationMs = (response.videoSession.durationSeconds * 1000).takeIf { it > 0 } ?: recording.durationMs,
+            vodId = vodId,
         )
     }
 

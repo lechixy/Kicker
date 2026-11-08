@@ -13,6 +13,7 @@ import android.os.Looper
 import android.util.Log
 import android.util.Rational
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.RequiresApi
@@ -118,6 +119,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.common.Tracks
 import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
@@ -131,11 +133,14 @@ import com.lechixy.kick.data.channel.model.ChannelDetail
 import com.lechixy.kick.data.channel.model.getBannerUrl
 import com.lechixy.kick.data.player.local.PlaybackProgressStore
 import com.lechixy.kick.data.player.model.RecordedPlayback
+import com.lechixy.kick.data.player.remote.ViewerSession
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
+import com.lechixy.kick.screens.clip.CreateClipModal
 import com.lechixy.kick.service.EXTRA_LOW_LATENCY
 import com.lechixy.kick.service.PlaybackService
 import com.lechixy.kick.service.buildPlaybackMediaItem
+import com.lechixy.kick.service.player.broadcastPositionMs
 import com.lechixy.kick.service.player.distanceBehindLiveTargetMs
 import com.lechixy.kick.service.player.isNearLiveTarget
 import com.lechixy.kick.util.FormatUtils
@@ -155,6 +160,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
+
+private data class ClipTarget(val videoId: String?, val positionSeconds: Int, val liveSession: ViewerSession?)
 
 @SuppressLint("UseKtx")
 @androidx.annotation.OptIn(UnstableApi::class)
@@ -211,6 +218,7 @@ fun KickPlayerView(
     var isAdjustingVolume by remember { mutableStateOf(false) }
 
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var clipTarget by remember(stableId) { mutableStateOf<ClipTarget?>(null) }
     var settingsPage by remember { mutableStateOf(PlayerSettingsPage.MAIN) }
     var showStats by rememberSaveable { mutableStateOf(false) }
     var viewport by remember { mutableStateOf(IntSize.Zero) }
@@ -293,11 +301,12 @@ fun KickPlayerView(
     var playerBounds by remember { mutableStateOf<Rect?>(null) }
 
     val clipOwnsAudio = com.lechixy.kick.service.ClipAudioHandoff.active
-    LaunchedEffect(isPlaying, pipEnabled, activity, isInPipMode, clipOwnsAudio) {
+    val clipModalOpen = clipTarget != null
+    LaunchedEffect(isPlaying, pipEnabled, activity, isInPipMode, clipOwnsAudio, clipModalOpen) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S || activity == null || isInPipMode) {
             return@LaunchedEffect
         }
-        if (clipOwnsAudio) {
+        if (clipOwnsAudio || clipModalOpen) {
             activity.updatePlayerPipParams(buildPipParams(autoEnter = false, sourceRect = null))
             return@LaunchedEffect
         }
@@ -349,6 +358,10 @@ fun KickPlayerView(
     var liveOffsetMs by remember(stableId) { mutableLongStateOf(C.TIME_UNSET) }
     var isAtLiveEdge by remember(stableId) { mutableStateOf(false) }
     val isLiveStream = recording == null && (channel?.livestream != null || player?.isCurrentMediaItemLive == true)
+    val clipLiveSession = channel?.livestream?.takeIf { recording == null }?.let {
+        ViewerSession(channel.id, it.id, it.vodId?.takeIf(String::isNotBlank), channel.slug)
+    }
+    val clipVideoId = recording?.vodId ?: clipLiveSession?.vodId
     val lowLatencyEnabled = isLiveStream && lowLatencySetting
     val latestIsLiveStream by rememberUpdatedState(isLiveStream)
     var positionMs by remember(stableId) { mutableLongStateOf(0L) }
@@ -744,10 +757,43 @@ fun KickPlayerView(
                 onOpenSettings = { showSettingsDialog = true },
                 onOpenCastDialog = { showCastDialog = true },
                 onToggleTheater = onToggleTheater,
+                onCreateClip = if (clipVideoId != null || clipLiveSession != null) {
+                    {
+                        val active = player?.takeIf {
+                            it.currentMediaItem?.mediaId == stableId && it.playbackState != Player.STATE_IDLE
+                        }
+                        val position = active?.let { current ->
+                            if (clipLiveSession == null) current.currentPosition else {
+                                val timeline = current.currentTimeline
+                                val window = current.currentMediaItemIndex.takeIf { it in 0 until timeline.windowCount }
+                                    ?.let { timeline.getWindow(it, Timeline.Window()) }
+                                val livestream = channel.livestream
+                                val start = parseUtcStartTimeToMillis(livestream.startTime ?: livestream.createdAt)
+                                window?.let { broadcastPositionMs(it.windowStartTimeMs, current.currentPosition, start) }
+                            }
+                        }
+                        if (position == null || position < 0) {
+                            Toast.makeText(context, R.string.clip_position_unavailable, Toast.LENGTH_SHORT).show()
+                        } else {
+                            clipTarget = ClipTarget(clipVideoId, (position / 1000L).toInt(), clipLiveSession)
+                        }
+                    }
+                } else null,
                 onToggleFullScreen = toggleFullScreen,
                 // Tam ekrandayken önce tam ekrandan çık, normalde ise mini player'a geç.
                 onMinimize = { if (isFullScreen) onFullScreenChange(false) else onMinimize() }
             )
+        }
+
+        if (!isInPipMode && !isMini) {
+            clipTarget?.let { target ->
+                CreateClipModal(
+                    videoId = target.videoId,
+                    positionSeconds = target.positionSeconds,
+                    liveSession = target.liveSession,
+                    onDismiss = { clipTarget = null },
+                )
+            }
         }
 
         if (isMini && !isInPipMode) {
@@ -1319,6 +1365,7 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
     onOpenSettings: () -> Unit,
     onOpenCastDialog: () -> Unit = {},
     onToggleTheater: () -> Unit = {},
+    onCreateClip: (() -> Unit)? = null,
     onToggleFullScreen: () -> Unit,
     onMinimize: () -> Unit,
     modifier: Modifier = Modifier
@@ -1670,6 +1717,16 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                             modifier = chromeIconModifier,
                             tint = if (isTheaterMode) MaterialTheme.colorScheme.primary else Color.White
                         )
+                    }
+                    if (onCreateClip != null) {
+                        IconButton(onClick = onCreateClip, modifier = chromeButtonModifier) {
+                            Icon(
+                                painterResource(R.drawable.clip_scissors),
+                                contentDescription = stringResource(R.string.clip_create),
+                                modifier = chromeIconModifier,
+                                tint = Color.White,
+                            )
+                        }
                     }
                     IconButton(
                         onClick = onToggleFullScreen,

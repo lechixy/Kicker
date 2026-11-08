@@ -96,7 +96,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 import com.lechixy.kick.R
-import com.lechixy.kick.components.channel.OfflineBannerMinHeight
+import com.lechixy.kick.components.channel.offlineBannerCompactHeight
 import com.lechixy.kick.data.channel.model.getBannerUrl
 import com.lechixy.kick.data.common.remote.KickNetwork
 import com.lechixy.kick.data.common.repository.KickRepository
@@ -434,7 +434,7 @@ fun PlayerHost(
             min(naturalHeight, host.channelMediaHeightLimit(
                 safeArea.height, px(ChannelTabSpace.value).roundToInt()))
         } else naturalHeight
-        val compactHeight = px(OfflineBannerMinHeight.value).roundToInt().coerceAtMost(fullHeight)
+        val compactHeight = density.offlineBannerCompactHeight(fullHeight)
         val playerHeight = (fullHeight + (compactHeight - fullHeight) *
             (host.offlineCollapseProgress?.value ?: 0f)).roundToInt()
         val headerPx = if (host.channelHeaderHeightPx > 0) {
@@ -1194,6 +1194,7 @@ private fun PlayerSurface(
     val recording = host.recording
     val isLive = recording == null && channel?.livestream != null
     var resolvedUrl by rememberSaveable(recording?.id) { mutableStateOf(recording?.directUrl) }
+    var resolvedVodId by rememberSaveable(recording?.id) { mutableStateOf(recording?.vodId) }
     var resolvedDuration by rememberSaveable(recording?.id) { mutableStateOf(recording?.durationMs ?: 0L) }
     var resolvedTitle by rememberSaveable(recording?.id) { mutableStateOf(recording?.title.orEmpty()) }
     var loadError by remember(recording?.id) { mutableStateOf<String?>(null) }
@@ -1206,6 +1207,7 @@ private fun PlayerSurface(
                 KickNetwork.api
             )
             val resolved = repository.resolveRecording(recording)
+            resolvedVodId = resolved.vodId
             resolvedUrl = resolved.directUrl
             resolvedDuration = resolved.durationMs
             resolvedTitle = resolved.title
@@ -1231,7 +1233,7 @@ private fun PlayerSurface(
                 previewThumbnailUrl = previewThumbnailUrl,
                 channelName = channel.user?.username ?: channel.slug,
                 streamTitle = if (recording != null) resolvedTitle else channel.livestream?.sessionTitle ?: "Canlı Yayın",
-                recording = recording?.copy(title = resolvedTitle, durationMs = resolvedDuration),
+                recording = recording?.copy(title = resolvedTitle, durationMs = resolvedDuration, vodId = resolvedVodId),
                 onPlaybackPositionChanged = { position -> recording?.let { host.updateRecordingPosition(it.id, position) } },
                 channel = channel,
                 isFullScreen = mode == PlayerMode.Fullscreen,

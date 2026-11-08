@@ -1,7 +1,12 @@
 package com.lechixy.kick.data.channel.repository
 
 import android.os.SystemClock
+import com.lechixy.kick.data.account.repository.AuthRepository
+import com.lechixy.kick.data.channel.model.CreateClipRequest
+import com.lechixy.kick.data.channel.model.CreateClipResponse
 import com.lechixy.kick.data.channel.model.ClipDetail
+import com.lechixy.kick.data.channel.model.ClipDetailResponse
+import com.lechixy.kick.data.channel.model.FinalizeClipRequest
 import com.lechixy.kick.data.common.remote.KickNetwork
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -10,8 +15,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.jsonObject
+import okhttp3.HttpUrl.Companion.toHttpUrl
 
 internal object ClipRepository {
+    private const val CLIPS_URL = "https://web.kick.com/api/v1/clips"
+    private val json = Json { ignoreUnknownKeys = true }
     private val cache = ClipDetailCache(
         scope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
         nowMs = SystemClock::elapsedRealtime,
@@ -21,6 +32,21 @@ internal object ClipRepository {
     fun cachedPreview(id: String) = cache.cached(id, PREVIEW_TTL_MS)
     suspend fun preview(id: String) = cache.get(id, PREVIEW_TTL_MS, isPreview = true)
     suspend fun getClip(id: String) = cache.get(id, PLAYBACK_TTL_MS)
+
+    suspend fun create(auth: AuthRepository, request: CreateClipRequest) =
+        json.decodeFromJsonElement(
+            CreateClipResponse.serializer(),
+            auth.request(CLIPS_URL, "POST", json.encodeToJsonElement(request).jsonObject),
+        ).data
+
+    suspend fun finalize(auth: AuthRepository, id: String, request: FinalizeClipRequest): ClipDetail {
+        val url = CLIPS_URL.toHttpUrl().newBuilder()
+            .addPathSegment(id).addPathSegment("finalize").build()
+        return json.decodeFromJsonElement(
+            ClipDetailResponse.serializer(),
+            auth.request(url.toString(), "POST", json.encodeToJsonElement(request).jsonObject),
+        ).data
+    }
 
     private const val PREVIEW_TTL_MS = 30 * 60_000L
     private const val PLAYBACK_TTL_MS = 60_000L

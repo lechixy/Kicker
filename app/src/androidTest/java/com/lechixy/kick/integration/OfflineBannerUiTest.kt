@@ -7,10 +7,13 @@ import com.lechixy.kick.data.common.model.Channel
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.test.*
@@ -34,10 +37,13 @@ import com.lechixy.kick.R
 import com.lechixy.kick.components.PlayerHost
 import com.lechixy.kick.components.PlayerHostState
 import com.lechixy.kick.components.PlayerMode
+import com.lechixy.kick.components.channel.ChannelHeaderScrollConnection
+import com.lechixy.kick.components.channel.ChannelTabPager
 import com.lechixy.kick.components.channel.OfflineChannelBanner
 import com.lechixy.kick.data.channel.model.ChannelDetail
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 import com.lechixy.kick.data.settings.repository.SettingsRepository
+import com.lechixy.kick.screens.channel.ChannelTab
 
 @RunWith(AndroidJUnit4::class)
 class OfflineBannerUiTest {
@@ -51,22 +57,34 @@ class OfflineBannerUiTest {
         }
     }
 
-    @Test fun draggingTheOfflineBannerItselfStillCollapsesIt() {
+    @Test fun swipesAndRepeatedTapsToggleTheOfflineBanner() {
         lateinit var state: OfflineBannerState
+        var dismissed = false
         compose.setContent { MaterialTheme {
             val scope = rememberCoroutineScope()
             val banner = remember { OfflineBannerState(scope) }
             SideEffect { state = banner }
             Box(Modifier.width(700.dp)) {
                 OfflineChannelBanner(ChannelDetail(1, slug = "tester"), null, banner,
-                    { banner.animateTo(1f) }, {}, Modifier.testTag("banner"),
-                    onTravelChanged = { banner.travelPx = it }, onDrag = { banner.drag(it) }, onDragFinished = banner::settle)
+                    banner::toggle, {}, Modifier.testTag("banner"),
+                    onTravelChanged = { banner.travelPx = it }, onDrag = { banner.drag(it) },
+                    onDragFinished = banner::settle, onDismissDrag = { dismissed = true })
             }
         } }
-        compose.onNodeWithTag("banner").performTouchInput {
-            swipe(center, center - androidx.compose.ui.geometry.Offset(0f, center.y * 0.6f), durationMillis = 400)
+        val banner = compose.onNodeWithTag("banner")
+        banner.performTouchInput { swipeUp(startY = height * 0.8f, endY = height * 0.1f) }
+        compose.runOnIdle { assertEquals(1f, state.value, 0.001f) }
+        banner.performTouchInput {
+            swipe(center, center + androidx.compose.ui.geometry.Offset(0f, height * 1.4f), durationMillis = 400)
         }
-        compose.runOnIdle { assertTrue(state.value > 0f) }
+        compose.runOnIdle {
+            assertEquals(0f, state.value, 0.001f)
+            assertFalse(dismissed)
+        }
+        banner.performClick()
+        compose.runOnIdle { assertEquals(1f, state.value, 0.001f) }
+        banner.performClick()
+        compose.runOnIdle { assertEquals(0f, state.value, 0.001f) }
     }
 
     @Test fun nearEndpointsSettleAndLabelClearsMinimizeButton() {
@@ -78,7 +96,7 @@ class OfflineBannerUiTest {
             SideEffect { banner = state }
             Box(Modifier.width(700.dp)) {
                 OfflineChannelBanner(ChannelDetail(1, slug = "tester"), null, state,
-                    { state.animateTo(1f) }, {}, Modifier.testTag("banner"), onTravelChanged = { state.travelPx = it })
+                    state::toggle, {}, Modifier.testTag("banner"), onTravelChanged = { state.travelPx = it }, isWide = true)
             }
         } }
         compose.runOnIdle { banner.drag(banner.travelPx * 0.02f); banner.settle() }
@@ -91,6 +109,32 @@ class OfflineBannerUiTest {
         val button = compose.onNodeWithContentDescription(context.getString(R.string.offline_minimize)).fetchSemanticsNode().boundsInRoot
         val text = compose.onNodeWithText(context.getString(R.string.offline_channel_name, "tester"), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         assertTrue(text.left > button.right)
+    }
+
+    @Test fun scrollingTabContentCollapsesAndExpandsTheBanner() {
+        lateinit var state: OfflineBannerState
+        compose.setContent { MaterialTheme {
+            val scope = rememberCoroutineScope()
+            val banner = remember { OfflineBannerState(scope) }
+            val scroll = remember { ChannelHeaderScrollConnection(banner::drag, banner::settle) }
+            SideEffect { state = banner }
+            Column(Modifier.fillMaxSize().nestedScroll(scroll)) {
+                OfflineChannelBanner(ChannelDetail(1, slug = "tester"), null, banner, banner::toggle, {},
+                    onTravelChanged = { banner.travelPx = it })
+                val tabs = listOf(ChannelTab.HOME, ChannelTab.VIDEOS)
+                val pager = rememberPagerState { tabs.size }
+                ChannelTabPager(pager, tabs, Modifier.weight(1f).fillMaxWidth()) { tab ->
+                    LazyColumn(Modifier.fillMaxSize().testTag(tab.name)) {
+                        item { Text("Channel content") }
+                    }
+                }
+            }
+        } }
+        val content = compose.onNodeWithTag(ChannelTab.HOME.name)
+        content.performTouchInput { swipeUp() }
+        compose.runOnIdle { assertEquals(1f, state.value, 0.001f) }
+        content.performTouchInput { swipeDown() }
+        compose.runOnIdle { assertEquals(0f, state.value, 0.001f) }
     }
 
     @Test fun downwardBannerGestureIsRoutedToScreenDismissal() {

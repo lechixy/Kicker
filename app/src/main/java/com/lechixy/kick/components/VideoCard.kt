@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -31,8 +32,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
-import java.text.NumberFormat
-import java.util.Locale
 
 import com.lechixy.kick.R
 import com.lechixy.kick.data.channel.model.ChannelVideo
@@ -54,6 +53,7 @@ fun VideoCard(
     onClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
+    val locale = LocalConfiguration.current.locales[0]
     val thumbnailUrl = remember(video.thumbnail) {
         FormatUtils.extractVideoThumbnailUrl(video.thumbnail)
     }
@@ -131,7 +131,7 @@ fun VideoCard(
                         .padding(8.dp)
                 ) {
                     Text(
-                        text = stringResource(R.string.views_count, NumberFormat.getNumberInstance(Locale.US).format(video.views)),
+                        text = stringResource(R.string.views_count, FormatUtils.formatCompactCount(video.views, locale)),
                         color = Color.White,
                         style = MaterialTheme.typography.labelSmall,
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
@@ -164,11 +164,11 @@ fun VideoCard(
                     )
                 }
 
-                Text(
-                    text = FormatUtils.formatLastLive(context, video.startTime ?: video.createdAt),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline
-                )
+                val date = FormatUtils.formatRelativeTime(context, video.startTime)
+                    ?: FormatUtils.formatRelativeTime(context, video.createdAt)
+                if (date != null) {
+                    Text(date, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                }
             }
         }
     }

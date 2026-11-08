@@ -43,7 +43,8 @@ data class RecordedPlayback(
     val directUrl: String? = null,
     // The v2 video UUID must be resolved to livestream.vod_id before stream playback.
     val videoUuid: String? = null,
-    val progressId: String = id
+    val progressId: String = id,
+    val vodId: String? = null,
 )
 fun ChannelVideo.toRecording(): RecordedPlayback? = playbackId?.let { id ->
     RecordedPlayback(
@@ -51,7 +52,8 @@ fun ChannelVideo.toRecording(): RecordedPlayback? = playbackId?.let { id ->
         thumbnail = thumbnail?.src, startTime = startTime ?: createdAt,
         views = views, categories = categories, language = language,
         videoUuid = if (vodId.isNullOrBlank()) id else null,
-        progressId = video?.uuid ?: uuid ?: id
+        progressId = video?.uuid ?: uuid ?: id,
+        vodId = vodId?.takeIf(String::isNotBlank),
     )
 }
 

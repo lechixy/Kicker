@@ -685,7 +685,6 @@ fun KickApp(restorePending: Boolean = false) {
                                             id = video.id,
                                             title = video.title,
                                             durationMs = 0,
-                                            videoUuid = video.id,
                                         )
                                     )
                                 }

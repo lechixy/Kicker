@@ -21,6 +21,9 @@ object FormatUtils {
     fun formatViewersCount(count: Int?, locale: Locale = Locale.getDefault()): String =
         NumberFormat.getIntegerInstance(locale).format(count ?: 0)
 
+    fun formatCompactCount(count: Long, locale: Locale): String =
+        compactNumbers.locale(locale).format(count).toString()
+
     fun formatFollowersCount(countStr: String?, locale: Locale = Locale.getDefault()): String {
         val count = countStr?.toBigDecimalOrNull() ?: return NumberFormat.getIntegerInstance(locale).format(0)
         return compactNumbers.locale(locale).format(count).toString()
@@ -71,8 +74,13 @@ object FormatUtils {
         startTimeStr: String?,
         showPrefix: Boolean = false
     ): String {
-        val start = com.lechixy.kick.data.chat.model.recordingStartInstant(startTimeStr)
+        val relativeTime = formatRelativeTime(context, startTimeStr)
             ?: return context.getString(if (showPrefix) R.string.channel_no_recent_live else R.string.channel_live_unknown)
+        return if (showPrefix) context.getString(R.string.channel_last_live, relativeTime) else relativeTime
+    }
+
+    fun formatRelativeTime(context: android.content.Context, startTimeStr: String?): String? {
+        val start = com.lechixy.kick.data.chat.model.recordingStartInstant(startTimeStr) ?: return null
         val seconds = (System.currentTimeMillis() - start.toEpochMilli()) / 1000.0
         val magnitude = kotlin.math.abs(seconds)
         val (divisor, unit) = when {
@@ -84,9 +92,8 @@ object FormatUtils {
             else -> 31536000.0 to android.icu.text.RelativeDateTimeFormatter.RelativeDateTimeUnit.YEAR
         }
         val locale = context.resources.configuration.locales[0]
-        val relativeTime = android.icu.text.RelativeDateTimeFormatter.getInstance(locale)
+        return android.icu.text.RelativeDateTimeFormatter.getInstance(locale)
             .formatNumeric(-(seconds / divisor).toLong().toDouble(), unit)
-        return if (showPrefix) context.getString(R.string.channel_last_live, relativeTime) else relativeTime
     }
 
     fun extractVideoThumbnailUrl(thumbnail: VideoThumbnail?): String? {
