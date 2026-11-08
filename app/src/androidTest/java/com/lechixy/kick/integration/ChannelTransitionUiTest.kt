@@ -12,12 +12,14 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.*
 import org.junit.Assert.*
@@ -27,6 +29,10 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.lang.reflect.Proxy
+import kotlin.coroutines.Continuation
+import kotlin.coroutines.intrinsics.COROUTINE_SUSPENDED
+import kotlin.coroutines.resume
 
 import com.lechixy.kick.components.ExpansionSource
 import com.lechixy.kick.components.PlayerHost
@@ -34,11 +40,20 @@ import com.lechixy.kick.components.PlayerHostState
 import com.lechixy.kick.components.PlayerMode
 import com.lechixy.kick.components.channel.chat.ChatView
 import com.lechixy.kick.data.channel.model.ChannelDetail
+import com.lechixy.kick.data.channel.model.ChannelEventResponse
+import com.lechixy.kick.data.channel.model.ChannelVideo
+import com.lechixy.kick.data.chat.model.ChatHistoryResponse
 import com.lechixy.kick.data.chat.model.ChatMessage
 import com.lechixy.kick.data.chat.model.PinnedMessageInfo
 import com.lechixy.kick.data.chat.remote.ChatConnectionState
+import com.lechixy.kick.data.common.remote.KickApi
+import com.lechixy.kick.data.common.repository.KickRepository
+import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 import com.lechixy.kick.data.settings.repository.SettingsRepository
+import com.lechixy.kick.screens.channel.ChannelScreen
+import com.lechixy.kick.screens.channel.ChannelTab
+import com.lechixy.kick.screens.channel.ChannelViewModel
 
 @RunWith(AndroidJUnit4::class)
 class ChannelTransitionUiTest {
@@ -61,6 +76,57 @@ class ChannelTransitionUiTest {
     @After fun cleanup() {
         if (::storeScope.isInitialized) storeScope.cancel()
         if (::settingsFile.isInitialized) settingsFile.delete()
+    }
+
+    @Test fun coldChannelChatTabStaysInPlaceAsMetadataAndContentArrive() {
+        val channelReply = CompletableDeferred<ChannelDetail>()
+        val videosReply = CompletableDeferred<List<ChannelVideo>>()
+        fun awaitReply(reply: Deferred<*>, arguments: Array<out Any?>): Any {
+            @Suppress("UNCHECKED_CAST")
+            val continuation = arguments.last() as Continuation<Any?>
+            storeScope.launch { continuation.resume(reply.await()) }
+            return COROUTINE_SUSPENDED
+        }
+        val api = Proxy.newProxyInstance(KickApi::class.java.classLoader, arrayOf(KickApi::class.java)) { _, method, args ->
+            when (method.name) {
+                "getChannel" -> awaitReply(channelReply, args)
+                "getChannelVideos" -> awaitReply(videosReply, args)
+                "getChannelEvent" -> ChannelEventResponse()
+                "getChatHistory" -> ChatHistoryResponse()
+                "getCurrentViewers" -> emptyList<Any>()
+                else -> throw UnsupportedOperationException(method.name)
+            }
+        } as KickApi
+        runBlocking { settings.set(SettingsKeys.AUTO_CONNECT_CHAT, false) }
+        val host = PlayerHostState().apply { open("cold-channel") }
+        lateinit var model: ChannelViewModel
+        compose.setContent {
+            CompositionLocalProvider(LocalSettingsRepository provides settings) {
+                MaterialTheme {
+                    model = viewModel { ChannelViewModel(KickRepository(api)) }
+                    ChannelScreen(
+                        channelSlug = "cold-channel",
+                        modifier = Modifier.width(400.dp),
+                        playerHost = host,
+                        viewModel = model,
+                        onChannelLoaded = { host.onChannelLoaded("cold-channel", it) },
+                    )
+                }
+            }
+        }
+        val tab = compose.onNode(
+            hasText(compose.activity.getString(ChannelTab.CHAT.label)) and
+                SemanticsMatcher.keyIsDefined(SemanticsProperties.Selected)
+        )
+        val skeletonTop = tab.fetchSemanticsNode().boundsInRoot.top
+        channelReply.complete(ChannelDetail(1, slug = "cold-channel", livestream = ChannelLivestream(1)))
+        compose.waitUntil(5_000) { model.uiState.value.channel != null }
+        assertTrue(model.uiState.value.isLoading)
+        assertEquals(skeletonTop, tab.fetchSemanticsNode().boundsInRoot.top, 1f)
+
+        videosReply.complete(emptyList())
+        compose.waitUntil(5_000) { !model.uiState.value.isLoading }
+        assertEquals(skeletonTop, tab.fetchSemanticsNode().boundsInRoot.top, 1f)
     }
 
     @Test fun connectedOpeningKeepsPageSizeAndCompositionStable() {

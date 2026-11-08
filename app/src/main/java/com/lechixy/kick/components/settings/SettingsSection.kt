@@ -12,6 +12,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 @Composable
@@ -19,6 +20,7 @@ fun SettingSection(
     title: String,
     modifier: Modifier = Modifier,
     description: String? = null,
+    itemSpacing: Dp = 4.dp,
     content: @Composable ColumnScope.() -> Unit
 ) {
     Column(
@@ -50,7 +52,7 @@ fun SettingSection(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(itemSpacing),
             content = content
         )
     }

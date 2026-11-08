@@ -23,7 +23,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -127,7 +126,6 @@ private fun ChatClipPreview(id: String, onClick: () -> Unit) {
                 Icon(
                     painterResource(R.drawable.play_arrow_24dp_e3e3e3_fill1_wght400_grad0_opsz24),
                     contentDescription = null,
-                    modifier = Modifier.clip(RoundedCornerShape(50)).background(Color.Black.copy(alpha = .65f)).padding(4.dp),
                     tint = Color.White,
                 )
             }
@@ -142,7 +140,7 @@ private fun ChatClipPreview(id: String, onClick: () -> Unit) {
                 )
                 clip?.let {
                     Text(
-                        "${it.channel.username} • ${FormatUtils.formatDuration(it.durationMs)}",
+                        "${stringResource(R.string.clip_preview_creator, it.creator.username)} • ${FormatUtils.formatDuration(it.durationMs)}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,

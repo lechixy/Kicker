@@ -291,7 +291,8 @@ class ChannelViewModel(
     fun loadChannel(slug: String, autoConnectChat: Boolean = true) {
         channelLoadJob?.cancel()
         channelLoadJob = viewModelScope.launch {
-            if (loadedSlug != null && !loadedSlug.equals(slug, ignoreCase = true)) {
+            val changedChannel = loadedSlug != null && !loadedSlug.equals(slug, ignoreCase = true)
+            if (changedChannel) {
                 repository.chatWebSocketClient.disconnect()
                 _chatSettings.value = kotlinx.serialization.json.JsonObject(emptyMap())
             }
@@ -303,7 +304,9 @@ class ChannelViewModel(
             liveRefreshJob?.cancel()
             viewersPollingJob?.cancel()
             leaderboardJob?.cancel()
-            _uiState.value = _uiState.value.copy(isLoading = true, error = null, liveAnnouncementId = null, lastHourGiftedSubsRank = null, raid = null)
+            val previous = if (changedChannel) ChannelUiState() else _uiState.value
+            _uiState.value = previous.copy(isLoading = previous.channel == null || previous.isLoading,
+                error = null, liveAnnouncementId = null, lastHourGiftedSubsRank = null, raid = null)
 
             try {
                 val channelDeferred = async { repository.getChannel(slug) }
@@ -316,6 +319,9 @@ class ChannelViewModel(
                 }
 
                 val channel = channelDeferred.await()
+                if (loadedSlug != slug) return@launch
+                // Size the player, banner, and channel header before the slower tab data arrives.
+                _uiState.update { it.copy(channel = channel) }
                 val eventDeferred = async {
                     try {
                         repository.getChannelEvent(channel.id)

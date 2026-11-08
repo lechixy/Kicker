@@ -27,6 +27,8 @@ import com.lechixy.kick.data.player.model.RecordedPlayback
  */
 enum class PlayerMode { Hidden, Expanded, Fullscreen, Mini }
 
+internal data class RecordingChatSeek(val sequence: Int, val positionMs: Long)
+
 /**
  * Player oturumunun TEK doğruluk kaynağı. KickApp'te yaşar, NavHost'un ÜSTÜNDEKİ PlayerHost'u besler.
  * Player artık ChannelScreen'in içinde değil; bu yüzden ekran değişse de yayın durmaz.
@@ -49,19 +51,30 @@ class PlayerHostState(
     /** Son yüklenen kanal detayı: ChannelScreen kapansa (VM ölse) bile mini player bununla yaşar. */
     var channel by mutableStateOf<ChannelDetail?>(null)
         private set
+    internal var openingChannelIsLive by mutableStateOf<Boolean?>(null)
+        private set
 
     var recording by mutableStateOf<RecordedPlayback?>(null)
         private set
 
     var recordingPositionMs by androidx.compose.runtime.mutableLongStateOf(0L)
         private set
+    internal var recordingChatSeek by mutableStateOf<RecordingChatSeek?>(null)
+        private set
 
     fun updateRecordingPosition(id: String, positionMs: Long) {
         if (recording?.id == id) recordingPositionMs = positionMs
     }
 
+    internal fun seekRecording(id: String, positionMs: Long) {
+        if (recording?.id != id) return
+        recordingPositionMs = positionMs
+        recordingChatSeek = RecordingChatSeek((recordingChatSeek?.sequence ?: 0) + 1, positionMs)
+    }
+
     fun playRecording(recording: RecordedPlayback) {
         recordingPositionMs = 0L
+        recordingChatSeek = null
         this.recording = recording
         activeLiveAnnouncementId = null
         pendingAutoFullscreen = false
@@ -91,6 +104,11 @@ class PlayerHostState(
     var isTheaterMode by mutableStateOf(false)
 
     var isChatVisible by mutableStateOf(true)
+
+    internal val fullscreenChatOverlayAlpha: Float
+        get() = if (mode == PlayerMode.Fullscreen) 1f - chatOpenProgress.value.coerceIn(0f, 1f) else 0f
+    internal var isEditingFullscreenChatPosition by mutableStateOf(false)
+        private set
 
     var isFullscreenNavigationVisible by mutableStateOf(false)
         private set
@@ -183,6 +201,7 @@ class PlayerHostState(
     fun updateChatVisibility(visible: Boolean) {
         if (mode == PlayerMode.Fullscreen) {
             if (visible) {
+                isEditingFullscreenChatPosition = false
                 if (!isTheaterMode || !isChatVisible) {
                     isTheaterMode = true
                     isChatVisible = true
@@ -197,6 +216,10 @@ class PlayerHostState(
     }
 
     fun toggleTheaterMode() {
+        if (mode == PlayerMode.Fullscreen) {
+            updateChatVisibility(!isSideChatOpen(isWide = true))
+            return
+        }
         isTheaterMode = !isTheaterMode
         isTheaterNavigationVisible = false
         if (isTheaterMode) {
@@ -206,16 +229,22 @@ class PlayerHostState(
 
     fun toggleChatVisibility() {
         if (mode == PlayerMode.Fullscreen) {
-            if (isTheaterMode && isChatVisible) {
-                isChatVisible = false
-                isTheaterMode = false
-            } else {
-                isTheaterMode = true
-                isChatVisible = true
-            }
+            updateChatVisibility(!isSideChatOpen(isWide = true))
         } else {
             isChatVisible = !isChatVisible
         }
+    }
+
+    internal fun toggleFullscreenChatOverlay(enabled: Boolean): Boolean {
+        if (mode != PlayerMode.Fullscreen) return enabled
+        val opening = !enabled || isSideChatOpen(isWide = true)
+        if (opening) updateChatVisibility(false)
+        return opening
+    }
+
+    internal fun editFullscreenChatPosition(editing: Boolean) {
+        if (editing && mode == PlayerMode.Fullscreen) updateChatVisibility(false)
+        isEditingFullscreenChatPosition = editing && mode == PlayerMode.Fullscreen
     }
 
     fun updateChatWidthFraction(fraction: Float) {
@@ -248,6 +277,8 @@ class PlayerHostState(
         if (this.slug != slug) {
             recording = null
             channel = null
+            openingChannelIsLive = source?.isLive
+            channelHeaderHeightPx = 0
             activeLiveAnnouncementId = null
         }
         this.slug = slug
@@ -296,11 +327,14 @@ class PlayerHostState(
         if (enabled && mode == PlayerMode.Expanded) {
             inlineChatVisible = isChatVisible
             inlineTheaterMode = isTheaterMode
+            isChatVisible = false
+            isTheaterMode = false
             isFullscreenNavigationVisible = false
             isDirectChatDrag = false
             mode = PlayerMode.Fullscreen
         } else if (!enabled && mode == PlayerMode.Fullscreen) {
             mode = PlayerMode.Expanded
+            isEditingFullscreenChatPosition = false
             isChatVisible = inlineChatVisible
             isTheaterMode = inlineTheaterMode
             isFullscreenNavigationVisible = false
@@ -337,6 +371,7 @@ class PlayerHostState(
     }
 
     fun close() {
+        isEditingFullscreenChatPosition = false
         isExiting = false
         dragOffsetY = 0f
         pendingAutoFullscreen = false
@@ -344,6 +379,8 @@ class PlayerHostState(
         mode = PlayerMode.Hidden
         slug = null
         channel = null
+        openingChannelIsLive = null
+        channelHeaderHeightPx = 0
         recording = null
         pageSlug = null
         isTheaterMode = false

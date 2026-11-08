@@ -181,8 +181,6 @@ private fun ClipModalHeader(isSharing: Boolean, enabled: Boolean, onDismiss: () 
         Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(painterResource(R.drawable.clip_drag_indicator), null, Modifier.size(20.dp))
-        Spacer(Modifier.width(8.dp))
         Text(
             stringResource(if (isSharing) R.string.clip_share else R.string.clip_create),
             modifier = Modifier.weight(1f),
@@ -357,7 +355,7 @@ private fun ShareClipContent(
                 }
             }
         },
-        banner = { ClipNotice(R.string.clip_published, icon = R.drawable.clip_success) },
+        banner = { ClipNotice(R.string.clip_published, icon = R.drawable.check_circle_24dp_e3e3e3_fill0_wght400_grad0_opsz24) },
         details = {
             Surface(
                 color = MaterialTheme.colorScheme.surfaceContainer,
@@ -369,15 +367,15 @@ private fun ShareClipContent(
                         clip.shareUrl, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f),
                     )
-                    ClipIconButton(R.drawable.clip_copy, R.string.clip_copy_url, { onCopyUrl(clip.shareUrl) })
+                    ClipIconButton(R.drawable.content_copy_24dp_e3e3e3_fill0_wght400_grad0_opsz24, R.string.clip_copy_url, { onCopyUrl(clip.shareUrl) })
                 }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 ClipShareAction(R.drawable.download_24dp_e3e3e3_fill0_wght400_grad0_opsz24, stringResource(R.string.recording_download), onDownloadClick != null) {
                     onDownloadClick?.invoke(clip.playbackUrl)
                 }
-                ClipShareAction(R.drawable.clip_facebook, "Facebook") { onShareFacebook(clip.shareUrl) }
-                ClipShareAction(R.drawable.clip_x, "X") { onShareX(clip.shareUrl) }
+                ClipShareAction(R.drawable.facebook_logo, "Facebook") { onShareFacebook(clip.shareUrl) }
+                ClipShareAction(R.drawable.x_logo, "X") { onShareX(clip.shareUrl) }
             }
         },
     )

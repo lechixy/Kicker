@@ -339,7 +339,8 @@ object ChatTextParser {
         streamerMentionBrush: Brush? = null,
         streamerMentionShadow: Shadow? = null,
         deleted: Boolean = false,
-        timestamp: String? = null
+        timestamp: String? = null,
+        interactive: Boolean = true,
     ): ParsedChatMessage {
         val safeFontSizeSp = fontSizeSp.coerceAtLeast(10)
         val secondaryColor = MaterialTheme.colorScheme.secondary
@@ -348,6 +349,7 @@ object ChatTextParser {
 
         return remember(
             timestamp,
+            interactive,
             deleted,
             deletedColor,
             senderName,
@@ -386,29 +388,7 @@ object ChatTextParser {
                                     placeholderVerticalAlign = PlaceholderVerticalAlign.Center
                                 )
                             ) {
-                                BadgeTooltip(badge) { Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .padding(end = 3.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    when {
-                                        badge.drawableRes != null -> {
-                                            Image(
-                                                painter = painterResource(badge.drawableRes),
-                                                contentDescription = badge.name,
-                                                modifier = Modifier.fillMaxSize()
-                                            )
-                                        }
-                                        !badge.imageUrl.isNullOrBlank() -> {
-                                            AsyncImage(
-                                                model = badge.imageUrl,
-                                                contentDescription = badge.name,
-                                                modifier = Modifier.fillMaxSize()
-                                            )
-                                        }
-                                    }
-                                } }
+                                ChatInlineBadge(badge, interactive)
                             }
                         }
                         appendSafeInlineContent(inlineId, alternateText = "[${badge.name.ifBlank { "badge" }}]")
@@ -433,7 +413,8 @@ object ChatTextParser {
                     streamerUsername = streamerUsername,
                     streamerSlug = streamerSlug,
                     streamerMentionBrush = streamerMentionBrush,
-                    streamerMentionShadow = streamerMentionShadow
+                    streamerMentionShadow = streamerMentionShadow,
+                    interactive = interactive,
                 )
             }
 
@@ -446,6 +427,23 @@ object ChatTextParser {
         alternateText: String
     ) {
         appendInlineContent(id, alternateText = alternateText.ifBlank { "[inline]" })
+    }
+
+    @Composable
+    private fun ChatInlineBadge(badge: ResolvedChatBadge, interactive: Boolean) {
+        val content: @Composable () -> Unit = {
+            Box(
+                modifier = Modifier.fillMaxSize().padding(end = 3.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (badge.drawableRes != null) {
+                    Image(painterResource(badge.drawableRes), badge.name, Modifier.fillMaxSize())
+                } else {
+                    AsyncImage(badge.imageUrl, badge.name, Modifier.fillMaxSize())
+                }
+            }
+        }
+        if (interactive) BadgeTooltip(badge, content) else content()
     }
 
     @Composable
@@ -834,7 +832,8 @@ object ChatTextParser {
         streamerUsername: String?,
         streamerSlug: String?,
         streamerMentionBrush: Brush?,
-        streamerMentionShadow: Shadow?
+        streamerMentionShadow: Shadow?,
+        interactive: Boolean = true,
     ) {
         if (content.isEmpty()) return
         val safeFontSizeSp = fontSizeSp.coerceAtLeast(10)
@@ -858,7 +857,8 @@ object ChatTextParser {
                             SynchronizedEmote(
                                 url = emoteUrl,
                                 name = token.name,
-                                modifier = Modifier.fillMaxSize()
+                                modifier = Modifier.fillMaxSize(),
+                                showTooltip = interactive,
                             )
                         }
                     }
@@ -888,7 +888,7 @@ object ChatTextParser {
                     pop()
                 }
                 is ChatToken.Url -> {
-                    withLink(
+                    if (interactive) withLink(
                         LinkAnnotation.Url(
                             url = token.fullUrl,
                             styles = TextLinkStyles(
@@ -901,7 +901,7 @@ object ChatTextParser {
                         )
                     ) {
                         append(token.url)
-                    }
+                    } else append(token.url)
                 }
                 is ChatToken.PlainText -> {
                     append(token.text)

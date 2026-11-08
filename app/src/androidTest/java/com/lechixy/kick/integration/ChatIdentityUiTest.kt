@@ -14,6 +14,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.text.font.FontStyle
@@ -118,13 +119,13 @@ class ChatIdentityUiTest {
         var dismissed = false
         var saved: ChatIdentity? = null
         compose.setContent { MaterialTheme {
-            ChatIdentityDialog(ChatIdentity(color = "#DEB2FF"), "tester", emptyList()) {
+            ChatIdentityDialog(ChatIdentity(color = "#DEB2FF"), "tester", emptyList(), onPreviewClick = {}) {
                 dismissed = true; saved = it
             }
         } }
         compose.onNodeWithContentDescription("#00F1FF").performScrollTo().performClick().assertIsSelected()
         compose.runOnIdle { assertFalse(dismissed); assertNull(saved) }
-        compose.onNodeWithContentDescription(context.getString(R.string.account_close)).performScrollTo().performClick()
+        compose.onNodeWithText("tester").performScrollTo().performClick()
         compose.runOnIdle { assertTrue(dismissed); assertEquals("#00F1FF", saved?.color) }
     }
 
@@ -133,12 +134,15 @@ class ChatIdentityUiTest {
         var saved: ChatIdentity? = ChatIdentity()
         compose.setContent { MaterialTheme {
             ChatIdentityDialog(ChatIdentity(color = "#00F1FF", badges = listOf(ChatSenderBadge(type = "moderator"))),
-                "tester", emptyList()) { dismissed = true; saved = it }
+                "tester", emptyList(), onPreviewClick = {}) { dismissed = true; saved = it }
         } }
-        val badge = compose.onNode(hasContentDescription(context.getString(R.string.badge_moderator)) and hasClickAction())
+        val badge = compose.onNode(
+            hasContentDescription(context.getString(R.string.badge_moderator)) and
+                SemanticsMatcher.keyIsDefined(SemanticsProperties.Selected)
+        )
         badge.performScrollTo().performClick().assertIsNotSelected()
         badge.performClick().assertIsSelected()
-        compose.onNodeWithContentDescription(context.getString(R.string.account_close)).performScrollTo().performClick()
+        compose.onNodeWithText("tester").performScrollTo().performClick()
         compose.runOnIdle { assertTrue(dismissed); assertNull(saved) }
     }
 

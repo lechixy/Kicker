@@ -590,8 +590,8 @@ fun KickApp(restorePending: Boolean = false) {
 
                         }
                         val activeSlug = playerHost.slug
-                        if (activeSlug != null) {
-                            val activeChannelVm: ChannelViewModel = viewModel(key = activeSlug)
+                        val activeChannelVm = if (activeSlug != null) viewModel<ChannelViewModel>(key = activeSlug) else null
+                        if (activeSlug != null && activeChannelVm != null) {
                             val activeChannelState by activeChannelVm.uiState.collectAsStateWithLifecycle()
                             LaunchedEffect(activeSlug, activeChannelState.channel) {
                                 activeChannelState.channel?.let { detail ->
@@ -614,6 +614,7 @@ fun KickApp(restorePending: Boolean = false) {
                             onMinimize = playerHost::minimize,
                             onExpand = playerHost::expand,
                             onClose = playerHost::close,
+                            liveChatViewModel = activeChannelVm,
                             pageContent = { slug ->
                                 ChannelScreen(
                                     channelSlug = slug,

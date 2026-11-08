@@ -12,6 +12,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.util.Rational
+import android.view.TextureView
 import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -83,6 +84,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -98,6 +100,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInWindow
@@ -109,6 +112,8 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.hideFromAccessibility
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
@@ -127,15 +132,26 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import coil3.compose.AsyncImage
 import com.lechixy.kick.R
+import com.lechixy.kick.components.channel.chat.FullscreenChatBlur
+import com.lechixy.kick.components.channel.chat.FullscreenChatBackdropRegion
+import com.lechixy.kick.components.channel.chat.FullscreenChatOverlay
+import com.lechixy.kick.components.channel.chat.FullscreenChatSettings
+import com.lechixy.kick.components.channel.chat.FullscreenChatVideoBlur
+import com.lechixy.kick.components.channel.chat.LocalChatContentActive
+import com.lechixy.kick.components.channel.chat.rememberFullscreenChatPreferences
+import com.lechixy.kick.components.channel.chat.rememberLegacyFullscreenChatFrame
 import com.lechixy.kick.components.settings.SettingSwitch
 import com.lechixy.kick.data.account.AccountGraph
 import com.lechixy.kick.data.channel.model.ChannelDetail
 import com.lechixy.kick.data.channel.model.getBannerUrl
+import com.lechixy.kick.data.chat.model.recordingStartInstant
+import com.lechixy.kick.data.chat.remote.ChatConnectionState
 import com.lechixy.kick.data.player.local.PlaybackProgressStore
 import com.lechixy.kick.data.player.model.RecordedPlayback
 import com.lechixy.kick.data.player.remote.ViewerSession
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
+import com.lechixy.kick.screens.channel.ChannelViewModel
 import com.lechixy.kick.screens.clip.CreateClipModal
 import com.lechixy.kick.service.EXTRA_LOW_LATENCY
 import com.lechixy.kick.service.PlaybackService
@@ -160,6 +176,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
+import androidx.compose.ui.geometry.Rect as ComposeRect
 
 private data class ClipTarget(val videoId: String?, val positionSeconds: Int, val liveSession: ViewerSession?)
 
@@ -190,7 +207,12 @@ fun KickPlayerView(
     onClose: () -> Unit = {},
     onControlsVisibilityChanged: (Boolean) -> Unit = {},
     onPlayerCoordinatesChanged: (Rect) -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onPlaybackSeek: (Long) -> Unit = {},
+    playerHost: PlayerHostState? = null,
+    liveChatViewModel: ChannelViewModel? = null,
+    fullscreenChatOverlayEnabled: Boolean = false,
+    onToggleFullscreenChatOverlay: () -> Unit = {},
 ) {
     val context = LocalContext.current
     val resources = LocalResources.current
@@ -222,12 +244,29 @@ fun KickPlayerView(
     var settingsPage by remember { mutableStateOf(PlayerSettingsPage.MAIN) }
     var showStats by rememberSaveable { mutableStateOf(false) }
     var viewport by remember { mutableStateOf(IntSize.Zero) }
+    var playerTexture by remember { mutableStateOf<TextureView?>(null) }
+    var chatBlurBounds by remember { mutableStateOf<FullscreenChatBackdropRegion?>(null) }
+    val updateChatBlurBounds: (FullscreenChatBackdropRegion?) -> Unit = remember { { chatBlurBounds = it } }
     val downloadRecording = rememberRecordingDownloadAction()
     val sleepTimer by com.lechixy.kick.service.player.SleepTimer.state.collectAsStateWithLifecycle()
     val sleepTimerMinutes = sleepTimer.selectedMinutes
     val remainingTimerSeconds = sleepTimer.remainingSeconds
 
     val settingsRepository = LocalSettingsRepository.current
+    val overlaySupported = playerHost != null && channel != null && if (recording == null) {
+        liveChatViewModel != null
+    } else {
+        recording.directUrl == null && recordingStartInstant(recording.startTime) != null
+    }
+    val fullscreenChatAvailable = overlaySupported && isFullScreen && !isInPipMode
+    val overlayPreferences = if (fullscreenChatAvailable) rememberFullscreenChatPreferences() else null
+    val editingChatPosition = fullscreenChatAvailable && playerHost.isEditingFullscreenChatPosition
+    val overlayHasOpacity by remember(playerHost) {
+        derivedStateOf { (playerHost?.fullscreenChatOverlayAlpha ?: 0f) > 0f }
+    }
+    LaunchedEffect(fullscreenChatAvailable) {
+        if (!fullscreenChatAvailable) playerHost?.editFullscreenChatPosition(false)
+    }
     val lastSleepTimerMinutes by settingsRepository.get(SettingsKeys.LAST_SLEEP_TIMER_MINUTES)
         .collectAsStateWithLifecycle(SettingsKeys.LAST_SLEEP_TIMER_MINUTES.defaultValue)
     val syncVolume by settingsRepository.get(SettingsKeys.SYNC_PLAYER_VOLUME_WITH_DEVICE)
@@ -367,6 +406,7 @@ fun KickPlayerView(
     var positionMs by remember(stableId) { mutableLongStateOf(0L) }
     var durationMs by remember(stableId) { mutableLongStateOf(recording?.durationMs ?: 0L) }
     val positionCallback by rememberUpdatedState(onPlaybackPositionChanged)
+    val seekCallback by rememberUpdatedState(onPlaybackSeek)
     LaunchedEffect(player, stableId, isLiveStream) {
         if (isLiveStream) return@LaunchedEffect
         while (isActive) {
@@ -447,6 +487,19 @@ fun KickPlayerView(
                     isPlaying = playing
                     if (playing) {
                         playbackError = null
+                    }
+                }
+
+                override fun onPositionDiscontinuity(
+                    oldPosition: Player.PositionInfo,
+                    newPosition: Player.PositionInfo,
+                    reason: Int,
+                ) {
+                    if (!latestIsLiveStream && p.currentMediaItem?.mediaId == stableId &&
+                        (reason == Player.DISCONTINUITY_REASON_SEEK || reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT)
+                    ) {
+                        positionMs = newPosition.positionMs.coerceAtLeast(0L)
+                        seekCallback(positionMs)
                     }
                 }
 
@@ -623,8 +676,8 @@ fun KickPlayerView(
                     onPlayerCoordinatesChanged(rect)
                 }
             }
-            .pointerInput(isInPipMode, isMini) {
-                if (!isInPipMode && !isMini) {
+            .pointerInput(isInPipMode, isMini, editingChatPosition) {
+                if (!isInPipMode && !isMini && !editingChatPosition) {
                     detectTapGestures(
                         onDoubleTap = { toggleFullScreen() },
                         onTap = { showControls = !showControls }
@@ -634,7 +687,8 @@ fun KickPlayerView(
         contentAlignment = Alignment.Center
     ) {
         PlayerVideoSurface(
-            player, isPlaying, Modifier.fillMaxSize().onSizeChanged { viewport = it }
+            player, isPlaying, Modifier.fillMaxSize().onSizeChanged { viewport = it },
+            onTextureChanged = { playerTexture = it },
         )
 
         val overlayThumbnail = remember(previewThumbnailUrl, channel, recording?.id) {
@@ -666,6 +720,53 @@ fun KickPlayerView(
             LoadingIndicator(
                 modifier = Modifier.size(if (isMini) 32.dp else 56.dp)
             )
+        }
+
+        if (overlayPreferences != null && playerHost != null && channel != null &&
+            (fullscreenChatOverlayEnabled || editingChatPosition)
+        ) {
+            val overlayActive = overlayHasOpacity || editingChatPosition
+            val blur = if (overlayPreferences.blur) {
+                val legacyFrame = if (Build.VERSION.SDK_INT < 31 && hasRenderedFirstFrame && overlayActive) {
+                    rememberLegacyFullscreenChatFrame(playerTexture, isPlaying)
+                } else null
+                FullscreenChatVideoBlur(playerTexture, chatBlurBounds.takeIf { hasRenderedFirstFrame }) {
+                    if (editingChatPosition) 1f else playerHost.fullscreenChatOverlayAlpha
+                }
+                FullscreenChatBlur(updateChatBlurBounds, legacyFrame)
+            } else null
+            CompositionLocalProvider(LocalChatContentActive provides overlayActive) {
+                FullscreenChatOverlay(
+                    host = playerHost,
+                    channel = channel,
+                    liveChatViewModel = liveChatViewModel,
+                    preferences = overlayPreferences,
+                    playing = overlayActive && loadedMediaId == stableId && isPlaying,
+                    editing = editingChatPosition,
+                    onSavePosition = { horizontal, position ->
+                        val key = if (horizontal) SettingsKeys.FULLSCREEN_CHAT_HORIZONTAL_POSITION
+                        else SettingsKeys.FULLSCREEN_CHAT_VERTICAL_POSITION
+                        coroutineScope.launch {
+                            settingsRepository.set(key, position.encode())
+                            playerHost.editFullscreenChatPosition(false)
+                        }
+                    },
+                    onCancelEditing = { playerHost.editFullscreenChatPosition(false) },
+                    onOpenSettings = {
+                        settingsPage = PlayerSettingsPage.CHAT_OVERLAY
+                        showSettingsDialog = true
+                        showControls = false
+                    },
+                    blur = blur,
+                    viewport = playerBounds?.takeUnless { it.isEmpty }?.let {
+                        ComposeRect(it.left.toFloat(), it.top.toFloat(), it.right.toFloat(), it.bottom.toFloat())
+                    },
+                    modifier = Modifier.graphicsLayer {
+                        alpha = if (editingChatPosition) 1f else playerHost.fullscreenChatOverlayAlpha
+                    }.semantics { if (!overlayActive) hideFromAccessibility() },
+                    interactive = overlayActive && !playerHost.isDirectChatDrag && !playerHost.isSideChatOpen(isWide = true),
+                )
+            }
         }
 
         val autoQualityLabel = stringResource(R.string.player_auto)
@@ -713,7 +814,7 @@ fun KickPlayerView(
         }
 
         if (!isInPipMode) AnimatedVisibility(
-            visible = showControls && playbackError == null && !isMini,
+            visible = showControls && playbackError == null && !isMini && !editingChatPosition,
             enter = fadeIn(),
             exit = fadeOut(),
             modifier = Modifier.fillMaxSize()
@@ -721,8 +822,13 @@ fun KickPlayerView(
             PlayerControlsOverlay(
                 isFullScreen = isFullScreen,
                 isTheaterMode = isTheaterMode,
-                isChatVisible = isChatVisible,
-                onToggleChat = onToggleChat,
+                isChatVisible = if (fullscreenChatAvailable) {
+                    fullscreenChatOverlayEnabled && !playerHost.isSideChatOpen(isWide = true)
+                } else isChatVisible,
+                isClipModalVisible = clipTarget != null,
+                onToggleChat = if (fullscreenChatAvailable) {
+                    onToggleFullscreenChatOverlay
+                } else onToggleChat,
                 isPlaying = playRequested,
                 isMuted = isMuted,
                 volume = volume,
@@ -730,8 +836,6 @@ fun KickPlayerView(
                 isCastDialogVisible = showCastDialog,
                 qualityLabel = qualityLabel,
                 sleepRemainingSeconds = if (sleepTimerMinutes > 0) remainingTimerSeconds else 0,
-                streamTitle = streamTitle,
-                viewersText = viewersText,
                 streamDuration = streamDuration,
                 positionMs = positionMs,
                 durationMs = durationMs,
@@ -939,6 +1043,7 @@ fun KickPlayerView(
                                     PlayerSettingsPage.MAIN -> stringResource(R.string.settings)
                                     PlayerSettingsPage.QUALITY -> stringResource(R.string.player_quality)
                                     PlayerSettingsPage.SLEEP_TIMER -> stringResource(R.string.player_sleep_timer)
+                                    PlayerSettingsPage.CHAT_OVERLAY -> stringResource(R.string.fullscreen_chat_title)
                                     PlayerSettingsPage.MORE -> stringResource(R.string.player_more)
                                 },
                                 style = MaterialTheme.typography.titleLarge,
@@ -981,6 +1086,16 @@ fun KickPlayerView(
                                         value = if (sleepTimerMinutes > 0) stringResource(R.string.player_minutes, (remainingTimerSeconds + 59) / 60) else stringResource(R.string.player_off),
                                         onClick = { settingsPage = PlayerSettingsPage.SLEEP_TIMER }
                                     )
+                                    if (overlayPreferences != null) {
+                                        PlayerSettingsCategoryRow(
+                                            icon = R.drawable.chat_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+                                            title = stringResource(R.string.fullscreen_chat_title),
+                                            value = stringResource(if (overlayPreferences.horizontal) {
+                                                R.string.fullscreen_chat_horizontal
+                                            } else R.string.fullscreen_chat_vertical),
+                                            onClick = { settingsPage = PlayerSettingsPage.CHAT_OVERLAY }
+                                        )
+                                    }
                                     if (recording != null) {
                                         PlayerSettingsCategoryRow(
                                             icon = R.drawable.download_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
@@ -1053,6 +1168,25 @@ fun KickPlayerView(
                                     enabled = !dismissing,
                                     onApply = selectSleepTimer
                                 )
+                            }
+
+                            PlayerSettingsPage.CHAT_OVERLAY -> {
+                                if (overlayPreferences != null && playerHost != null) {
+                                    val connection = if (recording == null) {
+                                        liveChatViewModel?.chatConnectionState?.collectAsStateWithLifecycle()?.value
+                                    } else null
+                                    val canConnect = connection == ChatConnectionState.DISCONNECTED || connection == ChatConnectionState.ERROR
+                                    FullscreenChatSettings(
+                                        horizontal = overlayPreferences.horizontal,
+                                        onEditPosition = {
+                                            dismissSettings {
+                                                playerHost.editFullscreenChatPosition(true)
+                                                showControls = false
+                                            }
+                                        },
+                                        onConnect = liveChatViewModel?.takeIf { canConnect }?.let { it::connectChat },
+                                    )
+                                }
                             }
 
                             PlayerSettingsPage.MORE -> {
@@ -1248,7 +1382,7 @@ private fun Tracks.toQualityOptions(): List<VideoQualityOption> =
 /**
  * Player ayarları dialogundaki sayfalar (YouTube tarzı kategoriler).
  */
-private enum class PlayerSettingsPage { MAIN, QUALITY, SLEEP_TIMER, MORE }
+private enum class PlayerSettingsPage { MAIN, QUALITY, SLEEP_TIMER, CHAT_OVERLAY, MORE }
 
 @Composable
 private fun PlayerSettingsCategoryRow(
@@ -1337,6 +1471,7 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
     isFullScreen: Boolean,
     isTheaterMode: Boolean = false,
     isChatVisible: Boolean = true,
+    isClipModalVisible: Boolean = false,
     onToggleChat: () -> Unit = {},
     isPlaying: Boolean,
     isMuted: Boolean,
@@ -1345,8 +1480,6 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
     isCastDialogVisible: Boolean,
     qualityLabel: String,
     sleepRemainingSeconds: Int,
-    streamTitle: String,
-    viewersText: String,
     streamDuration: String,
     positionMs: Long = 0L,
     durationMs: Long = 0L,
@@ -1695,6 +1828,20 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(if (isCompact) 2.dp else 8.dp)
                 ) {
+                    if (onCreateClip != null) {
+                        IconButton(onClick = onCreateClip, modifier = chromeButtonModifier) {
+                            Icon(
+                                painterResource(
+                                    if (isClipModalVisible) R.drawable.movie_edit_24dp_e3e3e3_fill1_wght400_grad0_opsz24
+                                    else R.drawable.movie_edit_24dp_e3e3e3_fill0_wght400_grad0_opsz24
+                                ),
+                                contentDescription = stringResource(R.string.clip_create),
+                                modifier = chromeIconModifier,
+                                tint = Color.White,
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(if (isCompact) 2.dp else 8.dp))
                     if (showChatButton) IconButton(
                         onClick = onToggleChat,
                         modifier = chromeButtonModifier
@@ -1717,16 +1864,6 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                             modifier = chromeIconModifier,
                             tint = if (isTheaterMode) MaterialTheme.colorScheme.primary else Color.White
                         )
-                    }
-                    if (onCreateClip != null) {
-                        IconButton(onClick = onCreateClip, modifier = chromeButtonModifier) {
-                            Icon(
-                                painterResource(R.drawable.clip_scissors),
-                                contentDescription = stringResource(R.string.clip_create),
-                                modifier = chromeIconModifier,
-                                tint = Color.White,
-                            )
-                        }
                     }
                     IconButton(
                         onClick = onToggleFullScreen,

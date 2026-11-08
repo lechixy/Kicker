@@ -9,6 +9,7 @@ import androidx.compose.ui.unit.dp
 import com.lechixy.kick.R
 import com.lechixy.kick.components.ContentState
 import com.lechixy.kick.components.PlayerHostState
+import com.lechixy.kick.components.PlayerMode
 import com.lechixy.kick.data.channel.model.ChannelDetail
 import com.lechixy.kick.data.chat.model.*
 import com.lechixy.kick.data.chat.remote.ChatConnectionState
@@ -25,20 +26,91 @@ internal fun RecordedChatView(
     modifier: Modifier = Modifier, onHideChat: (() -> Unit)? = null, onOpenChannel: (String) -> Unit = {},
     autoHideHeader: Boolean = false
 ) {
+    val chat = recordedChatForPresentation(channel.id, recording, playerHost)
+    if (chat == null) {
+        Box(modifier) { ContentState(stringResource(R.string.recorded_chat_unavailable)) }
+        return
+    }
+    key(recording.id) {
+        ChatView(messages = chat.messages,
+            connectionState = if (chat.loading) ChatConnectionState.CONNECTING else ChatConnectionState.CONNECTED,
+            subscriberBadges = channel.subscriberBadges, streamerUsername = channel.user?.username,
+            streamerSlug = channel.slug, channelId = channel.id, isReplay = true,
+            onHideChat = onHideChat, onOpenChannel = onOpenChannel, modifier = modifier,
+            autoHideHeader = autoHideHeader,
+            playerControlsVisible = playerHost.isControlsVisible,
+            composer = {
+                if (chat.failed) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(stringResource(R.string.recorded_chat_failed), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = chat.retry) { Text(stringResource(R.string.chat_retry)) }
+                }
+            })
+    }
+}
+
+internal data class RecordedChatState(
+    val messages: List<ChatMessage>,
+    val loading: Boolean,
+    val failed: Boolean,
+    val retry: () -> Unit,
+)
+
+private data class FullscreenRecordedChat(val chat: RecordedChatState?)
+private val LocalFullscreenRecordedChat = compositionLocalOf<FullscreenRecordedChat?> { null }
+
+@Composable
+internal fun FullscreenRecordedChatBox(
+    host: PlayerHostState,
+    overlayEnabled: Boolean,
+    isInPipMode: Boolean,
+    modifier: Modifier,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    val channel = host.channel
+    val recording = host.recording
+    val fullscreenChat = if (host.mode == PlayerMode.Fullscreen && !isInPipMode && channel != null && recording != null) {
+        // Both surfaces can draw the same messages during a fullscreen crossfade.
+        val active by remember(host, overlayEnabled) {
+            derivedStateOf { overlayEnabled || host.isSideChatOpen(isWide = true) || host.chatOpenProgress.value > 0f }
+        }
+        FullscreenRecordedChat(rememberRecordedChat(channel.id, recording, host, active))
+    } else null
+    CompositionLocalProvider(LocalFullscreenRecordedChat provides fullscreenChat) {
+        Box(modifier, content = content)
+    }
+}
+
+@Composable
+internal fun recordedChatForPresentation(
+    channelId: Long,
+    recording: RecordedPlayback,
+    host: PlayerHostState,
+): RecordedChatState? {
+    val fullscreen = LocalFullscreenRecordedChat.current
+    return if (fullscreen != null) fullscreen.chat else rememberRecordedChat(channelId, recording, host)
+}
+
+@Composable
+private fun rememberRecordedChat(
+    channelId: Long,
+    recording: RecordedPlayback,
+    playerHost: PlayerHostState,
+    active: Boolean = LocalChatContentActive.current,
+): RecordedChatState? {
     // Clip creation time is not the source stream's timeline; only full recordings have this anchor.
     val start = remember(recording.id, recording.startTime) {
         recordingStartInstant(recording.startTime).takeIf { recording.directUrl == null }
     }
-    if (start == null) {
-        Box(modifier) { ContentState(stringResource(R.string.recorded_chat_unavailable)) }
-        return
-    }
-    val timeline = remember(channel.id, recording.id, start) { RecordedChatTimeline(start) }
+    if (start == null) return null
+    val seek = playerHost.recordingChatSeek
+    val timeline = remember(channelId, recording.id, start, seek) { RecordedChatTimeline(start) }
     val repository = remember { KickRepository(KickNetwork.api) }
-    val active = LocalChatContentActive.current
-    val initialPosition = remember(recording.id, playerHost) { playerHost.recordingPositionMs }
-    val position by produceState(initialPosition, playerHost, active) {
-        if (active) snapshotFlow { playerHost.recordingPositionMs }.collect { value = it }
+    val position by key(timeline) {
+        val initialPosition = remember { playerHost.recordingPositionMs }
+        produceState(initialPosition, playerHost, active) {
+            if (active) snapshotFlow { playerHost.recordingPositionMs }.collect { value = it }
+        }
     }
     val bucket = position / 5000
     var previousBucket by remember(timeline) { mutableStateOf<Long?>(null) }
@@ -57,7 +129,7 @@ internal fun RecordedChatView(
         while (true) {
             try {
                 for (boundary in boundaries) {
-                    val history = repository.getRecordedChatHistory(channel.id, timeline.requestTime(boundary))
+                    val history = repository.getRecordedChatHistory(channelId, timeline.requestTime(boundary))
                         ?: error("Missing recorded chat history")
                     timeline.add(history.messages, bucket * 5000)
                     version++
@@ -74,20 +146,5 @@ internal fun RecordedChatView(
         }
     }
     val messages = remember(timeline, version, position) { timeline.visible(position) }
-    key(recording.id) {
-        ChatView(messages = messages,
-            connectionState = if (loading) ChatConnectionState.CONNECTING else ChatConnectionState.CONNECTED,
-            subscriberBadges = channel.subscriberBadges, streamerUsername = channel.user?.username,
-            streamerSlug = channel.slug, channelId = channel.id, isReplay = true,
-            onHideChat = onHideChat, onOpenChannel = onOpenChannel, modifier = modifier,
-            autoHideHeader = autoHideHeader,
-            playerControlsVisible = playerHost.isControlsVisible,
-            composer = {
-                if (failed) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(stringResource(R.string.recorded_chat_failed), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                    TextButton(onClick = { retry++ }) { Text(stringResource(R.string.chat_retry)) }
-                }
-            })
-    }
+    return RecordedChatState(messages, loading, failed) { retry++ }
 }

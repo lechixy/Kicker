@@ -119,6 +119,53 @@ object SettingsKeys {
         type = SettingType.FloatType,
         validator = { it in 0.18f..0.60f }
     )
+    val FULLSCREEN_CHAT_ENABLED = SettingKey(
+        booleanPreferencesKey("fullscreen_chat_enabled"), false, SettingType.BooleanType
+    )
+    val FULLSCREEN_CHAT_HORIZONTAL = SettingKey(
+        booleanPreferencesKey("fullscreen_chat_horizontal"), false, SettingType.BooleanType
+    )
+    val FULLSCREEN_CHAT_LANES = SettingKey(
+        intPreferencesKey("fullscreen_chat_lanes"), 1, SettingType.IntType,
+        validator = { it in 1..4 }
+    )
+    val FULLSCREEN_CHAT_SCALE = SettingKey(
+        intPreferencesKey("fullscreen_chat_scale"), 100, SettingType.IntType,
+        validator = { it in 70..150 }
+    )
+    val FULLSCREEN_CHAT_FONT_SIZE = SettingKey(
+        intPreferencesKey("fullscreen_chat_font_size"), CHAT_FONT_SIZE.defaultValue, SettingType.IntType,
+        validator = { it in 10..24 }
+    )
+    val FULLSCREEN_CHAT_SHAPE = SettingKey(
+        stringPreferencesKey("fullscreen_chat_shape"), FullscreenChatShape.Rounded.value, SettingType.StringType,
+        validator = { value -> FullscreenChatShape.entries.any { it.value == value } }
+    )
+    val FULLSCREEN_CHAT_OPACITY = SettingKey(
+        floatPreferencesKey("fullscreen_chat_opacity"), 0.60f, SettingType.FloatType,
+        validator = { it in 0.35f..0.85f }
+    )
+    val FULLSCREEN_CHAT_BLUR = SettingKey(
+        booleanPreferencesKey("fullscreen_chat_blur"), false, SettingType.BooleanType
+    )
+    val FULLSCREEN_CHAT_BADGES = SettingKey(
+        booleanPreferencesKey("fullscreen_chat_badges"), true, SettingType.BooleanType
+    )
+    val FULLSCREEN_CHAT_POSITION_LOCKED = SettingKey(
+        booleanPreferencesKey("fullscreen_chat_position_locked"), false, SettingType.BooleanType
+    )
+    val FULLSCREEN_CHAT_VERTICAL_POSITION = SettingKey(
+        stringPreferencesKey("fullscreen_chat_vertical_position"),
+        FullscreenChatPosition.VerticalDefault.encode(),
+        SettingType.StringType,
+        validator = { FullscreenChatPosition.decode(it) != null }
+    )
+    val FULLSCREEN_CHAT_HORIZONTAL_POSITION = SettingKey(
+        stringPreferencesKey("fullscreen_chat_horizontal_position"),
+        FullscreenChatPosition.HorizontalDefault.encode(),
+        SettingType.StringType,
+        validator = { FullscreenChatPosition.decode(it) != null }
+    )
     val MINI_PLAYER_WIDTH_DP = SettingKey(
         key = floatPreferencesKey("mini_player_width_dp"),
         defaultValue = MiniPlayerSize.DEFAULT_WIDTH_DP,
@@ -156,6 +203,18 @@ object SettingsKeys {
             AUTO_CONNECT_CHAT,
             CHAT_MESSAGE_SPACING,
             CHAT_WIDTH_FRACTION,
+            FULLSCREEN_CHAT_ENABLED,
+            FULLSCREEN_CHAT_HORIZONTAL,
+            FULLSCREEN_CHAT_LANES,
+            FULLSCREEN_CHAT_SCALE,
+            FULLSCREEN_CHAT_FONT_SIZE,
+            FULLSCREEN_CHAT_SHAPE,
+            FULLSCREEN_CHAT_OPACITY,
+            FULLSCREEN_CHAT_BLUR,
+            FULLSCREEN_CHAT_BADGES,
+            FULLSCREEN_CHAT_POSITION_LOCKED,
+            FULLSCREEN_CHAT_VERTICAL_POSITION,
+            FULLSCREEN_CHAT_HORIZONTAL_POSITION,
             MINI_PLAYER_WIDTH_DP
         )
     }

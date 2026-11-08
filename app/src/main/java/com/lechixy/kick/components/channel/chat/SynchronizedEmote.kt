@@ -29,7 +29,7 @@ internal val LocalChatAnimationsEnabled = staticCompositionLocalOf { true }
 
 /** One drawable and animation clock per visible emote URL, including replies and pinned messages. */
 @Composable
-internal fun SynchronizedEmote(url: String, name: String, modifier: Modifier = Modifier) {
+internal fun SynchronizedEmote(url: String, name: String, modifier: Modifier = Modifier, showTooltip: Boolean = true) {
     val context = LocalContext.current.applicationContext
     val animated = LocalChatAnimationsEnabled.current
     val active = LocalChatContentActive.current
@@ -43,7 +43,7 @@ internal fun SynchronizedEmote(url: String, name: String, modifier: Modifier = M
         }
     }
     val entry = shared
-    ChatTooltip(emoteTooltipLabel(name)) {
+    val emote: @Composable () -> Unit = {
         Box(modifier.semantics { contentDescription = name }) {
             if (entry?.failed == true) {
                 Text(":$name:", maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -68,6 +68,7 @@ internal fun SynchronizedEmote(url: String, name: String, modifier: Modifier = M
             }
         }
     }
+    if (showTooltip) ChatTooltip(emoteTooltipLabel(name), content = emote) else emote()
 }
 
 internal fun emoteTooltipLabel(name: String): String = ":${name.trim().trim(':').ifBlank { "emote" }}:"

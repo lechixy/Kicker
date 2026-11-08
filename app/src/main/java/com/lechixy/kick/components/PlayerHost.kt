@@ -87,6 +87,7 @@ import androidx.compose.ui.util.fastForEach
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import kotlin.math.max
 import kotlin.math.min
@@ -97,6 +98,7 @@ import kotlinx.coroutines.launch
 
 import com.lechixy.kick.R
 import com.lechixy.kick.components.channel.offlineBannerCompactHeight
+import com.lechixy.kick.components.channel.chat.FullscreenRecordedChatBox
 import com.lechixy.kick.data.channel.model.getBannerUrl
 import com.lechixy.kick.data.common.remote.KickNetwork
 import com.lechixy.kick.data.common.repository.KickRepository
@@ -149,7 +151,8 @@ fun PlayerHost(
     pageContent: @Composable (String) -> Unit,
     modifier: Modifier = Modifier,
     navigationRailAvailable: Boolean = false,
-    enteringPip: Boolean = false
+    enteringPip: Boolean = false,
+    liveChatViewModel: com.lechixy.kick.screens.channel.ChannelViewModel? = null,
 ) {
     if (host.slug == null || host.mode == PlayerMode.Hidden) return
 
@@ -160,6 +163,7 @@ fun PlayerHost(
     val scope = rememberCoroutineScope()
     val mode = host.mode
     val pipVideoOnly = isInPipMode || enteringPip
+    val editingChatPosition = host.isEditingFullscreenChatPosition
 
     val expansion = host.expansionSource
     val expandProgress = remember { Animatable(0f, visibilityThreshold = NORM_THRESHOLD) }
@@ -202,7 +206,7 @@ fun PlayerHost(
     }
     var backProgress by remember { mutableFloatStateOf(0f) }
     var backEdge by remember { mutableIntStateOf(0) }
-    PredictiveBackHandler(enabled = !pipVideoOnly && !host.isExiting &&
+    PredictiveBackHandler(enabled = !pipVideoOnly && !host.isExiting && !editingChatPosition &&
         (mode == PlayerMode.Expanded || mode == PlayerMode.Fullscreen)) { events ->
         val startFrame = frameT.value
         val startAlpha = pageAlpha
@@ -239,6 +243,9 @@ fun PlayerHost(
 
     // Mini pencere: konum, hareket aralığının oranı olarak tutulur (0..1) => boyut/rotasyon değişse de köşede kalır.
     val settingsRepository = LocalSettingsRepository.current
+    val fullscreenChatOverlayEnabled by remember(settingsRepository) {
+        settingsRepository.get(SettingsKeys.FULLSCREEN_CHAT_ENABLED)
+    }.collectAsStateWithLifecycle(initialValue = SettingsKeys.FULLSCREEN_CHAT_ENABLED.defaultValue)
     var miniWidthDp by remember { mutableFloatStateOf(MINI_DEFAULT_WIDTH_DP) }
     var fx by remember { mutableFloatStateOf(1f) }
     var fy by remember { mutableFloatStateOf(1f) }
@@ -563,8 +570,11 @@ fun PlayerHost(
         }
     }
 
-    Box(
-        modifier
+    FullscreenRecordedChatBox(
+        host = host,
+        overlayEnabled = fullscreenChatOverlayEnabled,
+        isInPipMode = pipVideoOnly,
+        modifier = modifier
             .fillMaxSize()
             .then(if (pipVideoOnly) Modifier.background(Color.Black) else Modifier)
             .onGloballyPositioned { hostOrigin = it.positionInRoot() }
@@ -874,8 +884,8 @@ fun PlayerHost(
                         }
                     }
                     // --- Inline/Tam ekran: dikey sürükleme. Sürüklerken sadece biraz büyür/küçülür, bırakınca karar verilir.
-                    .pointerInput(mode, pipVideoOnly) {
-                        if (mode == PlayerMode.Mini || pipVideoOnly) return@pointerInput
+                    .pointerInput(mode, pipVideoOnly, editingChatPosition) {
+                        if (mode == PlayerMode.Mini || pipVideoOnly || editingChatPosition) return@pointerInput
                         var total = 0f
                         var committed = false
                         val tracker = VelocityTracker()
@@ -1031,8 +1041,8 @@ fun PlayerHost(
                     // --- Inline (geniş ekran) / Tam ekran: yatay sürükleme ile sohbeti akıcı bir şekilde gizle/aç.
                     // Büyük ekranda sağa: sohbeti kapat, ardından gezinmeyi aç.
                     // Sola: gezinmeyi kapat, ardından sohbeti aç. Telefon akışı yalnızca sohbeti yönetir.
-                    .pointerInput(mode, pipVideoOnly, navigationRailAvailable) {
-                        if (mode == PlayerMode.Mini || pipVideoOnly) return@pointerInput
+                    .pointerInput(mode, pipVideoOnly, navigationRailAvailable, editingChatPosition) {
+                        if (mode == PlayerMode.Mini || pipVideoOnly || editingChatPosition) return@pointerInput
                         var totalDx = 0f
                         var startProgress = 0f
                         var startNavigationProgress = 0f
@@ -1169,6 +1179,14 @@ fun PlayerHost(
                     mode = mode,
                     previewThumbnailUrl = previewThumbnailUrl,
                     isInPipMode = pipVideoOnly,
+                    liveChatViewModel = liveChatViewModel,
+                    fullscreenChatOverlayEnabled = fullscreenChatOverlayEnabled,
+                    onToggleFullscreenChatOverlay = {
+                        val enabled = host.toggleFullscreenChatOverlay(fullscreenChatOverlayEnabled)
+                        if (enabled != fullscreenChatOverlayEnabled) {
+                            scope.launch { settingsRepository.set(SettingsKeys.FULLSCREEN_CHAT_ENABLED, enabled) }
+                        }
+                    },
                     onMinimize = onMinimize,
                     onClose = onClose
                 )
@@ -1186,6 +1204,9 @@ private fun PlayerSurface(
     mode: PlayerMode,
     previewThumbnailUrl: String? = null,
     isInPipMode: Boolean,
+    liveChatViewModel: com.lechixy.kick.screens.channel.ChannelViewModel?,
+    fullscreenChatOverlayEnabled: Boolean,
+    onToggleFullscreenChatOverlay: () -> Unit,
     onMinimize: () -> Unit,
     onClose: () -> Unit
 ) {
@@ -1235,11 +1256,16 @@ private fun PlayerSurface(
                 streamTitle = if (recording != null) resolvedTitle else channel.livestream?.sessionTitle ?: "Canlı Yayın",
                 recording = recording?.copy(title = resolvedTitle, durationMs = resolvedDuration, vodId = resolvedVodId),
                 onPlaybackPositionChanged = { position -> recording?.let { host.updateRecordingPosition(it.id, position) } },
+                onPlaybackSeek = { position -> recording?.let { host.seekRecording(it.id, position) } },
                 channel = channel,
                 isFullScreen = mode == PlayerMode.Fullscreen,
                 isTheaterMode = host.isTheaterMode,
-                isChatVisible = if (mode == PlayerMode.Fullscreen) (host.isTheaterMode && host.isChatVisible) else host.isChatVisible,
+                isChatVisible = if (mode == PlayerMode.Fullscreen) host.isSideChatOpen(isWide = true) else host.isChatVisible,
                 onToggleChat = host::toggleChatVisibility,
+                playerHost = host,
+                liveChatViewModel = liveChatViewModel,
+                fullscreenChatOverlayEnabled = fullscreenChatOverlayEnabled,
+                onToggleFullscreenChatOverlay = onToggleFullscreenChatOverlay,
                 isInPipMode = isInPipMode,
                 isMini = mode == PlayerMode.Mini,
                 hideBufferingIndicator = announcementId != null || host.expansionSource != null,

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="clip_preview_label">Kick klibi</string>
+    <string name="clip_preview_creator">%1$s klipledi</string>
     <string name="clip_metadata">%1$s klipledi • %2$s görüntüleme • %3$s</string>
     <string name="clip_playback_failed">Bu klip oynatılamadı</string>
     <string name="clip_play">Klibi oynat</string>
