@@ -568,7 +568,10 @@ fun ChannelScreen(
                                                             onRetryHome = viewModel::loadHomeSections,
                                                             onRetryClips = viewModel::retryClips,
                                                             onPlayRecording = { playerHost?.playRecording(it) },
-                                                            onDownloadRecording = downloadRecording,
+                                                            onDownloadRecording = { recording ->
+                                                                downloadRecording(recording.copy(channelName = channel.user?.username ?: channel.slug,
+                                                                    channelSlug = channel.slug))
+                                                            },
                                                             onNavigateToTab = { target -> scope.launch {
                                                                 pagerState.animateScrollToPage(visibleTabs.indexOf(target))
                                                             } }

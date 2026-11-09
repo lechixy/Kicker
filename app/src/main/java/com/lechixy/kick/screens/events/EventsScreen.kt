@@ -21,10 +21,10 @@ import com.lechixy.kick.components.SkeletonLoadingScope
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun EventsScreen(onChannelClick: (String) -> Unit = {}) {
+fun EventsScreen() {
     var refreshing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    Scaffold(topBar = { HomeTopBar(onChannelClick = onChannelClick) }) { padding ->
+    Scaffold(topBar = { HomeTopBar() }) { padding ->
         PullToRefreshBox(refreshing, { scope.launch { refreshing = true; delay(500.milliseconds); refreshing = false } },
             Modifier.fillMaxSize().padding(padding)) {
             SkeletonLoadingScope(refreshing) {

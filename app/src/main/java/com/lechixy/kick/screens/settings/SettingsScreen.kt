@@ -18,15 +18,13 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -38,7 +36,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
@@ -46,9 +43,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lechixy.kick.BuildConfig
 import com.lechixy.kick.R
 import com.lechixy.kick.components.ColoredAppText
-import com.lechixy.kick.components.SectionHeader
+import com.lechixy.kick.components.ReleaseDialog
 import com.lechixy.kick.components.animatedCreatorOutline
 import com.lechixy.kick.components.settings.SettingCard
+import com.lechixy.kick.components.settings.SettingsContentWidth
+import com.lechixy.kick.data.releases.GitHubRelease
+import com.lechixy.kick.data.releases.ReleaseDialogMode
+import com.lechixy.kick.data.releases.ReleaseDialogRequest
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 import com.lechixy.kick.util.AppUtils
@@ -56,6 +57,7 @@ import com.lechixy.kick.util.AppUtils.getVersionAndInfo
 import kotlinx.coroutines.launch
 
 enum class SettingsDestinations(val titleRes: Int, val descriptionRes: Int, val icon: Int) {
+    ABOUT(R.string.about, R.string.settings_about_description, R.drawable.info_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
     GENERAL(
         R.string.settings_general,
         R.string.settings_general_description,
@@ -76,11 +78,6 @@ enum class SettingsDestinations(val titleRes: Int, val descriptionRes: Int, val 
         R.string.settings_chat_description,
         R.drawable.chat_24dp_e3e3e3_fill0_wght400_grad0_opsz24
     ),
-    CHANGELOG(
-        R.string.settings_changelog,
-        R.string.settings_changelog_description,
-        R.drawable.history_24dp_e3e3e3_fill0_wght400_grad0_opsz24
-    ),
     DEVELOPER(
         R.string.developer_tools,
         R.string.developer_description,
@@ -88,220 +85,173 @@ enum class SettingsDestinations(val titleRes: Int, val descriptionRes: Int, val 
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
-fun SettingsScreen(
-    onSubsettingClick: (subsetting: SettingsDestinations) -> Unit,
-    onBackClick: () -> Unit
+internal fun SettingsOverview(
+    destinations: List<SettingsDestinations>,
+    onSelect: (SettingsDestinations) -> Unit,
 ) {
+    BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+        val columns = ((maxWidth.coerceAtMost(SettingsContentWidth).value - 16f) / 268f).toInt().coerceAtLeast(1)
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(1),
+            modifier = Modifier.widthIn(max = SettingsContentWidth).fillMaxSize(),
+            contentPadding = PaddingValues(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item("about") {
+                val about = SettingsDestinations.ABOUT
+                SettingCard(stringResource(about.titleRes), description = stringResource(about.descriptionRes),
+                    icon = about.icon, onClick = { onSelect(about) })
+            }
+            items(destinations.filter { it != SettingsDestinations.ABOUT }.chunked(columns), key = { it.first().name }) { row ->
+                Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    row.forEach { section ->
+                        SettingCard(stringResource(section.titleRes), description = stringResource(section.descriptionRes),
+                            icon = section.icon, modifier = Modifier.weight(1f).fillMaxHeight(), onClick = { onSelect(section) })
+                    }
+                    repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+            item("about-summary") { AboutSummary() }
+        }
+    }
+}
+
+@Composable
+internal fun SettingsSearchScreen(query: String, unlocked: Boolean, onBack: () -> Unit, onAbout: () -> Unit) {
+    val resources = LocalResources.current
+    val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
+    val entries = settingsCatalog().filter { entry ->
+        (entry.destination != SettingsDestinations.DEVELOPER || BuildConfig.DEBUG || unlocked) &&
+            matchesSettingsQuery(query, resources.getString(entry.title),
+                entry.description?.let(resources::getString).orEmpty(),
+                resources.getString(entry.destination.titleRes) + " " + resources.getString(entry.group), locale)
+    }
+    val aboutMatches = matchesSettingsQuery(query, resources.getString(R.string.about),
+        resources.getString(R.string.settings_about_description),
+        resources.getString(R.string.settings_changelog), locale)
+    SettingsPage(stringResource(R.string.settings_search), onBack) {
+        if (aboutMatches) item("about") {
+            SettingCard(stringResource(R.string.about), description = stringResource(R.string.settings_changelog_description),
+                icon = SettingsDestinations.ABOUT.icon, onClick = onAbout)
+        }
+        if (entries.isEmpty() && !aboutMatches) item("empty") { Text(stringResource(R.string.settings_no_results)) }
+        groupedSettings(entries, includeCategory = true)
+    }
+}
+
+@Composable
+internal fun SettingsAboutScreen(viewModel: ReleaseViewModel?, onBack: () -> Unit) {
+    val state = viewModel?.history?.collectAsStateWithLifecycle()?.value ?: ReleaseHistoryState()
+    LaunchedEffect(viewModel) { viewModel?.loadHistory() }
+    SettingsAboutPage(state, { viewModel?.loadHistory(retry = true) }, onBack)
+}
+
+@Composable
+internal fun SettingsAboutPage(state: ReleaseHistoryState, onRetry: () -> Unit, onBack: () -> Unit) {
+    var selected by remember { mutableStateOf<GitHubRelease?>(null) }
+    SettingsPage(stringResource(R.string.about), onBack) {
+        item("about-summary") { AboutSummary() }
+        releaseNotes(state, onRetry) { selected = it }
+    }
+    selected?.let { ReleaseDialog(ReleaseDialogRequest(ReleaseDialogMode.WhatsNew, it), { selected = null }) }
+}
+
+@Composable
+private fun AboutSummary() {
     val context = LocalContext.current
     val resources = LocalResources.current
-    val appInfo = getVersionAndInfo(context)
+    val appInfo = remember(context) { getVersionAndInfo(context) }
     val repository = LocalSettingsRepository.current
-    val unlocked by repository.get(SettingsKeys.DEVELOPER_ENABLED)
-        .collectAsStateWithLifecycle(false)
+    val unlocked by repository.get(SettingsKeys.DEVELOPER_ENABLED).collectAsStateWithLifecycle(false)
     val scope = rememberCoroutineScope()
-    var query by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
-    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
-    val locale = configuration.locales[0]
-    val entries = settingsCatalog()
-    val matches =
-        entries.filter { it.destination != SettingsDestinations.DEVELOPER || BuildConfig.DEBUG || unlocked }
-            .filter {
-                matchesSettingsQuery(
-                    query,
-                    resources.getString(it.title),
-                    it.description?.let(resources::getString).orEmpty(),
-                    resources.getString(it.destination.titleRes),
-                    locale
-                )
-            }
     var developerTaps by remember { mutableIntStateOf(0) }
-
-    Scaffold(
-        topBar = {
-            com.lechixy.kick.components.HomeTopBar()
-
-        }
-    ) { innerPadding ->
-        BoxWithConstraints(
+    Column(
+        modifier = Modifier
+            .fillMaxWidth(),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Spacer(modifier = Modifier.height(24.dp))
+        ColoredAppText()
+        Spacer(modifier = Modifier.height(24.dp))
+        // App Version & GitHub
+        Column(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding),
-            contentAlignment = Alignment.TopCenter
-        ) {
-            val rowColumns =
-                ((maxWidth.value.coerceAtMost(840f) - 24f + 8f) / 268f).toInt().coerceAtLeast(1)
-            LazyVerticalGrid(
-                columns = GridCells.Adaptive(260.dp),
-                modifier = Modifier
-                    .widthIn(max = 840.dp)
-                    .fillMaxSize(),
-                contentPadding = PaddingValues(12.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    androidx.compose.material3.OutlinedTextField(
-                        value = query, onValueChange = { query = it },
-                        singleLine = true, modifier = Modifier.fillMaxWidth(),
-                        placeholder = { Text(stringResource(R.string.settings_search)) },
-                        leadingIcon = {
-                            androidx.compose.material3.Icon(
-                                painterResource(R.drawable.search_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
-                                null
-                            )
-                        },
-                        trailingIcon = {
-                            if (query.isNotEmpty()) androidx.compose.material3.IconButton(onClick = {
-                                query = ""
-                            }) {
-                                androidx.compose.material3.Icon(
-                                    painterResource(R.drawable.close_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
-                                    stringResource(R.string.settings_clear_search)
-                                )
-                            }
-                        })
-                }
-                if (query.isNotBlank()) {
-                    if (matches.isEmpty()) item(span = { GridItemSpan(maxLineSpan) }) {
-                        Text(stringResource(R.string.settings_no_results), Modifier.padding(16.dp))
-                    }
-                    items(matches, key = { it.id }, span = { GridItemSpan(maxLineSpan) }) { entry ->
-                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text(
-                                stringResource(entry.destination.titleRes),
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(start = 8.dp, top = 8.dp)
-                            )
-                            entry.content()
-                        }
-                    }
-                } else {
-                    val destinations = SettingsDestinations.entries.filter {
-                        it != SettingsDestinations.DEVELOPER || BuildConfig.DEBUG || unlocked
-                    }
-                    items(
-                        destinations.chunked(rowColumns),
-                        key = { it.first().name },
-                        span = { GridItemSpan(maxLineSpan) }) { row ->
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .height(IntrinsicSize.Min),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            row.forEach { dest ->
-                                SettingCard(
-                                    title = stringResource(dest.titleRes),
-                                    description = stringResource(dest.descriptionRes),
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .fillMaxHeight(),
-                                    icon = dest.icon,
-                                    onClick = { onSubsettingClick(dest) })
-                            }
-                            repeat(rowColumns - row.size) { Spacer(Modifier.weight(1f)) }
-                        }
-                    }
-
-                }
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    SectionHeader(
-                        title = stringResource(R.string.about)
+                .fillMaxWidth()
+                .background(
+                    MaterialTheme.colorScheme.secondaryContainer,
+                    RoundedCornerShape(20.dp)
+                )
+                .clip(shape = RoundedCornerShape(20.dp))
+                .clickable {
+                    val browserIntent = Intent(
+                        Intent.ACTION_VIEW,
+                        resources.getString(R.string.github).toUri()
                     )
+                    context.startActivity(browserIntent)
                 }
-                item(span = { GridItemSpan(maxLineSpan) }) {
-                    Column(
-                        modifier = Modifier
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.Center,
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Spacer(modifier = Modifier.height(24.dp))
-                        ColoredAppText()
-                        Spacer(modifier = Modifier.height(48.dp))
-                        // App Version & GitHub
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    MaterialTheme.colorScheme.secondaryContainer,
-                                    RoundedCornerShape(20.dp)
-                                )
-                                .clip(shape = RoundedCornerShape(20.dp))
-                                .clickable {
-                                    val browserIntent = Intent(
-                                        Intent.ACTION_VIEW,
-                                        resources.getString(R.string.github).toUri()
-                                    )
-                                    context.startActivity(browserIntent)
-                                }
-                                .padding(15.dp),
-                            verticalArrangement = Arrangement.Center,
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = stringResource(
-                                    R.string.settings_version,
-                                    appInfo.versionName
-                                )
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = stringResource(
-                                    R.string.settings_updated,
-                                    AppUtils.formatLastUpdateTime(appInfo.lastUpdateTimeMs)
-                                ),
-                                color = MaterialTheme.colorScheme.secondary
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = stringResource(R.string.settings_github),
-                                color = MaterialTheme.colorScheme.secondary
-                            )
+                .padding(15.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = stringResource(
+                    R.string.settings_version,
+                    appInfo.versionName
+                )
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = stringResource(
+                    R.string.settings_updated,
+                    AppUtils.formatLastUpdateTime(appInfo.lastUpdateTimeMs)
+                ),
+                color = MaterialTheme.colorScheme.secondary
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = stringResource(R.string.settings_github),
+                color = MaterialTheme.colorScheme.secondary
+            )
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        // Developer tools & For you section
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    MaterialTheme.colorScheme.primaryContainer,
+                    RoundedCornerShape(20.dp)
+                )
+                .clip(shape = RoundedCornerShape(20.dp))
+                .animatedCreatorOutline()
+                .clickable {
+                    if (!BuildConfig.DEBUG && !unlocked) {
+                        developerTaps++
+                        if (developerTaps >= 7) scope.launch {
+                            repository.set(SettingsKeys.DEVELOPER_ENABLED, true)
+                            Toast.makeText(
+                                context,
+                                R.string.developer_unlocked,
+                                Toast.LENGTH_SHORT
+                            ).show()
                         }
-                        Spacer(modifier = Modifier.height(16.dp))
-                        // Developer tools & For you section
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    MaterialTheme.colorScheme.primaryContainer,
-                                    RoundedCornerShape(20.dp)
-                                )
-                                .clip(shape = RoundedCornerShape(20.dp))
-                                .animatedCreatorOutline()
-                                .clickable {
-                                    if (!BuildConfig.DEBUG && !unlocked) {
-                                        developerTaps++
-                                        if (developerTaps >= 7) scope.launch {
-                                            repository.set(SettingsKeys.DEVELOPER_ENABLED, true)
-                                            Toast.makeText(
-                                                context,
-                                                R.string.developer_unlocked,
-                                                Toast.LENGTH_SHORT
-                                            ).show()
-                                        }
-                                    } else Toast.makeText(context, "💖", Toast.LENGTH_SHORT).show()
-                                }
-                                .padding(25.dp),
-                            verticalArrangement = Arrangement.Center,
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                text = stringResource(R.string.settings_made_by),
-                            )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = stringResource(R.string.settings_for_you),
-                                color = MaterialTheme.colorScheme.primary,
-                            )
-                        }
-                    }
+                    } else Toast.makeText(context, "💖", Toast.LENGTH_SHORT).show()
                 }
-            }
+                .padding(25.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = stringResource(R.string.settings_made_by),
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = stringResource(R.string.settings_for_you),
+                color = MaterialTheme.colorScheme.primary,
+            )
         }
     }
 }

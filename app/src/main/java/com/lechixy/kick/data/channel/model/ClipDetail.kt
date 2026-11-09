@@ -35,6 +35,8 @@ data class ClipDetail(
         thumbnail = thumbnailUrl,
         views = views,
         directUrl = playbackUrl,
+        channelName = channel.username,
+        channelSlug = channel.slug,
     )
 }
 

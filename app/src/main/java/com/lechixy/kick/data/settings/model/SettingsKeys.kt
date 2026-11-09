@@ -49,6 +49,7 @@ object SettingsKeys {
         type = SettingType.BooleanType
     )
     val NAVIGATION_ORDER = SettingKey(stringPreferencesKey("navigation_order"), "", SettingType.StringType)
+    val HOME_SECTION_ORDER = SettingKey(stringPreferencesKey("home_section_order"), "", SettingType.StringType)
     val TOP_BAR_LOGO_ANIMATION = SettingKey(booleanPreferencesKey("top_bar_logo_animation"), true, SettingType.BooleanType)
 
     /*
@@ -189,6 +190,7 @@ object SettingsKeys {
             THEME,
             DYNAMIC_COLOR,
             NAVIGATION_ORDER,
+            HOME_SECTION_ORDER,
             TOP_BAR_LOGO_ANIMATION,
             AUTOPLAY,
             LAST_SLEEP_TIMER_MINUTES,

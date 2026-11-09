@@ -36,6 +36,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 
 import com.lechixy.kick.R
@@ -51,6 +52,8 @@ import com.lechixy.kick.components.StreamCard
 import com.lechixy.kick.components.StreamCardSkeleton
 import com.lechixy.kick.components.cardSection
 import com.lechixy.kick.components.home.LiveTotalsButton
+import com.lechixy.kick.data.settings.model.SettingsKeys
+import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -66,6 +69,9 @@ fun HomeScreen(
     val navigation = LocalContentNavigation.current
     val state by viewModel.uiState.collectAsState()
     val history by viewModel.watchHistory.collectAsState()
+    val sectionOrder by LocalSettingsRepository.current.get(SettingsKeys.HOME_SECTION_ORDER)
+        .collectAsStateWithLifecycle(SettingsKeys.HOME_SECTION_ORDER.defaultValue)
+    val sections = remember(sectionOrder) { orderedHomeSections(sectionOrder) }
     val context = androidx.compose.ui.platform.LocalContext.current
     var openingHistory by remember { mutableStateOf(false) }
     val pullState = rememberPullToRefreshState()
@@ -93,10 +99,7 @@ fun HomeScreen(
         (state.following.signedIn && state.following.loading && state.following.streams.isEmpty())) {
         Scaffold(
             topBar = {
-                HomeTopBar(
-                    onSearchClick = { navigation.search("") },
-                    onChannelClick = { onStreamClick(it, null) }
-                )
+                HomeTopBar(onSearchClick = { navigation.search("") })
             }
         ) { paddingValues ->
             PullToRefreshBox(
@@ -123,53 +126,65 @@ fun HomeScreen(
                     minCardWidth = 200.dp
                 ) { columns ->
                     val loading = state.isLoading || state.isRefreshing
-                    if (history.isNotEmpty()) {
-                        item(key = "continue_header", span = { GridItemSpan(maxLineSpan) }) {
-                            SectionHeader(stringResource(R.string.home_continue_watching),
-                                leadingIcon = R.drawable.motion_play_24dp_e3e3e3_fill0_wght400_grad0_opsz24)
-                        }
-                        items(history.take(columns), key = { "history_${it.key}" }) { entry ->
-                            com.lechixy.kick.components.ContinueWatchingCard(entry, enabled = !openingHistory) { source ->
-                                scope.launch {
-                                    openingHistory = true
-                                    try {
-                                        val recording = viewModel.resolveHistoryRecording(entry)
-                                        if (recording != null) navigation.recording(entry.channelSlug, recording, source)
-                                        else android.widget.Toast.makeText(context, R.string.home_recording_unavailable, android.widget.Toast.LENGTH_SHORT).show()
-                                    } catch (error: kotlinx.coroutines.CancellationException) {
-                                        throw error
-                                    } catch (_: Exception) {
-                                        android.widget.Toast.makeText(context, R.string.home_recording_unavailable, android.widget.Toast.LENGTH_SHORT).show()
-                                    } finally { openingHistory = false }
+                    sections.forEach { section ->
+                        when (section) {
+                            HomeSection.CONTINUE_WATCHING -> {
+                                if (history.isNotEmpty()) {
+                                    item(key = "continue_header", span = { GridItemSpan(maxLineSpan) }) {
+                                        SectionHeader(stringResource(R.string.home_continue_watching),
+                                            leadingIcon = R.drawable.motion_play_24dp_e3e3e3_fill0_wght400_grad0_opsz24)
+                                    }
+                                    items(history.take(columns), key = { "history_${it.key}" }) { entry ->
+                                        com.lechixy.kick.components.ContinueWatchingCard(entry, enabled = !openingHistory) { source ->
+                                            scope.launch {
+                                                openingHistory = true
+                                                try {
+                                                    val recording = viewModel.resolveHistoryRecording(entry)
+                                                    if (recording != null) navigation.recording(entry.channelSlug, recording, source)
+                                                    else android.widget.Toast.makeText(context, R.string.home_recording_unavailable, android.widget.Toast.LENGTH_SHORT).show()
+                                                } catch (error: kotlinx.coroutines.CancellationException) {
+                                                    throw error
+                                                } catch (_: Exception) {
+                                                    android.widget.Toast.makeText(context, R.string.home_recording_unavailable, android.widget.Toast.LENGTH_SHORT).show()
+                                                } finally { openingHistory = false }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            HomeSection.FOLLOWING -> {
+                                if (state.following.signedIn) {
+                                    cardSection("following", followingTitle, state.following.streams,
+                                        columns, loading = state.following.loading, previewRows = if (wide) 2 else 1,
+                                        onMore = onFollowingClick, itemKey = { it.id }, skeleton = { StreamCardSkeleton() }) { stream ->
+                                        StreamCard(stream, onClick = { stream.channel?.slug?.let { onStreamClick(it, null) } },
+                                            onClickWithSource = { source -> stream.channel?.slug?.let { onStreamClick(it, source) } },
+                                            onCategoryClick = onCategoryClick)
+                                    }
+                                    if (!state.following.loading) {
+                                        state.following.error?.let { message -> item(key = "following_error", span = { GridItemSpan(maxLineSpan) }) {
+                                            ContentState(message, viewModel::loadFollowing)
+                                        } }
+                                        if (state.following.loaded && state.following.streams.isEmpty() && state.following.error == null)
+                                            item(key = "following_empty", span = { GridItemSpan(maxLineSpan) }) { ContentState(stringResource(R.string.home_no_following_live)) }
+                                    }
+                                }
+                            }
+                            HomeSection.CATEGORIES -> {
+                                item(key = "categories_header", span = { GridItemSpan(maxLineSpan) }) { SectionHeader(stringResource(R.string.section_categories), onMore = { onCategoryClick("") }) }
+                                item(key = "categories_row", span = { GridItemSpan(maxLineSpan) }) { CategoryRow(state.categories, loading, onCategoryClick) }
+                                state.categoriesError?.let { message -> item(key = "categories_error", span = { GridItemSpan(maxLineSpan) }) { ContentState(message, viewModel::loadStreams) } }
+                            }
+                            HomeSection.RECOMMENDED -> {
+                                state.error?.let { message -> item(key = "recommended_error", span = { GridItemSpan(maxLineSpan) }) { ContentState(message, viewModel::loadStreams) } }
+                                cardSection("recommended", recommendedTitle, streams, columns,
+                                    loading = loading, itemKey = { it.id }, skeleton = { StreamCardSkeleton() }) { stream ->
+                                    StreamCard(stream, onClick = { stream.channel?.slug?.let { onStreamClick(it, null) } },
+                                        onClickWithSource = { source -> stream.channel?.slug?.let { onStreamClick(it, source) } },
+                                        onCategoryClick = onCategoryClick)
                                 }
                             }
                         }
-                    }
-                    if (state.following.signedIn) {
-                        cardSection("following", followingTitle, state.following.streams,
-                            columns, loading = state.following.loading, previewRows = if (wide) 2 else 1,
-                            onMore = onFollowingClick, itemKey = { it.id }, skeleton = { StreamCardSkeleton() }) { stream ->
-                            StreamCard(stream, onClick = { stream.channel?.slug?.let { onStreamClick(it, null) } },
-                                onClickWithSource = { source -> stream.channel?.slug?.let { onStreamClick(it, source) } },
-                                onCategoryClick = onCategoryClick)
-                        }
-                        if (!state.following.loading) {
-                            state.following.error?.let { message -> item(span = { GridItemSpan(maxLineSpan) }) {
-                                ContentState(message, viewModel::loadFollowing)
-                            } }
-                            if (state.following.loaded && state.following.streams.isEmpty() && state.following.error == null)
-                                item(span = { GridItemSpan(maxLineSpan) }) { ContentState(stringResource(R.string.home_no_following_live)) }
-                        }
-                    }
-                    item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader(stringResource(R.string.section_categories), onMore = { onCategoryClick("") }) }
-                    item(span = { GridItemSpan(maxLineSpan) }) { CategoryRow(state.categories, loading, onCategoryClick) }
-                    state.categoriesError?.let { message -> item(span = { GridItemSpan(maxLineSpan) }) { ContentState(message, viewModel::loadStreams) } }
-                    state.error?.let { message -> item(span = { GridItemSpan(maxLineSpan) }) { ContentState(message, viewModel::loadStreams) } }
-                    cardSection("recommended", recommendedTitle, streams, columns,
-                        loading = loading, itemKey = { it.id }, skeleton = { StreamCardSkeleton() }) { stream ->
-                        StreamCard(stream, onClick = { stream.channel?.slug?.let { onStreamClick(it, null) } },
-                            onClickWithSource = { source -> stream.channel?.slug?.let { onStreamClick(it, source) } },
-                            onCategoryClick = onCategoryClick)
                     }
                     item(span = { GridItemSpan(maxLineSpan) }) { androidx.compose.foundation.layout.Spacer(Modifier.padding(bottom = 80.dp)) }
                 }

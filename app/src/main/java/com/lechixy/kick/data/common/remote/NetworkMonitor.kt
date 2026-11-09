@@ -8,12 +8,18 @@ import android.os.Handler
 import android.os.Looper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.serialization.Serializable
+
+@Serializable
+internal enum class ConnectionTransport { WIFI, MOBILE, ETHERNET, VPN, OTHER, OFFLINE }
 
 object NetworkMonitor {
     private val handler = Handler(Looper.getMainLooper())
     private val state = ConnectionNoticeState().apply { setForeground(false) }
     private val mutableNotice = MutableStateFlow<ConnectionNotice?>(null)
     val notice = mutableNotice.asStateFlow()
+    private val mutableTransport = MutableStateFlow(ConnectionTransport.OFFLINE)
+    internal val transport = mutableTransport.asStateFlow()
     private var initialized = false
     private lateinit var connectivityManager: ConnectivityManager
     private var defaultNetwork: Network? = null
@@ -63,6 +69,7 @@ object NetworkMonitor {
             override fun onLost(network: Network) {
                 if (network != defaultNetwork) return
                 defaultNetwork = null
+                mutableTransport.value = ConnectionTransport.OFFLINE
                 // A Wi-Fi/mobile handover should not flash an offline bar.
                 handler.postDelayed(lostNetwork, 800)
             }
@@ -97,6 +104,14 @@ object NetworkMonitor {
 
     private fun updateQuality() {
         val caps = capabilities
+        mutableTransport.value = when {
+            defaultNetwork == null || caps == null -> ConnectionTransport.OFFLINE
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> ConnectionTransport.VPN
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> ConnectionTransport.WIFI
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> ConnectionTransport.MOBILE
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> ConnectionTransport.ETHERNET
+            else -> ConnectionTransport.OTHER
+        }
         val online = !blocked && caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true &&
             caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
         val limitedBandwidth = caps != null && caps.linkDownstreamBandwidthKbps in 1..999

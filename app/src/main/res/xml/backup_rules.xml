@@ -9,6 +9,8 @@
     <exclude domain="root" path="app_webview/" />
     <!-- Restore preferences from kicker_settings.json only after the user accepts. -->
     <exclude domain="file" path="datastore/kick_settings.preferences_pb" />
+    <exclude domain="sharedpref" path="recording_download_queue.xml" />
+    <exclude domain="sharedpref" path="playback_usage.xml" />
     <!--
    <include domain="sharedpref" path="."/>
    <exclude domain="sharedpref" path="device.xml"/>

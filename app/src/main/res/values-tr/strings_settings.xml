@@ -53,7 +53,7 @@
     <string name="settings_backup_restore_choice_failed">Seçimin kaydedilemedi. Tekrar dene.</string>
     <string name="settings_customization">Kişiselleştirme</string>
     <string name="settings_customization_description">Tema, renkler ve gezinme</string>
-    <string name="settings_navigation_order">Ana menü sırası</string>
+    <string name="settings_navigation_order">Gezinme menüsü sırası</string>
     <string name="settings_navigation_order_description">Gezinme öğelerinin sırasını değiştir</string>
     <string name="settings_navigation_move_up">%1$s öğesini yukarı taşı</string>
     <string name="settings_navigation_move_down">%1$s öğesini aşağı taşı</string>
@@ -97,4 +97,22 @@
     <string name="player_default_quality_description">Mobil veri ve Wi-Fi üzerindeki başlangıç çözünürlüğü</string>
     <string name="player_chat_font">Sohbet yazı boyutu</string>
     <string name="player_chat_font_description">Yayın sohbetindeki mesajların yazı boyutu</string>
+    <string name="settings_about_description">Uygulama sürümü, kaynak kodu ve katkıda bulunanlar</string>
+    <string name="settings_home_order">Ana ekran sırası</string>
+    <string name="settings_home_order_description">Ana ekrandaki içerik bölümlerinin sırasını değiştir</string>
+    <string name="settings_order_drag_hint">Bir satırı basılı tut, sürükle ve istediğin yere bırak.</string>
+    <string name="settings_navigation_order_phone">Telefonda gezinme çubuğu yalnızca %1$s öğelerini gösterir.</string>
+    <string name="settings_home_order_phone">Telefonda “%1$s” oturum açıkken, “%2$s” izleme geçmişi varsa görünür.</string>
+    <string name="settings_group_home">Ana ekran</string>
+    <string name="settings_group_appearance">Görünüm</string>
+    <string name="settings_group_navigation">Gezinme</string>
+    <string name="settings_group_language">Dil ve öneriler</string>
+    <string name="settings_group_backup">Yedekleme ve geri yükleme</string>
+    <string name="settings_group_streaming">Yayın oynatma</string>
+    <string name="settings_group_audio">Ses</string>
+    <string name="settings_group_player_layout">Oynatıcı düzeni</string>
+    <string name="settings_group_interface">Arayüz</string>
+    <string name="settings_fullscreen_chat_enabled">Tam ekranda sohbet katmanını göster</string>
+    <string name="settings_fullscreen_chat_layout">Tam ekran sohbet düzeni</string>
+    <string name="settings_fullscreen_chat_appearance">Tam ekran sohbet görünümü</string>
 </resources>

@@ -22,7 +22,7 @@ import com.lechixy.kick.data.browse.model.BrowseCategory
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BrowseScreen(viewModel: BrowseViewModel = viewModel(), onChannelClick: (String) -> Unit = {},
+fun BrowseScreen(viewModel: BrowseViewModel = viewModel(),
     selectedSlug: String? = null) {
     val navigation = LocalContentNavigation.current
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -33,7 +33,7 @@ fun BrowseScreen(viewModel: BrowseViewModel = viewModel(), onChannelClick: (Stri
         if (index >= 0 && !selectionRevealed) { grid.animateScrollToItem(index + 1); selectionRevealed = true }
     }
     SkeletonLoadingScope(state.loading || state.loadingMore) {
-        Scaffold(topBar = { HomeTopBar(onChannelClick = onChannelClick) }) { padding ->
+        Scaffold(topBar = { HomeTopBar() }) { padding ->
             PullToRefreshBox(state.loading, viewModel::refresh, Modifier.fillMaxSize().padding(padding)) {
                 LazyVerticalGrid(GridCells.Adaptive(150.dp), state = grid, modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),

@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
@@ -50,8 +49,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
@@ -108,12 +105,10 @@ fun ChallengesButton() {
     }
     val available = availability.challenges.any { it.canClaim(availabilityNow) }
     val accessibilityLabel = stringResource(R.string.challenges_title)
-    Surface(onClick = { if (openFromRoot != null) openFromRoot() else open = true }, shape = CircleShape,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh, tonalElevation = 2.dp,
-        modifier = Modifier.size(46.dp).semantics { contentDescription = accessibilityLabel }) {
-        Box(contentAlignment = Alignment.Center) {
-            RewardAvailability(available)
-        }
+    com.lechixy.kick.components.TopBarActionButton(
+        onClick = { if (openFromRoot != null) openFromRoot() else open = true }, label = accessibilityLabel,
+    ) {
+        RewardAvailability(available)
     }
     AccountChallengeDialogHost(open, { open = false })
 }

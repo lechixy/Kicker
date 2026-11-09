@@ -53,7 +53,7 @@
     <string name="settings_backup_restore_choice_failed">Could not save your choice. Try again.</string>
     <string name="settings_customization">Customization</string>
     <string name="settings_customization_description">Theme, colors, and navigation</string>
-    <string name="settings_navigation_order">Main menu order</string>
+    <string name="settings_navigation_order">Navigation menu order</string>
     <string name="settings_navigation_order_description">Change the order of the navigation items</string>
     <string name="settings_navigation_move_up">Move %1$s up</string>
     <string name="settings_navigation_move_down">Move %1$s down</string>
@@ -98,4 +98,22 @@
     <string name="player_default_quality_description">Initial resolution on mobile data and Wi-Fi</string>
     <string name="player_chat_font">Chat font size</string>
     <string name="player_chat_font_description">Font size of stream chat messages</string>
+    <string name="settings_about_description">App version, source code and credits</string>
+    <string name="settings_home_order">Home screen order</string>
+    <string name="settings_home_order_description">Reorder sections on the Home screen</string>
+    <string name="settings_order_drag_hint">Press and hold a row, then drag it into place.</string>
+    <string name="settings_navigation_order_phone">The phone navigation bar only shows %1$s.</string>
+    <string name="settings_home_order_phone">On phones, %1$s appears when signed in and %2$s appears when you have watch history.</string>
+    <string name="settings_group_home">Home</string>
+    <string name="settings_group_appearance">Appearance</string>
+    <string name="settings_group_navigation">Navigation</string>
+    <string name="settings_group_language">Language and recommendations</string>
+    <string name="settings_group_backup">Backup and restore</string>
+    <string name="settings_group_streaming">Streaming</string>
+    <string name="settings_group_audio">Audio</string>
+    <string name="settings_group_player_layout">Player layout</string>
+    <string name="settings_group_interface">Interface</string>
+    <string name="settings_fullscreen_chat_enabled">Show chat overlay in fullscreen</string>
+    <string name="settings_fullscreen_chat_layout">Fullscreen chat layout</string>
+    <string name="settings_fullscreen_chat_appearance">Fullscreen chat appearance</string>
 </resources>

@@ -55,7 +55,6 @@ import kotlin.time.Duration.Companion.milliseconds
 import com.lechixy.kick.BuildConfig
 import com.lechixy.kick.R
 import com.lechixy.kick.components.settings.SettingSwitch
-import com.lechixy.kick.components.settings.SettingsTopBar
 import com.lechixy.kick.data.player.remote.ViewerTrackingDiagnostics
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
@@ -65,11 +64,17 @@ import com.lechixy.kick.util.findActivity
 fun DeveloperToolsScreen(onBackClick: () -> Unit, onTriggerLive: () -> Unit, canTriggerLive: Boolean) {
     val repository = LocalSettingsRepository.current
     val unlocked by repository.get(SettingsKeys.DEVELOPER_ENABLED).collectAsStateWithLifecycle(false)
-    Scaffold(topBar = { SettingsTopBar(stringResource(R.string.developer_tools), onBackClick) }) { padding ->
-        if (BuildConfig.DEBUG || unlocked) Column(Modifier.fillMaxSize().padding(padding).wrapContentWidth(androidx.compose.ui.Alignment.CenterHorizontally).widthIn(max = 840.dp).fillMaxWidth().padding(16.dp).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            SettingSwitch(key = SettingsKeys.DEVELOPER_FLOATING_MENU, title = stringResource(R.string.developer_floating_menu))
-            DeveloperToolsContent(onTriggerLive, canTriggerLive)
+    SettingsPage(stringResource(R.string.developer_tools), onBackClick) {
+        if (BuildConfig.DEBUG || unlocked) {
+            item("interface") { SettingsGroupTitle(stringResource(R.string.settings_group_interface)) }
+            item("floating-menu") {
+                SettingSwitch(key = SettingsKeys.DEVELOPER_FLOATING_MENU, title = stringResource(R.string.developer_floating_menu))
+            }
+            item("diagnostics") {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    DeveloperToolsContent(onTriggerLive, canTriggerLive)
+                }
+            }
         }
     }
 }

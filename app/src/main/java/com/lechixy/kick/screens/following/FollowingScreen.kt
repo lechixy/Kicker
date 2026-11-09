@@ -57,7 +57,7 @@ fun FollowingScreen(viewModel: FollowingViewModel = viewModel(),
     val offline = remember(state.pageChannels) { state.pageChannels.filterNot { it.live } }
     val refreshing = state.loading || state.streamsLoading
     SkeletonLoadingScope(session.signedIn && refreshing) {
-        Scaffold(topBar = { HomeTopBar(onChannelClick = { onStreamClick(it, null) }) }) { padding ->
+        Scaffold(topBar = { HomeTopBar() }) { padding ->
             PullToRefreshBox(refreshing, viewModel::refresh, Modifier.fillMaxSize().padding(padding)) {
                 ContentGrid { columns ->
                     if (!session.signedIn) {

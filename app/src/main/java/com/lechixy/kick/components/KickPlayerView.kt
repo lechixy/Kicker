@@ -156,6 +156,7 @@ import com.lechixy.kick.screens.clip.CreateClipModal
 import com.lechixy.kick.service.EXTRA_LOW_LATENCY
 import com.lechixy.kick.service.PlaybackService
 import com.lechixy.kick.service.buildPlaybackMediaItem
+import com.lechixy.kick.service.player.setPlaybackUsageChannel
 import com.lechixy.kick.service.player.broadcastPositionMs
 import com.lechixy.kick.service.player.distanceBehindLiveTargetMs
 import com.lechixy.kick.service.player.isNearLiveTarget
@@ -625,6 +626,7 @@ fun KickPlayerView(
         )
 
         val extras = android.os.Bundle(baseMediaItem.mediaMetadata.extras ?: android.os.Bundle()).apply {
+            historyEntry?.let { setPlaybackUsageChannel(it.channelSlug, it.channelName) }
             historyEntry?.let { putString(com.lechixy.kick.data.player.local.EXTRA_WATCH_HISTORY,
                 kotlinx.serialization.json.Json.encodeToString(it)) }
         }
@@ -1102,7 +1104,9 @@ fun KickPlayerView(
                                             title = stringResource(R.string.recording_download),
                                             value = null,
                                             showChevron = false,
-                                            onClick = { dismissSettings { downloadRecording(recording) } }
+                                            onClick = {
+                                                dismissSettings { downloadRecording(recording.copy(channelName = channelName, channelSlug = channel?.slug)) }
+                                            }
                                         )
                                     }
                                     PlayerSettingsCategoryRow(

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="you_downloads">İndirilenler</string>
+    <string name="you_downloads_loading">İndirilenler yükleniyor…</string>
+    <string name="you_downloads_failed">İndirilenler yüklenemedi.</string>
+    <string name="you_downloads_empty">Henüz indirilen klip veya yayın yok.</string>
+    <string name="you_download_open_failed">Bu video açılamadı.</string>
+    <string name="you_favorite_channels">Favori kanallar</string>
+    <string name="you_favorite_channels_empty">Henüz favori kanal yok.</string>
+    <string name="recording_download_queued">İndirme sırasına eklendi</string>
+    <string name="recording_download_already_queued">Bu video zaten indirme sırasında</string>
+    <string name="you_download_progress">İndiriliyor · %1$d%%</string>
+    <string name="you_download_next">Sıradakiler (%1$d)</string>
+    <string name="you_download_queue">İndirme sırası</string>
+    <string name="you_download_resume">Sırayı sürdür</string>
+    <string name="you_download_completed">İndirilen videolar</string>
+    <string name="you_download_details">%1$s · %2$s</string>
+    <string name="you_download_delete">İndirmeyi sil</string>
+    <string name="you_download_delete_message">%1$s bu cihazdan silinsin mi?</string>
+    <string name="you_download_delete_failed">İndirme silinemedi.</string>
+    <string name="you_download_storage">Cihaz depolama alanı</string>
+    <string name="you_download_storage_used">Kicker indirmeleri: %1$s</string>
+    <string name="you_download_storage_available">%2$s alanın %1$s boş</string>
+    <string name="you_data_usage">Veri kullanımı</string>
+    <string name="you_data_usage_empty">Henüz oynatma kullanımı kaydedilmedi.</string>
+    <string name="you_data_usage_total">Toplam oynatma kullanımı</string>
+    <string name="you_data_usage_summary">%1$s izlendi · %2$s aktarıldı</string>
+    <string name="you_data_usage_explanation">Arabelleğe alma dahil oynatma verilerini gösterir. İndirme trafiği ayrıdır.</string>
+    <string name="you_data_usage_networks">Bağlantıya göre</string>
+    <string name="you_data_usage_channels">Kanala göre</string>
+    <string name="you_data_usage_wifi">Wi-Fi</string>
+    <string name="you_data_usage_mobile">Mobil veri</string>
+    <string name="you_data_usage_ethernet">Ethernet</string>
+    <string name="you_data_usage_vpn">VPN</string>
+    <string name="you_data_usage_other">Diğer bağlantı</string>
+    <string name="you_data_usage_offline">Çevrimdışı oynatma</string>
+</resources>

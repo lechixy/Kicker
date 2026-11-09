@@ -140,8 +140,8 @@ private fun <T> fullscreenChatSetting(setting: SettingKey<T>): androidx.compose.
 
 @Composable
 internal fun FullscreenChatOverlay(
-    host: PlayerHostState,
-    channel: ChannelDetail,
+    host: PlayerHostState?,
+    channel: ChannelDetail?,
     liveChatViewModel: ChannelViewModel?,
     preferences: FullscreenChatPreferences,
     playing: Boolean,
@@ -280,7 +280,7 @@ internal fun FullscreenChatOverlay(
                                 .then(if (horizontal) Modifier.height(laneHeight) else Modifier)
                                 .padding(horizontal = 6.dp, vertical = 2.dp))
                     }
-                } else {
+                } else if (host != null && channel != null) {
                     CompositionLocalProvider(LocalChatAnimationsEnabled provides animationsEnabled) {
                         FullscreenChatMessages(
                             host, channel, liveChatViewModel, horizontal, playing && !dragging,

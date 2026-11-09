@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -140,7 +141,7 @@ class NavigationUpdatesUiTest {
         }
     }
     @Test fun settingsDestinationCardsHaveEqualRowHeightWhenDescriptionsWrap() {
-        show { Box(Modifier.width(820.dp)) { SettingsScreen({}, {}) } }
+        show { Box(Modifier.width(820.dp)) { SettingsOverview(SettingsDestinations.entries, {}) } }
         val titles = listOf(R.string.settings_general, R.string.settings_customization, R.string.player_playback)
         val bounds = titles.map { title ->
             compose.onNode(hasText(label(title)) and hasClickAction()).fetchSemanticsNode().boundsInRoot
@@ -164,8 +165,9 @@ class NavigationUpdatesUiTest {
     }
     @Test fun changelogOpensPublishedReleaseNotesAndCanDismissThem() {
         show {
-            ChangelogContent(ReleaseHistoryState(listOf(GitHubRelease("v2.0", name = "Release two", body = "# Actual notes\n\n- Change one")), loaded = true), {}, {})
+            SettingsAboutPage(ReleaseHistoryState(listOf(GitHubRelease("v2.0", name = "Release two", body = "# Actual notes\n\n- Change one")), loaded = true), {}, {})
         }
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Release two"))
         compose.onNodeWithText("Release two").performClick()
         compose.onNodeWithText(label(android.R.string.ok)).assertIsDisplayed().performClick()
         compose.onNodeWithText("Release two").assertIsDisplayed()
@@ -182,16 +184,67 @@ class NavigationUpdatesUiTest {
         compose.onNode(hasText("RRaenee") and isSelectable()).assertIsNotSelected()
     }
     @Test fun navigationOrderSavesMovedDestinations() {
+        runBlocking {
+            settings.set(SettingsKeys.NAVIGATION_ORDER, "HOME,FOLLOWING,SETTINGS,SEARCH,BROWSE,EVENTS")
+        }
         show { com.lechixy.kick.components.settings.NavigationOrderSetting() }
         compose.onNodeWithText(label(R.string.settings_navigation_order)).performClick()
-        val moveHomeDown = compose.activity.getString(R.string.settings_navigation_move_down, label(R.string.home))
-        compose.onNodeWithContentDescription(moveHomeDown).performClick()
+        dragOrderRowDown(label(R.string.home))
+        compose.waitForIdle()
+        compose.onNodeWithText(label(R.string.settings_navigation_order_save)).performClick()
+        compose.waitForIdle()
+        runBlocking {
+            val order = withTimeout(10_000) {
+                settings.get(SettingsKeys.NAVIGATION_ORDER).first { "YOU" in it }
+            }
+            assertEquals("FOLLOWING,HOME,YOU,SEARCH,BROWSE,EVENTS", order)
+        }
+    }
+
+    @Test fun homeOrderSavesDraggedSectionsSeparately() {
+        show { com.lechixy.kick.components.settings.HomeSectionOrderSetting() }
+        compose.onNodeWithText(label(R.string.settings_home_order)).performClick()
+        dragOrderRowDown(label(R.string.home_continue_watching))
+        compose.waitForIdle()
         compose.onNodeWithText(label(R.string.settings_navigation_order_save)).performClick()
         runBlocking {
-            val order = withTimeout(3_000) {
-                settings.get(SettingsKeys.NAVIGATION_ORDER).first { it.isNotBlank() }
-            }
-            assertEquals("FOLLOWING,HOME,SEARCH,BROWSE,EVENTS,SETTINGS", order)
+            val order = withTimeout(10_000) { settings.get(SettingsKeys.HOME_SECTION_ORDER).first { it.isNotEmpty() } }
+            assertEquals("FOLLOWING,CONTINUE_WATCHING,CATEGORIES,RECOMMENDED", order)
+            assertEquals("", settings.get(SettingsKeys.NAVIGATION_ORDER).first())
+        }
+    }
+
+    @Test fun wideSettingsSidebarStaysInPlaceDuringSectionTransition() {
+        org.junit.Assume.assumeTrue(compose.activity.resources.configuration.screenWidthDp >= 680)
+        show { SettingsHost(null, {}) }
+        val search = compose.onNode(hasText(label(R.string.settings_search)) and hasSetTextAction())
+        val general = compose.onNode(hasText(label(R.string.settings_general)) and hasClickAction())
+        val before = search.fetchSemanticsNode().boundsInRoot
+        val sidebarRow = general.fetchSemanticsNode().boundsInRoot
+        compose.mainClock.autoAdvance = false
+        try {
+            general.performClick()
+            compose.mainClock.advanceTimeBy(130)
+            assertEquals(before, search.fetchSemanticsNode().boundsInRoot)
+            compose.mainClock.advanceTimeBy(500)
+            compose.onNodeWithText(label(R.string.settings_app_language)).assertIsDisplayed()
+            search.performTextInput(label(R.string.player_chat_font))
+            compose.mainClock.advanceTimeBy(130)
+            assertEquals(sidebarRow, general.fetchSemanticsNode().boundsInRoot)
+            compose.mainClock.advanceTimeBy(500)
+            compose.onNode(hasText(label(R.string.player_chat_font)) and !hasSetTextAction()).assertIsDisplayed()
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+    }
+
+    private fun dragOrderRowDown(name: String) {
+        val distance = with(compose.density) { 56.dp.toPx() }
+        compose.onNodeWithText(name).performTouchInput {
+            down(center)
+            advanceEventTime(650)
+            moveBy(Offset(0f, distance))
+            up()
         }
     }
 

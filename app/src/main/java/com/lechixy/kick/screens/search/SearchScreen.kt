@@ -48,7 +48,7 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel(), onCategoryClick: (Str
     SkeletonLoadingScope(state.isLoading) {
         Scaffold(topBar = {
             Column {
-                HomeTopBar(onChannelClick = { onChannelClick(it, null) }, centerContent = if (wide) ({ SearchBar(viewModel) }) else null)
+                HomeTopBar(centerContent = if (wide) ({ SearchBar(viewModel) }) else null)
                 if (!wide) Box(Modifier.padding(horizontal = 16.dp).padding(bottom = 8.dp)) { SearchBar(viewModel) }
             }
         }) { padding ->

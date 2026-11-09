@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="you_title" translatable="false">You</string>
+    <string name="you_downloads">Downloads</string>
+    <string name="you_downloads_loading">Loading downloads…</string>
+    <string name="you_downloads_failed">Could not load downloads.</string>
+    <string name="you_downloads_empty">No downloaded clips or streams yet.</string>
+    <string name="you_download_open_failed">Could not open this video.</string>
+    <string name="you_favorite_channels">Favorite channels</string>
+    <string name="you_favorite_channels_empty">No favorite channels yet.</string>
+    <string name="recording_download_queued">Added to download queue</string>
+    <string name="recording_download_already_queued">This video is already in the queue</string>
+    <string name="you_download_progress">Downloading · %1$d%%</string>
+    <string name="you_download_next">Up next (%1$d)</string>
+    <string name="you_download_queue">Download queue</string>
+    <string name="you_download_resume">Resume queue</string>
+    <string name="you_download_completed">Downloaded videos</string>
+    <string name="you_download_details">%1$s · %2$s</string>
+    <string name="you_download_delete">Delete download</string>
+    <string name="you_download_delete_message">Delete %1$s from this device?</string>
+    <string name="you_download_delete_failed">Could not delete the download.</string>
+    <string name="you_download_storage">Device storage</string>
+    <string name="you_download_storage_used">Kicker downloads: %1$s</string>
+    <string name="you_download_storage_available">%1$s free of %2$s</string>
+    <string name="you_data_usage">Data usage</string>
+    <string name="you_data_usage_empty">No playback usage recorded yet.</string>
+    <string name="you_data_usage_total">Playback totals</string>
+    <string name="you_data_usage_summary">%1$s watched · %2$s transferred</string>
+    <string name="you_data_usage_explanation">Includes video playback data such as buffering. Download transfers are separate.</string>
+    <string name="you_data_usage_networks">By connection</string>
+    <string name="you_data_usage_channels">By channel</string>
+    <string name="you_data_usage_wifi">Wi-Fi</string>
+    <string name="you_data_usage_mobile">Mobile data</string>
+    <string name="you_data_usage_ethernet">Ethernet</string>
+    <string name="you_data_usage_vpn">VPN</string>
+    <string name="you_data_usage_other">Other connection</string>
+    <string name="you_data_usage_offline">Offline playback</string>
+</resources>

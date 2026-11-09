@@ -61,7 +61,7 @@ class AppEventsUiTest {
     }
     @Test fun turkishSearchFindsEditableChatSettingsAndClearRestoresCategories() {
         val localized = context("tr")
-        show { SettingsScreen({}, {}) }
+        show { SettingsHost(null, {}) }
         compose.onNodeWithText(localized.getString(R.string.settings_search)).performTextInput(localized.getString(R.string.player_chat_font))
         compose.onNode(hasText(localized.getString(R.string.player_chat_font)) and !hasSetTextAction()).assertIsDisplayed()
         compose.onNodeWithText(localized.getString(R.string.settings_app_language)).assertDoesNotExist()
@@ -75,9 +75,22 @@ class AppEventsUiTest {
         compose.onNodeWithText(localized.getString(R.string.player_chat_font)).assertDoesNotExist()
         compose.onNodeWithText(localized.getString(R.string.chat_show_timestamps)).assertDoesNotExist()
     }
+    @Test fun chatSettingsOpenFullscreenPositionPreview() {
+        val language = compose.activity.resources.configuration.locales[0].toLanguageTag()
+        val localized = context(language)
+        show(language) { SettingsCategoryScreen(SettingsDestinations.CHAT, {}) }
+        val edit = localized.getString(R.string.fullscreen_chat_edit_position)
+        val done = localized.getString(R.string.fullscreen_chat_done)
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText(edit))
+        compose.onNodeWithText(edit).performClick()
+        compose.waitUntil(10_000) { compose.onAllNodesWithText(done).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription(edit).assertIsDisplayed()
+        compose.onNodeWithText(done).performClick()
+        compose.onNodeWithContentDescription(edit).assertDoesNotExist()
+    }
     @Test fun englishSearchUsesEnglishResources() {
         val localized = context("en")
-        show("en") { SettingsScreen({}, {}) }
+        show("en") { SettingsHost(null, {}) }
         compose.onNodeWithText(localized.getString(R.string.settings_search)).performTextInput(localized.getString(R.string.settings_volume_sync))
         compose.onNode(hasText(localized.getString(R.string.settings_volume_sync)) and !hasSetTextAction()).assertIsDisplayed()
         compose.onNodeWithText(localized.getString(R.string.settings_chat_connection)).assertDoesNotExist()

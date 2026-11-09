@@ -47,6 +47,9 @@ import com.lechixy.kick.service.player.LiveResumeListener
 import com.lechixy.kick.service.player.PlaybackDiagnosticTracker
 import com.lechixy.kick.service.player.PlaybackNetworkCounter
 import com.lechixy.kick.service.player.PlaybackProgressTracker
+import com.lechixy.kick.service.player.PlaybackUsageTracker
+import com.lechixy.kick.service.player.trackUsage
+import com.lechixy.kick.service.player.usageChannel
 import com.lechixy.kick.service.player.SleepTimer
 import com.lechixy.kick.service.player.distanceBehindLiveTargetMs
 import com.lechixy.kick.service.player.transformKickLivePlaylist
@@ -58,6 +61,7 @@ class PlaybackService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
     private var progressTracker: PlaybackProgressTracker? = null
+    private var usageTracker: PlaybackUsageTracker? = null
     @OptIn(UnstableApi::class)
     private var diagnosticTracker: PlaybackDiagnosticTracker? = null
     private val viewerTracking = com.lechixy.kick.data.player.remote.ViewerTrackingClient(
@@ -94,46 +98,41 @@ class PlaybackService : MediaSessionService() {
             .setFallbackMaxPlaybackSpeed(1f)
             .build())
 
-        // The item and every playlist reload use the same mode, even during a settings change.
-        val standardHlsFactory = HlsMediaSource.Factory(dataSourceFactory)
-            .setPlaylistParserFactory(KickHlsPlaylistParserFactory(lowLatency = false))
-            .setAllowChunklessPreparation(true)
-        val lowLatencyHlsFactory = HlsMediaSource.Factory(dataSourceFactory)
-            .setPlaylistParserFactory(KickHlsPlaylistParserFactory(lowLatency = true))
-            .setAllowChunklessPreparation(true)
-
-        val defaultMediaSourceFactory = DefaultMediaSourceFactory(dataSourceFactory)
-
         val mediaSourceFactory = object : MediaSource.Factory {
+            private var drmProvider: DrmSessionManagerProvider? = null
+            private var loadErrorPolicy: LoadErrorHandlingPolicy? = null
+
             override fun setDrmSessionManagerProvider(
                 drmSessionManagerProvider: DrmSessionManagerProvider
             ): MediaSource.Factory {
-                standardHlsFactory.setDrmSessionManagerProvider(drmSessionManagerProvider)
-                lowLatencyHlsFactory.setDrmSessionManagerProvider(drmSessionManagerProvider)
-                defaultMediaSourceFactory.setDrmSessionManagerProvider(drmSessionManagerProvider)
+                drmProvider = drmSessionManagerProvider
                 return this
             }
 
             override fun setLoadErrorHandlingPolicy(
                 loadErrorHandlingPolicy: LoadErrorHandlingPolicy
             ): MediaSource.Factory {
-                standardHlsFactory.setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
-                lowLatencyHlsFactory.setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
-                defaultMediaSourceFactory.setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
+                loadErrorPolicy = loadErrorHandlingPolicy
                 return this
             }
 
-            override fun getSupportedTypes(): IntArray = defaultMediaSourceFactory.supportedTypes
+            override fun getSupportedTypes(): IntArray = intArrayOf(C.CONTENT_TYPE_HLS, C.CONTENT_TYPE_OTHER)
 
             override fun createMediaSource(mediaItem: MediaItem): MediaSource {
+                // Bind traffic to this item even if an outgoing request finishes during a channel switch.
+                val source = dataSourceFactory.trackUsage(mediaItem.usageChannel())
                 val path = mediaItem.localConfiguration?.uri?.path.orEmpty()
-                return if (path.endsWith(".mp4", ignoreCase = true)) {
-                    defaultMediaSourceFactory.createMediaSource(mediaItem)
-                } else if (mediaItem.mediaMetadata.extras?.getBoolean(EXTRA_LOW_LATENCY) == true) {
-                    lowLatencyHlsFactory.createMediaSource(mediaItem)
+                val factory = if (path.endsWith(".mp4", ignoreCase = true)) {
+                    DefaultMediaSourceFactory(source)
                 } else {
-                    standardHlsFactory.createMediaSource(mediaItem)
+                    val lowLatency = mediaItem.mediaMetadata.extras?.getBoolean(EXTRA_LOW_LATENCY) == true
+                    HlsMediaSource.Factory(source)
+                        .setPlaylistParserFactory(KickHlsPlaylistParserFactory(lowLatency))
+                        .setAllowChunklessPreparation(true)
                 }
+                drmProvider?.let(factory::setDrmSessionManagerProvider)
+                loadErrorPolicy?.let(factory::setLoadErrorHandlingPolicy)
+                return factory.createMediaSource(mediaItem)
             }
         }
 
@@ -189,6 +188,7 @@ class PlaybackService : MediaSessionService() {
         diagnosticTracker = PlaybackDiagnosticTracker(player, liveSpeedControl, serviceScope, allocator, networkCounter)
         SleepTimer.attach(this, player, serviceScope)
         progressTracker = PlaybackProgressTracker(player)
+        usageTracker = PlaybackUsageTracker(player, serviceScope)
         val sessionPlayer = StreamSessionPlayer(player)
         ClipAudioHandoff.attach(sessionPlayer)
         mediaSession = MediaSession.Builder(this, sessionPlayer).build()
@@ -205,6 +205,8 @@ class PlaybackService : MediaSessionService() {
         diagnosticTracker = null
         progressTracker?.close()
         progressTracker = null
+        usageTracker?.close()
+        usageTracker = null
         serviceScope.cancel()
         mediaSession?.run {
             (player as? StreamSessionPlayer)?.let(ClipAudioHandoff::detach)
@@ -212,6 +214,7 @@ class PlaybackService : MediaSessionService() {
             release()
         }
         mediaSession = null
+        com.lechixy.kick.data.player.local.PlaybackUsageStore.flush()
         super.onDestroy()
     }
 

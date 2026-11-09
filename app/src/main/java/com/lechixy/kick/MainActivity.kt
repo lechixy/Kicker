@@ -3,6 +3,7 @@ package com.lechixy.kick
 import android.animation.ValueAnimator
 import android.app.PictureInPictureUiState
 import android.content.Context
+import android.content.Intent
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
@@ -68,6 +69,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import androidx.core.os.LocaleListCompat
@@ -87,7 +89,9 @@ import androidx.navigation.navArgument
 import com.lechixy.kick.components.ExpansionSource
 import com.lechixy.kick.components.PlayerHost
 import com.lechixy.kick.components.PlayerMode
+import com.lechixy.kick.components.account.AccountAvatar
 import com.lechixy.kick.components.rememberPlayerHostState
+import com.lechixy.kick.data.account.AccountGraph
 import com.lechixy.kick.data.settings.local.SettingsBackupManager
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
@@ -100,8 +104,12 @@ import com.lechixy.kick.screens.following.FollowingViewModel
 import com.lechixy.kick.screens.home.HomeScreen
 import com.lechixy.kick.screens.home.HomeViewModel
 import com.lechixy.kick.screens.settings.SettingsBackupHost
-import com.lechixy.kick.screens.settings.SettingsScreen
-import com.lechixy.kick.screens.settings.general.GeneralSettingsScreen
+import com.lechixy.kick.screens.settings.SettingsDestinations
+import com.lechixy.kick.screens.settings.SettingsHost
+import com.lechixy.kick.screens.you.YouScreen
+import com.lechixy.kick.screens.you.DownloadsScreen
+import com.lechixy.kick.screens.you.DataUsageScreen
+import com.lechixy.kick.service.RecordingDownloadService
 import com.lechixy.kick.theme.KickTheme
 import com.lechixy.kick.theme.Theme
 import com.lechixy.kick.util.LanguageUtils.getCurrentAppLanguage
@@ -120,6 +128,12 @@ class MainActivity : ComponentActivity() {
         private set
     internal var enteringPip by mutableStateOf(false)
         private set
+    internal var openDownloadsRequested by mutableStateOf(false)
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.action == RecordingDownloadService.ACTION_OPEN_DOWNLOADS) openDownloadsRequested = true
+    }
 
     @RequiresApi(Build.VERSION_CODES.S)
     override fun onPictureInPictureUiStateChanged(pipState: PictureInPictureUiState) {
@@ -170,6 +184,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null && intent.action == RecordingDownloadService.ACTION_OPEN_DOWNLOADS) {
+            openDownloadsRequested = true
+        }
         inPipMode = isInPictureInPictureMode
         enableEdgeToEdge()
         var nativeSplashDismissed by mutableStateOf(false)
@@ -243,7 +260,7 @@ class MainActivity : ComponentActivity() {
 }
 
 enum class AppDestinations(
-    @StringRes val label: Int,
+    @StringRes private val label: Int,
     val activeIcon: Int,
     val inactiveIcon: Int = activeIcon
 ) {
@@ -268,15 +285,14 @@ enum class AppDestinations(
         R.drawable.local_activity_24dp_e3e3e3_fill1_wght400_grad0_opsz24,
         R.drawable.local_activity_24dp_e3e3e3_fill0_wght400_grad0_opsz24
     ),
-    SETTINGS(
-        R.string.settings,
-        R.drawable.settings_24dp_e3e3e3_fill1_wght400_grad0_opsz24,
-        R.drawable.settings_24dp_e3e3e3_fill0_wght400_grad0_opsz24
+    YOU(
+        R.string.you_title,
+        R.drawable.person_24dp_e3e3e3_fill1_wght400_grad0_opsz24,
+        R.drawable.person_24dp_e3e3e3_fill0_wght400_grad0_opsz24
     );
 
-    fun getLabel(context: Context): String {
-        return context.getString(this.label)
-    }
+    @StringRes
+    fun labelFor(signedIn: Boolean): Int = if (this == YOU && !signedIn) R.string.account_sign_in else label
 }
 
 @Composable
@@ -321,6 +337,13 @@ fun KickApp(restorePending: Boolean = false) {
         }
     }
     val pipActivity = activity as? MainActivity
+    LaunchedEffect(pipActivity?.openDownloadsRequested, restorePending) {
+        if (pipActivity?.openDownloadsRequested == true && !restorePending) {
+            if (playerHost.isChannelVisible) playerHost.minimize()
+            navController.navigate("you/downloads") { launchSingleTop = true }
+            pipActivity.openDownloadsRequested = false
+        }
+    }
     val pipActive = pipActivity?.inPipMode == true
     val enteringPip = pipActivity?.enteringPip == true
     val isInPipMode = pipActive || enteringPip
@@ -353,11 +376,6 @@ fun KickApp(restorePending: Boolean = false) {
     ) {
         CompositionLocalProvider(
             com.lechixy.kick.components.channel.chat.LocalOpenChatClip provides openChatClip,
-            com.lechixy.kick.screens.settings.LocalOpenChangelog provides {
-                navController.navigate("settings/changelog") {
-                    launchSingleTop = true
-                }
-            },
             com.lechixy.kick.components.LocalReleasePreview provides releaseViewModel::preview,
             com.lechixy.kick.components.account.LocalOpenChallenges provides {
                 challengesOpen = true
@@ -413,7 +431,12 @@ fun KickApp(restorePending: Boolean = false) {
                         Column(Modifier.fillMaxSize()) {
                             com.lechixy.kick.components.HomeTopBar(
                                 forceVisible = true,
-                                showAccount = true,
+                                settingsSelected = currentRoute?.substringBefore('/') == "settings",
+                                onSettingsClick = {
+                                    if (currentRoute?.substringBefore('/') != "settings") {
+                                        navController.navigate("settings") { launchSingleTop = true }
+                                    }
+                                },
                                 centerContent = if (currentRoute?.substringBefore("?") == "search" &&
                                     androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp >= 600
                                 )
@@ -423,6 +446,16 @@ fun KickApp(restorePending: Boolean = false) {
                                         )
                                     }) else null
                             )
+                            val settingsContent: @Composable (SettingsDestinations?) -> Unit = { initialSection ->
+                                SettingsHost(releaseViewModel, onExit = { navController.popBackStack() }, initialSection = initialSection) { back ->
+                                    com.lechixy.kick.screens.settings.DeveloperToolsScreen(
+                                        onBackClick = back,
+                                        onTriggerLive = { playerHost.triggerLiveAnnouncement(System.nanoTime()) },
+                                        canTriggerLive = playerHost.channel?.livestream != null &&
+                                            playerHost.recording == null && playerHost.mode != PlayerMode.Hidden,
+                                    )
+                                }
+                            }
                             NavHost(
                                 navController = navController,
                                 modifier = Modifier
@@ -508,83 +541,37 @@ fun KickApp(restorePending: Boolean = false) {
                                     arguments = listOf(navArgument("slug") { defaultValue = "" })
                                 ) { entry ->
                                     com.lechixy.kick.screens.browse.BrowseScreen(
-                                        onChannelClick = { openChannel(it, null) },
                                         selectedSlug = entry.arguments?.getString("slug")
                                     )
                                 }
                                 composable("events") {
-                                    com.lechixy.kick.screens.events.EventsScreen(onChannelClick = {
-                                        openChannel(
-                                            it,
-                                            null
-                                        )
-                                    })
+                                    com.lechixy.kick.screens.events.EventsScreen()
                                 }
 
-                                composable("settings") {
-                                    SettingsScreen(
-                                        onBackClick = { navController.popBackStack() },
-                                        onSubsettingClick = { subsettingRoute ->
-                                            navController.navigate(
-                                                "settings/${subsettingRoute.name.lowercase()}"
-                                            )
-                                        }
+                                composable("you") {
+                                    YouScreen(
+                                        onChannelClick = { openChannel(it, null) },
+                                        onDownloads = { navController.navigate("you/downloads") { launchSingleTop = true } },
+                                        onDataUsage = { navController.navigate("you/data-usage") { launchSingleTop = true } },
                                     )
                                 }
+                                composable("you/downloads") {
+                                    DownloadsScreen(onBack = { navController.popBackStack() })
+                                }
+                                composable("you/data-usage") {
+                                    DataUsageScreen(onBack = { navController.popBackStack() }, onChannelClick = { openChannel(it, null) })
+                                }
 
+                                composable("settings") { settingsContent(null) }
+                                // Previously saved back stacks can contain a settings subpage as a root destination.
                                 composable(
                                     route = "settings/{settingRoute}",
-                                    arguments = listOf(navArgument("settingRoute") {
-                                        type = NavType.StringType
-                                    })
-                                ) { backStackEntry ->
-                                    val settingRoute =
-                                        backStackEntry.arguments?.getString("settingRoute") ?: ""
-
-                                    when (settingRoute) {
-                                        "changelog" -> com.lechixy.kick.screens.settings.ChangelogScreen(
-                                            releaseViewModel,
-                                            { navController.popBackStack() })
-
-                                        "developer" -> com.lechixy.kick.screens.settings.DeveloperToolsScreen(
-                                            onBackClick = { navController.popBackStack() },
-                                            onTriggerLive = {
-                                                playerHost.triggerLiveAnnouncement(
-                                                    System.nanoTime()
-                                                )
-                                            },
-                                            canTriggerLive = playerHost.channel?.livestream != null && playerHost.recording == null && playerHost.mode != PlayerMode.Hidden
-                                        )
-
-                                        "chat" -> com.lechixy.kick.screens.settings.SettingsCategoryScreen(
-                                            com.lechixy.kick.screens.settings.SettingsDestinations.CHAT,
-                                            { navController.popBackStack() })
-
-                                        "general" -> {
-                                            GeneralSettingsScreen(
-                                                onBackClick = { navController.popBackStack() }
-                                            )
-                                        }
-
-                                        "customization" -> com.lechixy.kick.screens.settings.customization.CustomizationSettingsScreen(
-                                            onBackClick = { navController.popBackStack() })
-
-                                        "playback" -> {
-                                            com.lechixy.kick.screens.settings.playback.PlayerPlaybackSettingsScreen(
-                                                onBackClick = { navController.popBackStack() }
-                                            )
-                                        }
-
-                                        else -> {
-                                            Row(
-                                                modifier = Modifier.fillMaxSize(),
-                                                Arrangement.Center,
-                                                Alignment.CenterVertically
-                                            ) {
-                                                Text("Unknown route: $settingRoute")
-                                            }
-                                        }
-                                    }
+                                    arguments = listOf(navArgument("settingRoute") { type = NavType.StringType }),
+                                ) { entry ->
+                                    val section = entry.arguments?.getString("settingRoute")
+                                    settingsContent(SettingsDestinations.entries.firstOrNull {
+                                        it.name.equals(section, ignoreCase = true)
+                                    } ?: SettingsDestinations.ABOUT)
                                 }
                             }
 
@@ -700,9 +687,13 @@ fun KickApp(restorePending: Boolean = false) {
 
 internal fun orderedAppDestinations(savedOrder: String): List<AppDestinations> {
     val byName = AppDestinations.entries.associateBy { it.name }
-    val savedDestinations = savedOrder.split(',').mapNotNull(byName::get)
+    val savedDestinations = savedOrder.split(',').mapNotNull { name ->
+        if (name == "SETTINGS") AppDestinations.YOU else byName[name]
+    }
     return (savedDestinations + AppDestinations.entries).distinct()
 }
+
+internal fun AppDestinations.visibleInBottomBar(): Boolean = this != AppDestinations.EVENTS
 
 @Composable
 internal fun KickNavScaffold(
@@ -715,7 +706,6 @@ internal fun KickNavScaffold(
     onNavigationWidthChanged: (Int) -> Unit = {},
     content: @Composable () -> Unit
 ) {
-    val context = LocalContext.current
     val type =
         NavigationSuiteScaffoldDefaults.calculateFromAdaptiveInfo(currentWindowAdaptiveInfoV2())
     val useBottomBar = type.toString().contains("NavigationBar", ignoreCase = true)
@@ -726,6 +716,8 @@ internal fun KickNavScaffold(
     val savedOrder by settings.get(SettingsKeys.NAVIGATION_ORDER)
         .collectAsStateWithLifecycle(SettingsKeys.NAVIGATION_ORDER.defaultValue)
     val destinations = remember(savedOrder) { orderedAppDestinations(savedOrder) }
+    val session by AccountGraph.auth.session.collectAsStateWithLifecycle()
+    val dashboard by AccountGraph.dashboard.state.collectAsStateWithLifecycle()
     val railExpanded by settings.get(SettingsKeys.NAVIGATION_RAIL_EXPANDED)
         .collectAsStateWithLifecycle(false)
     val scope = rememberCoroutineScope()
@@ -739,38 +731,33 @@ internal fun KickNavScaffold(
     fun DestinationIcon(
         destination: AppDestinations,
         selected: Boolean,
-        bouncy: Boolean = false,
-        pressed: Boolean = false
+        modifier: Modifier = Modifier
     ) {
-        val scale = remember { androidx.compose.animation.core.Animatable(1f) }
-        LaunchedEffect(selected, pressed, bouncy) {
-            if (bouncy && selected && !pressed) scale.snapTo(.8f)
-            scale.animateTo(
-                if (pressed) .8f else if (selected) 1.08f else 1f,
-                androidx.compose.animation.core.spring(
-                    dampingRatio = if (bouncy) .38f else 1f,
-                    stiffness = 500f
-                )
+        if (destination == AppDestinations.YOU && session.signedIn) {
+            AccountAvatar(
+                avatar = dashboard.channel?.user?.avatar ?: session.profile?.avatar,
+                name = dashboard.channel?.user?.username ?: session.profile?.name
+                    ?: stringResource(R.string.you_title),
+                modifier = modifier.size(24.dp).clearAndSetSemantics {}
             )
+            return
         }
         androidx.compose.animation.Crossfade(
             targetState = selected,
+            animationSpec = tween(180),
             label = "navigation icon"
         ) { active ->
             Icon(
                 painterResource(if (active) destination.activeIcon else destination.inactiveIcon),
-                stringResource(destination.label), Modifier
-                    .size(24.dp)
-                    .graphicsLayer {
-                        scaleX = scale.value
-                        scaleY = scale.value
-                    })
+                contentDescription = null,
+                modifier = modifier.size(24.dp)
+            )
         }
     }
 
     @Composable
     fun RowScope.BottomBarItems() {
-        destinations.filter { it != AppDestinations.EVENTS }.forEach { destination ->
+        destinations.filter(AppDestinations::visibleInBottomBar).forEach { destination ->
             val targetRoute = destination.name.lowercase()
             val isSelected = com.lechixy.kick.components.navigationDestinationSelected(
                 currentRoute,
@@ -781,8 +768,18 @@ internal fun KickNavScaffold(
                 NavigationBarItem(
                     selected = isSelected,
                     onClick = { onNavigate(targetRoute) },
-                    icon = { DestinationIcon(destination, isSelected) },
-                    label = { Text(stringResource(destination.label)) }
+                    icon = {
+                        val scale by androidx.compose.animation.core.animateFloatAsState(
+                            if (isSelected) 1.08f else 1f,
+                            animationSpec = androidx.compose.animation.core.spring(dampingRatio = 1f, stiffness = 500f),
+                            label = "navigation icon scale"
+                        )
+                        DestinationIcon(destination, isSelected, Modifier.graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                        })
+                    },
+                    label = { Text(stringResource(destination.labelFor(session.signedIn))) }
                 )
             }
         }
@@ -802,21 +799,9 @@ internal fun KickNavScaffold(
                     com.lechixy.kick.components.RailNavigationItem(
                         expanded = expanded,
                         selected = isSelected,
-                        label = stringResource(destination.label),
+                        label = stringResource(destination.labelFor(session.signedIn)),
                         onClick = { onNavigate(targetRoute) },
-                        icon = {
-                            androidx.compose.animation.Crossfade(
-                                isSelected,
-                                animationSpec = tween(180),
-                                label = "rail icon"
-                            ) { active ->
-                                Icon(
-                                    painterResource(if (active) destination.activeIcon else destination.inactiveIcon),
-                                    contentDescription = null,
-                                    modifier = Modifier.size(24.dp)
-                                )
-                            }
-                        }
+                        icon = { DestinationIcon(destination, isSelected) }
                     )
                 }
             }
@@ -905,8 +890,7 @@ internal fun KickNavScaffold(
                                 )
                             }
                         }
-                        val session by com.lechixy.kick.data.account.AccountGraph.auth.session.collectAsStateWithLifecycle()
-                        val following = com.lechixy.kick.data.account.AccountGraph.following.rail
+                        val following = AccountGraph.following.rail
                         val followed by following.state.collectAsStateWithLifecycle()
                         val favorites by com.lechixy.kick.data.favorites.local.FavoriteUsersStore.favorites.collectAsStateWithLifecycle()
                         val railChannels = remember(followed.channels, favorites) {

@@ -22,6 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -51,6 +52,11 @@ import com.lechixy.kick.data.channel.model.ClipDetail
 import com.lechixy.kick.service.ClipAudioHandoff
 import com.lechixy.kick.service.kickPlaybackAudioAttributes
 import com.lechixy.kick.service.playbackHttpDataSourceFactory
+import com.lechixy.kick.data.player.local.PlaybackUsageChannel
+import com.lechixy.kick.data.player.local.PlaybackUsageStore
+import com.lechixy.kick.service.player.PlaybackUsageTracker
+import com.lechixy.kick.service.player.setPlaybackUsageChannel
+import com.lechixy.kick.service.player.trackUsage
 import androidx.core.net.toUri
 import kotlinx.coroutines.delay
 
@@ -185,15 +191,18 @@ private class ClipPlayback(val player: ExoPlayer, private val durationMs: Long) 
 private fun rememberClipPlayback(clip: ClipDetail): ClipPlayback {
     val context = LocalContext.current.applicationContext
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val scope = rememberCoroutineScope()
     val playback = remember(context, clip.id, clip.playbackUrl) {
+        val source = playbackHttpDataSourceFactory().trackUsage(PlaybackUsageChannel(clip.channel.slug, clip.channel.username))
         val player = ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(playbackHttpDataSourceFactory()))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(source))
             .setHandleAudioBecomingNoisy(true)
             .build()
         ClipPlayback(player, clip.durationMs)
     }
     DisposableEffect(playback, lifecycle) {
         val player = playback.player
+        val usage = PlaybackUsageTracker(player, scope)
         var session: MediaSession? = null
         var started = false
         player.addListener(playback)
@@ -207,6 +216,7 @@ private fun rememberClipPlayback(clip: ClipDetail): ClipPlayback {
                         .setArtist(clip.channel.username)
                         .setArtworkUri(clip.thumbnailUrl?.toUri())
                         .setMediaType(MediaMetadata.MEDIA_TYPE_VIDEO)
+                        .setExtras(android.os.Bundle().apply { setPlaybackUsageChannel(clip.channel.slug, clip.channel.username) })
                         .build()
                 )
                 .build()
@@ -241,7 +251,9 @@ private fun rememberClipPlayback(clip: ClipDetail): ClipPlayback {
             lifecycle.removeObserver(observer)
             relinquishAudio()
             player.removeListener(playback)
+            usage.close()
             player.release()
+            PlaybackUsageStore.flush()
         }
     }
     LaunchedEffect(playback, playback.state.playing) {

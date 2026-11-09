@@ -45,6 +45,8 @@ data class RecordedPlayback(
     val videoUuid: String? = null,
     val progressId: String = id,
     val vodId: String? = null,
+    val channelName: String? = null,
+    val channelSlug: String? = null,
 )
 fun ChannelVideo.toRecording(): RecordedPlayback? = playbackId?.let { id ->
     RecordedPlayback(

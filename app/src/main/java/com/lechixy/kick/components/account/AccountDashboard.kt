@@ -18,10 +18,8 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -30,7 +28,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -72,8 +69,9 @@ import com.lechixy.kick.data.account.model.AccountProfile
 import com.lechixy.kick.data.account.model.AccountStreak
 
 @Composable
-internal fun AccountDashboard(onChannelClick: (String) -> Unit, onDismiss: () -> Unit) {
+internal fun AccountDashboard(onChannelClick: (String) -> Unit) {
     val session by AccountGraph.auth.session.collectAsStateWithLifecycle()
+    val profile = session.profile
     val state by AccountGraph.dashboard.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -82,30 +80,24 @@ internal fun AccountDashboard(onChannelClick: (String) -> Unit, onDismiss: () ->
         ImageLoader.Builder(context).components { add(AnimatedImageDecoder.Factory()) }.build()
     }
     DisposableEffect(badgeLoader) { onDispose { badgeLoader.shutdown() } }
-    LaunchedEffect(session.signedIn, session.generation, session.profile?.userId) {
+    LaunchedEffect(session.signedIn, session.generation, profile?.userId) {
         if (session.signedIn) {
-            if (session.profile == null) {
+            if (profile == null) {
                 try { AccountGraph.auth.loadProfile() }
                 catch (error: Exception) { if (error is CancellationException) throw error }
             }
             else AccountGraph.dashboard.refresh()
         }
     }
-    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(20.dp),
+    Column(Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.account_title), style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-            IconButton(onClick = onDismiss) {
-                Icon(painterResource(R.drawable.close_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
-                    contentDescription = stringResource(R.string.account_close))
-            }
-        }
-        if (!session.signedIn || session.profile == null) {
+        Text(stringResource(R.string.account_title), style = MaterialTheme.typography.titleLarge,
+            fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 10.dp))
+        if (!session.signedIn || profile == null) {
             AccountPanel(showTitle = false)
         } else {
             if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-            GamificationCard(state, session.profile, badgeLoader, onEdit = {
+            GamificationCard(state, profile, badgeLoader, onEdit = {
                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://kick.com/settings/profile")))
             })
             StreakCard(state.streak, badgeLoader)
@@ -118,16 +110,13 @@ internal fun AccountDashboard(onChannelClick: (String) -> Unit, onDismiss: () ->
             }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
-                    onClick = {
-                        val slug = state.channel?.slug ?: session.profile?.name
-                        if (slug != null) { onDismiss(); onChannelClick(slug) }
-                    }, enabled = state.channel != null || session.profile != null,
+                    onClick = { onChannelClick(state.channel?.slug ?: profile.name) },
                     modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium,
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
                         contentColor = MaterialTheme.colorScheme.onSurface)
                 ) { Text(stringResource(R.string.account_view_channel), fontWeight = FontWeight.Bold) }
                 OutlinedButton(
-                    onClick = { scope.launch { AccountGraph.auth.signOut(); onDismiss() } },
+                    onClick = { scope.launch { AccountGraph.auth.signOut() } },
                     modifier = Modifier.fillMaxWidth(), shape = MaterialTheme.shapes.medium,
                     border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
@@ -138,6 +127,14 @@ internal fun AccountDashboard(onChannelClick: (String) -> Unit, onDismiss: () ->
                 }
             }
         }
+    }
+}
+
+@Composable
+internal fun AccountAvatar(avatar: String?, name: String, modifier: Modifier = Modifier) {
+    Box(modifier.clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer), contentAlignment = Alignment.Center) {
+        Text(name.take(1).uppercase(), style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+        AsyncImage(model = avatar, contentDescription = null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
     }
 }
 

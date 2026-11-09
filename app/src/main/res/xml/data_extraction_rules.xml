@@ -7,6 +7,8 @@
     <cloud-backup>
         <exclude domain="root" path="app_webview/" />
         <exclude domain="file" path="datastore/kick_settings.preferences_pb" />
+        <exclude domain="sharedpref" path="recording_download_queue.xml" />
+        <exclude domain="sharedpref" path="playback_usage.xml" />
         <!-- TODO: Use <include> and <exclude> to control what is backed up.
         <include .../>
         <exclude .../>
@@ -15,5 +17,7 @@
     <device-transfer>
         <exclude domain="root" path="app_webview/" />
         <exclude domain="file" path="datastore/kick_settings.preferences_pb" />
+        <exclude domain="sharedpref" path="recording_download_queue.xml" />
+        <exclude domain="sharedpref" path="playback_usage.xml" />
     </device-transfer>
 </data-extraction-rules>
