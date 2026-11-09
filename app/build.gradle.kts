@@ -131,6 +131,7 @@ dependencies {
     // Retrofit
     implementation(libs.retrofit)
     implementation(libs.core)
+    implementation(libs.markwon.linkify)
     implementation(libs.converter.kotlinx.serialization)
     // Settings
     implementation(libs.androidx.datastore.preferences)

@@ -48,6 +48,13 @@ class KickRepository(
     suspend fun getRecordedPlayback(id: String, videoUuid: String? = null): PlaybackResponse =
         resolveRecordedPlayback(id, videoUuid).second
 
+    suspend fun getLiveDvrUrl(slug: String, vodId: String?): String? {
+        val id = vodId?.takeIf(String::isNotBlank)
+            ?: api.getLivePlaybackDetails(slug).data.livestream?.id
+            ?: return null
+        return api.getRecordedPlayback(id, PlaybackRequest()).playbackUrl.vod.takeIf(String::isNotBlank)
+    }
+
     private suspend fun resolveRecordedPlayback(id: String, videoUuid: String?): Pair<String, PlaybackResponse> {
         if (videoUuid != null) {
             val vodId = resolveVodId(videoUuid)

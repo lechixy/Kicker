@@ -37,7 +37,7 @@ fun <T> SettingDropdown(
     val coroutineScope = rememberCoroutineScope()
     val currentValue by repository.get(key).collectAsStateWithLifecycle(initialValue = key.defaultValue)
 
-    var expanded by remember { mutableStateOf(false) }
+    var expanded by remember(enabled) { mutableStateOf(false) }
     val currentLabel = options.firstOrNull { it.first == currentValue }?.second
         ?: currentValue.toString()
 
@@ -64,7 +64,7 @@ fun <T> SettingDropdown(
                 }
 
                 DropdownMenu(
-                    expanded = expanded,
+                    expanded = expanded && enabled,
                     onDismissRequest = { expanded = false }
                 ) {
                     options.forEach { (optionValue, label) ->

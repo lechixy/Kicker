@@ -58,6 +58,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.clipRect
@@ -69,6 +70,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.MeasureScope
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -111,7 +113,6 @@ internal const val WIDE_BREAKPOINT_DP = 700
 internal const val CHAT_WIDTH_FRACTION = 0.35f
 internal val ChannelTabSpace = 144.dp
 
-private const val MINI_DEFAULT_WIDTH_DP = com.lechixy.kick.data.settings.model.MiniPlayerSize.DEFAULT_WIDTH_DP
 private const val MINI_MIN_WIDTH_DP = com.lechixy.kick.data.settings.model.MiniPlayerSize.MIN_WIDTH_DP
 private const val MINI_MAX_WIDTH_DP = com.lechixy.kick.data.settings.model.MiniPlayerSize.MAX_WIDTH_DP
 private const val MINI_PADDING_DP = 16f
@@ -153,6 +154,7 @@ fun PlayerHost(
     navigationRailAvailable: Boolean = false,
     enteringPip: Boolean = false,
     liveChatViewModel: com.lechixy.kick.screens.channel.ChannelViewModel? = null,
+    onVideoBoundsChanged: ((Rect?) -> Unit)? = null,
 ) {
     if (host.slug == null || host.mode == PlayerMode.Hidden) return
 
@@ -246,12 +248,13 @@ fun PlayerHost(
     val fullscreenChatOverlayEnabled by remember(settingsRepository) {
         settingsRepository.get(SettingsKeys.FULLSCREEN_CHAT_ENABLED)
     }.collectAsStateWithLifecycle(initialValue = SettingsKeys.FULLSCREEN_CHAT_ENABLED.defaultValue)
-    var miniWidthDp by remember { mutableFloatStateOf(MINI_DEFAULT_WIDTH_DP) }
+    val miniWidthSetting = SettingsKeys.miniPlayerWidth(configuration.smallestScreenWidthDp)
+    var miniWidthDp by remember(miniWidthSetting) { mutableFloatStateOf(miniWidthSetting.defaultValue) }
     var fx by remember { mutableFloatStateOf(1f) }
     var fy by remember { mutableFloatStateOf(1f) }
 
-    LaunchedEffect(settingsRepository) {
-        settingsRepository.get(SettingsKeys.MINI_PLAYER_WIDTH_DP).collect { savedWidthDp ->
+    LaunchedEffect(settingsRepository, miniWidthSetting) {
+        settingsRepository.get(miniWidthSetting).collect { savedWidthDp ->
             miniWidthDp = savedWidthDp.coerceIn(MINI_MIN_WIDTH_DP, MINI_MAX_WIDTH_DP)
         }
     }
@@ -564,10 +567,6 @@ fun PlayerHost(
                 fy = v
             }
         }
-        val currentMiniWidthDp = miniWidthDp
-        scope.launch {
-            settingsRepository.set(SettingsKeys.MINI_PLAYER_WIDTH_DP, currentMiniWidthDp)
-        }
     }
 
     FullscreenRecordedChatBox(
@@ -792,6 +791,9 @@ fun PlayerHost(
         // Keep the real surface mounted throughout the connected transition so loading
         // starts immediately and the final frame never swaps to a newly created player.
         if (playerVisible) {
+            DisposableEffect(onVideoBoundsChanged) {
+                onDispose { onVideoBoundsChanged?.invoke(null) }
+            }
             Box(
                 Modifier
                     .drawWithContent {
@@ -850,15 +852,19 @@ fun PlayerHost(
                         clip = true
                         shadowElevation = 12.dp.toPx() * m
                     }
+                    .then(if (onVideoBoundsChanged != null) {
+                        Modifier.onGloballyPositioned { onVideoBoundsChanged(it.boundsInRoot()) }
+                    } else Modifier)
                     // --- Mini: sürükle + pinch ile boyutlandır + bırakınca kenara/köşeye oturt; tek tık -> genişlet
                     .pointerInput(mode, pipVideoOnly) {
                         if (mode != PlayerMode.Mini || pipVideoOnly) return@pointerInput
                         detectTapGestures(onTap = { onExpand() })
                     }
-                    .pointerInput(mode, pipVideoOnly) {
+                    .pointerInput(mode, pipVideoOnly, miniWidthSetting) {
                         if (mode != PlayerMode.Mini || pipVideoOnly) return@pointerInput
                         awaitEachGesture {
                             awaitFirstDown(requireUnconsumed = false)
+                            val initialWidthDp = miniWidthDp
                             var moved = false
                             var accum = Offset.Zero
                             do {
@@ -881,6 +887,10 @@ fun PlayerHost(
                                 }
                             } while (event.changes.fastAny { it.pressed })
                             if (moved) snapMini()
+                            val resizedWidthDp = miniWidthDp
+                            if (resizedWidthDp != initialWidthDp) {
+                                scope.launch { settingsRepository.set(miniWidthSetting, resizedWidthDp) }
+                            }
                         }
                     }
                     // --- Inline/Tam ekran: dikey sürükleme. Sürüklerken sadece biraz büyür/küçülür, bırakınca karar verilir.

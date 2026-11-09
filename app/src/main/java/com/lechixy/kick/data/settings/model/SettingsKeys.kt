@@ -49,6 +49,16 @@ object SettingsKeys {
         type = SettingType.BooleanType
     )
     val NAVIGATION_ORDER = SettingKey(stringPreferencesKey("navigation_order"), "", SettingType.StringType)
+    val WINTER_SNOW = SettingKey(booleanPreferencesKey("winter_snow"), false, SettingType.BooleanType)
+    val WINTER_SNOW_STYLE = SettingKey(stringPreferencesKey("winter_snow_style"), SnowParticleStyle.Dots.name,
+        SettingType.StringType, validator = { value -> SnowParticleStyle.entries.any { it.name == value } })
+    val WINTER_SNOW_INTENSITY = SettingKey(intPreferencesKey("winter_snow_intensity"), 100,
+        SettingType.IntType, validator = { it in 50..150 })
+    val WINTER_SNOW_SPEED = SettingKey(intPreferencesKey("winter_snow_speed"), 100,
+        SettingType.IntType, validator = { it in 50..200 })
+    val WINTER_SNOW_SIZE = SettingKey(intPreferencesKey("winter_snow_size"), 100,
+        SettingType.IntType, validator = { it in 75..150 })
+    val WINTER_SNOW_SCROLL = SettingKey(booleanPreferencesKey("winter_snow_scroll"), true, SettingType.BooleanType)
     val HOME_SECTION_ORDER = SettingKey(stringPreferencesKey("home_section_order"), "", SettingType.StringType)
     val TOP_BAR_LOGO_ANIMATION = SettingKey(booleanPreferencesKey("top_bar_logo_animation"), true, SettingType.BooleanType)
 
@@ -169,10 +179,13 @@ object SettingsKeys {
     )
     val MINI_PLAYER_WIDTH_DP = SettingKey(
         key = floatPreferencesKey("mini_player_width_dp"),
-        defaultValue = MiniPlayerSize.DEFAULT_WIDTH_DP,
+        defaultValue = MiniPlayerSize.TABLET_DEFAULT_WIDTH_DP,
         type = SettingType.FloatType,
         validator = { it in MiniPlayerSize.MIN_WIDTH_DP..MiniPlayerSize.MAX_WIDTH_DP }
     )
+
+    fun miniPlayerWidth(smallestScreenWidthDp: Int): SettingKey<Float> =
+        MINI_PLAYER_WIDTH_DP.copy(defaultValue = MiniPlayerSize.defaultWidthDp(smallestScreenWidthDp))
 
     val RECOMMENDED_LIVESTREAM_LANGUAGE = SettingKey(
         key = stringPreferencesKey("recommended_livestream_language"),
@@ -189,6 +202,12 @@ object SettingsKeys {
             APP_LANGUAGE,
             THEME,
             DYNAMIC_COLOR,
+            WINTER_SNOW,
+            WINTER_SNOW_STYLE,
+            WINTER_SNOW_INTENSITY,
+            WINTER_SNOW_SPEED,
+            WINTER_SNOW_SIZE,
+            WINTER_SNOW_SCROLL,
             NAVIGATION_ORDER,
             HOME_SECTION_ORDER,
             TOP_BAR_LOGO_ANIMATION,

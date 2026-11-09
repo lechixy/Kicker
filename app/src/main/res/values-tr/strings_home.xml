@@ -10,6 +10,7 @@
     <string name="navigation_expand">Gezinmeyi genişlet</string>
     <string name="navigation_collapse">Gezinmeyi daralt</string>
     <string name="home_continue_watching">İzlemeye devam et</string>
+    <string name="home_remove_history">Kaldır</string>
     <string name="home_last_position">Son izlenen: %1$s</string>
     <string name="home_recording_unavailable">Yayın kaydı henüz kullanılamıyor, daha sonra tekrar deneyin.</string>
 </resources>

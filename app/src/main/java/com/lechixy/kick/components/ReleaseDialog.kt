@@ -2,15 +2,19 @@ package com.lechixy.kick.components
 
 import android.content.Intent
 import android.text.method.LinkMovementMethod
+import android.text.util.Linkify
 import android.widget.TextView
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SuggestionChip
@@ -19,6 +23,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalConfiguration
@@ -35,6 +40,7 @@ import com.lechixy.kick.data.releases.ReleaseDialogMode
 import com.lechixy.kick.data.releases.ReleaseDialogRequest
 import com.lechixy.kick.data.releases.normalizeVersion
 import io.noties.markwon.Markwon
+import io.noties.markwon.linkify.LinkifyPlugin
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -71,7 +77,9 @@ fun ReleaseDialog(request: ReleaseDialogRequest, onDismiss: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Row(
-                    Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     AssistChip(
                         onClick = {},
@@ -79,21 +87,24 @@ fun ReleaseDialog(request: ReleaseDialogRequest, onDismiss: () -> Unit) {
                             Text(
                                 if (update) stringResource(R.string.release_update_available) else stringResource(
                                     R.string.release_whats_new
-                                )
+                                ),
+                                maxLines = 1,
                             )
                         },
                         leadingIcon = {
                             Icon(
                                 painter = painterResource(R.drawable.wand_stars_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
-                                contentDescription = null
+                                contentDescription = null,
+                                modifier = Modifier.size(AssistChipDefaults.IconSize),
                             )
                         }
                     )
                     date?.let {
-                        AssistChip(onClick = {}, label = { Text(it) }, leadingIcon = {
+                        AssistChip(onClick = {}, label = { Text(it, maxLines = 1) }, leadingIcon = {
                             Icon(
                                 painter = painterResource(R.drawable.calendar_month_24dp_e3e3e3_fill1_wght400_grad0_opsz24),
-                                contentDescription = null
+                                contentDescription = null,
+                                modifier = Modifier.size(AssistChipDefaults.IconSize),
                             )
                         })
                     }
@@ -104,17 +115,19 @@ fun ReleaseDialog(request: ReleaseDialogRequest, onDismiss: () -> Unit) {
                                     normalizeVersion(
                                         release.tagName
                                     )
-                                }"
+                                }",
+                                maxLines = 1,
                             )
                         })
                     }
                     AssistChip(
                         onClick = { open(release.htmlUrl) },
-                        label = { Text(stringResource(R.string.github_label)) },
+                        label = { Text(stringResource(R.string.github_label), maxLines = 1) },
                         leadingIcon = {
                             Icon(
                                 painter = painterResource(R.drawable.github),
-                                contentDescription = "GitHub"
+                                contentDescription = null,
+                                modifier = Modifier.size(AssistChipDefaults.IconSize),
                             )
                         })
                 }
@@ -123,7 +136,10 @@ fun ReleaseDialog(request: ReleaseDialogRequest, onDismiss: () -> Unit) {
                     ?: stringResource(R.string.release_no_notes)
                 val foreground = MaterialTheme.colorScheme.onSurface.toArgb()
                 val accent = MaterialTheme.colorScheme.primary.toArgb()
-                val markwon = remember(context) { Markwon.create(context) }
+                val markwon = remember(context) {
+                    Markwon.builder(context).usePlugin(LinkifyPlugin.create(Linkify.WEB_URLS)).build()
+                }
+                val notes = remember(markwon, body) { markwon.toMarkdown(body) }
                 AndroidView(modifier = Modifier.fillMaxWidth(), factory = {
                     TextView(it).apply {
                         textSize = 14f; setLineSpacing(0f, 1.15f); setHorizontallyScrolling(false)
@@ -131,7 +147,7 @@ fun ReleaseDialog(request: ReleaseDialogRequest, onDismiss: () -> Unit) {
                     }
                 }, update = {
                     it.setTextColor(foreground); it.setLinkTextColor(accent)
-                    markwon.setMarkdown(it, body)
+                    markwon.setParsedMarkdown(it, notes)
                 })
             }
         }, confirmButton = {

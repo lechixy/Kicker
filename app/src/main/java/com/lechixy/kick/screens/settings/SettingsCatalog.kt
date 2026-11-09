@@ -8,6 +8,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -19,17 +20,21 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lechixy.kick.R
 import com.lechixy.kick.components.channel.chat.FullscreenChatPositionSetting
+import com.lechixy.kick.components.channel.chat.FullscreenChatSettingsExpander
 import com.lechixy.kick.components.channel.chat.fullscreenChatOptions
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 import com.lechixy.kick.components.settings.*
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.model.MiniPlayerSize
 import com.lechixy.kick.util.LanguageUtils.updateAppLocale
+import com.lechixy.kick.screens.settings.customization.WinterModeSettings
+import com.lechixy.kick.screens.settings.customization.winterModeSearchTerms
 import java.text.Normalizer
 import java.util.Locale
 
 internal data class SettingsEntry(val id: String, val title: Int, val description: Int?,
-    val destination: SettingsDestinations, val group: Int, val content: @Composable () -> Unit)
+    val destination: SettingsDestinations, val group: Int, val searchTerms: List<Int> = emptyList(),
+    val content: @Composable () -> Unit)
 
 internal fun matchesSettingsQuery(query: String, title: String, description: String, category: String, locale: Locale): Boolean {
     fun normalize(text: String) = Normalizer.normalize(text.lowercase(locale), Normalizer.Form.NFD)
@@ -39,7 +44,7 @@ internal fun matchesSettingsQuery(query: String, title: String, description: Str
 }
 
 @Composable
-internal fun settingsCatalog(): List<SettingsEntry> {
+internal fun settingsCatalog(expandGroups: Boolean = false): List<SettingsEntry> {
     val context = LocalContext.current
     val general = SettingsDestinations.GENERAL
     val custom = SettingsDestinations.CUSTOMIZATION
@@ -104,6 +109,10 @@ internal fun settingsCatalog(): List<SettingsEntry> {
             SettingSwitch(SettingsKeys.DYNAMIC_COLOR, stringResource(R.string.settings_dynamic_color),
                 icon = R.drawable.palette_24dp_e3e3e3_fill0_wght400_grad0_opsz24)
         },
+        SettingsEntry("winter-snow", R.string.settings_winter_snow, R.string.settings_winter_snow_description,
+            custom, R.string.settings_group_seasonal_effects, searchTerms = winterModeSearchTerms) {
+            WinterModeSettings(initiallyExpanded = expandGroups)
+        },
         SettingsEntry("navigation-order", R.string.settings_navigation_order, R.string.settings_navigation_order_description, custom, R.string.settings_group_navigation) {
             NavigationOrderSetting()
         },
@@ -124,7 +133,8 @@ internal fun settingsCatalog(): List<SettingsEntry> {
                 icon = R.drawable.volume_up_24dp_e3e3e3_fill0_wght400_grad0_opsz24)
         },
         SettingsEntry("mini-player", R.string.settings_mini_width, null, playback, R.string.settings_group_player_layout) {
-            SettingFloatSlider(SettingsKeys.MINI_PLAYER_WIDTH_DP, stringResource(R.string.settings_mini_width),
+            val widthSetting = SettingsKeys.miniPlayerWidth(LocalConfiguration.current.smallestScreenWidthDp)
+            SettingFloatSlider(widthSetting, stringResource(R.string.settings_mini_width),
                 valueRange = MiniPlayerSize.MIN_WIDTH_DP..MiniPlayerSize.MAX_WIDTH_DP, steps = 24,
                 icon = R.drawable.theaters_24dp_e3e3e3_fill0_wght400_grad0_opsz24, valueFormatter = { "${it.toInt()} dp" })
         },
@@ -165,14 +175,14 @@ internal fun settingsCatalog(): List<SettingsEntry> {
             SettingSlider(SettingsKeys.CHAT_FONT_SIZE, stringResource(R.string.player_chat_font), description = stringResource(R.string.player_chat_font_description), valueRange = 10f..24f, steps = 13,
                 icon = R.drawable.edit_24dp_e3e3e3_fill0_wght400_grad0_opsz24, valueFormatter = { "${it}sp" })
         },
-        SettingsEntry("fullscreen-chat-enabled", R.string.settings_fullscreen_chat_enabled, null, chat, R.string.fullscreen_chat_title) {
-            SettingSwitch(SettingsKeys.FULLSCREEN_CHAT_ENABLED, stringResource(R.string.settings_fullscreen_chat_enabled))
+        SettingsEntry("fullscreen-chat", R.string.fullscreen_chat_title, R.string.settings_fullscreen_chat_enabled,
+            chat, R.string.settings_group_player_layout,
+            searchTerms = fullscreenChatOptions(horizontal) { }.flatMap { listOfNotNull(it.title, it.description) }) {
+            FullscreenChatSettingsExpander(horizontal, initiallyExpanded = expandGroups) { enabled ->
+                FullscreenChatPositionSetting(enabled)
+            }
         },
-    ) + fullscreenChatOptions(horizontal) { FullscreenChatPositionSetting() }.map { option ->
-        val group = if (option.section == R.string.fullscreen_chat_layout)
-            R.string.settings_fullscreen_chat_layout else R.string.settings_fullscreen_chat_appearance
-        SettingsEntry("fullscreen-chat-${option.title}", option.title, option.description, chat, group, option.content)
-    }
+    )
 }
 
 internal fun LazyListScope.groupedSettings(entries: List<SettingsEntry>, includeCategory: Boolean = false) {

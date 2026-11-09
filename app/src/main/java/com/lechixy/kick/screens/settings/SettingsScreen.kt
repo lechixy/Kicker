@@ -44,7 +44,7 @@ import com.lechixy.kick.BuildConfig
 import com.lechixy.kick.R
 import com.lechixy.kick.components.ColoredAppText
 import com.lechixy.kick.components.ReleaseDialog
-import com.lechixy.kick.components.animatedCreatorOutline
+import com.lechixy.kick.components.animatedCreatorCard
 import com.lechixy.kick.components.settings.SettingCard
 import com.lechixy.kick.components.settings.SettingsContentWidth
 import com.lechixy.kick.data.releases.GitHubRelease
@@ -122,10 +122,10 @@ internal fun SettingsOverview(
 internal fun SettingsSearchScreen(query: String, unlocked: Boolean, onBack: () -> Unit, onAbout: () -> Unit) {
     val resources = LocalResources.current
     val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
-    val entries = settingsCatalog().filter { entry ->
+    val entries = settingsCatalog(expandGroups = query.isNotBlank()).filter { entry ->
         (entry.destination != SettingsDestinations.DEVELOPER || BuildConfig.DEBUG || unlocked) &&
             matchesSettingsQuery(query, resources.getString(entry.title),
-                entry.description?.let(resources::getString).orEmpty(),
+                (listOfNotNull(entry.description) + entry.searchTerms).joinToString(" ", transform = resources::getString),
                 resources.getString(entry.destination.titleRes) + " " + resources.getString(entry.group), locale)
     }
     val aboutMatches = matchesSettingsQuery(query, resources.getString(R.string.about),
@@ -226,7 +226,7 @@ private fun AboutSummary() {
                     RoundedCornerShape(20.dp)
                 )
                 .clip(shape = RoundedCornerShape(20.dp))
-                .animatedCreatorOutline()
+                .animatedCreatorCard()
                 .clickable {
                     if (!BuildConfig.DEBUG && !unlocked) {
                         developerTaps++

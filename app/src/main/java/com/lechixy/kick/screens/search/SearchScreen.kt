@@ -62,7 +62,7 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel(), onCategoryClick: (Str
                     }
                 }
                 if (state.isLoading || data?.categories?.isNotEmpty() == true) {
-                    item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader(stringResource(R.string.section_categories)) }
+                    item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader(stringResource(R.string.section_categories), compact = true) }
                     item(span = { GridItemSpan(maxLineSpan) }) {
                         CategoryRow(data?.categories.orEmpty().map { BrowseCategory(name = it.name, slug = it.slug,
                             banner = CategoryBanner(it.thumbnail?.src)) }, state.isLoading, onCategoryClick, showTag = false)

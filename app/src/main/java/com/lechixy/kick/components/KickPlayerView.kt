@@ -86,6 +86,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -97,8 +98,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -132,11 +135,13 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import coil3.compose.AsyncImage
 import com.lechixy.kick.R
+import com.lechixy.kick.components.channel.chat.FullscreenChatBackdrop
 import com.lechixy.kick.components.channel.chat.FullscreenChatBlur
 import com.lechixy.kick.components.channel.chat.FullscreenChatBackdropRegion
+import com.lechixy.kick.components.channel.chat.FullscreenChatEdges
 import com.lechixy.kick.components.channel.chat.FullscreenChatOverlay
 import com.lechixy.kick.components.channel.chat.FullscreenChatSettings
-import com.lechixy.kick.components.channel.chat.FullscreenChatVideoBlur
+import com.lechixy.kick.components.channel.chat.VideoBackdropBlur
 import com.lechixy.kick.components.channel.chat.LocalChatContentActive
 import com.lechixy.kick.components.channel.chat.rememberFullscreenChatPreferences
 import com.lechixy.kick.components.channel.chat.rememberLegacyFullscreenChatFrame
@@ -154,6 +159,7 @@ import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 import com.lechixy.kick.screens.channel.ChannelViewModel
 import com.lechixy.kick.screens.clip.CreateClipModal
 import com.lechixy.kick.service.EXTRA_LOW_LATENCY
+import com.lechixy.kick.service.EXTRA_LIVE_DVR
 import com.lechixy.kick.service.PlaybackService
 import com.lechixy.kick.service.buildPlaybackMediaItem
 import com.lechixy.kick.service.player.setPlaybackUsageChannel
@@ -222,21 +228,45 @@ fun KickPlayerView(
 
     val player by rememberMediaController()
 
-    val stableId = remember(channel?.slug, playbackUrl, if (recording == null) channel?.livestream?.id else recording.id) {
+    val sessionId = remember(channel?.slug, playbackUrl, if (recording == null) channel?.livestream?.id else recording.id) {
         val baseId = channel?.slug ?: playbackUrl
         val liveId = if (recording == null) channel?.livestream?.id else null
         if (recording != null) "${baseId}_recording_${recording.id}" else if (liveId != null) "${baseId}_$liveId" else baseId
+    }
+    var dvrUrl by remember(sessionId) { mutableStateOf<String?>(null) }
+    var dvrPlayback by remember(sessionId) { mutableStateOf<LiveDvrPlayback?>(null) }
+    val playingDvr = dvrPlayback != null
+    val stableId = if (playingDvr) "${sessionId}_dvr" else sessionId
+    val activePlaybackUrl = dvrPlayback?.url ?: playbackUrl
+    val liveStartMs = if (recording == null) {
+        parseUtcStartTimeToMillis(channel?.livestream?.startTime ?: channel?.livestream?.createdAt)
+    } else 0L
+    LaunchedEffect(sessionId) {
+        val detail = channel ?: return@LaunchedEffect
+        val livestream = detail.livestream ?: return@LaunchedEffect
+        if (recording != null || liveStartMs <= 0L) return@LaunchedEffect
+        try {
+            dvrUrl = com.lechixy.kick.data.common.repository.KickRepository(
+                com.lechixy.kick.data.common.remote.KickNetwork.api,
+            ).getLiveDvrUrl(detail.slug, livestream.vodId)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // The primary live stream can still use its own seekable window.
+        }
     }
 
     var hasRenderedFirstFrame by remember(stableId) { mutableStateOf(false) }
     var isBuffering by remember { mutableStateOf(true) }
     var isPlayerReady by remember { mutableStateOf(false) }
     var loadedMediaId by remember { mutableStateOf<String?>(null) }
-    var isPlaying by remember { mutableStateOf(true) }
-    var playRequested by remember(stableId) { mutableStateOf(true) }
+    var isPlaying by remember(player, stableId) { mutableStateOf(false) }
+    val playOnLoad = dvrPlayback?.playWhenReady ?: true
+    var playRequested by remember(player, stableId) { mutableStateOf(playOnLoad) }
     var playbackError by remember(stableId) { mutableStateOf<String?>(null) }
     var liveRetryTrigger by remember(stableId) { mutableIntStateOf(0) }
     var isSeeking by remember(stableId) { mutableStateOf(false) }
+    var skipFeedback by remember(stableId, isMini, isInPipMode) { mutableStateOf<RecordingSkipFeedback?>(null) }
     var showControls by remember { mutableStateOf(false) }
     var isAdjustingVolume by remember { mutableStateOf(false) }
 
@@ -402,12 +432,32 @@ fun KickPlayerView(
         ViewerSession(channel.id, it.id, it.vodId?.takeIf(String::isNotBlank), channel.slug)
     }
     val clipVideoId = recording?.vodId ?: clipLiveSession?.vodId
-    val lowLatencyEnabled = isLiveStream && lowLatencySetting
+    val lowLatencyEnabled = isLiveStream && !playingDvr && lowLatencySetting
     val latestIsLiveStream by rememberUpdatedState(isLiveStream)
     var positionMs by remember(stableId) { mutableLongStateOf(0L) }
     var durationMs by remember(stableId) { mutableLongStateOf(recording?.durationMs ?: 0L) }
+    var liveSeekWindow by remember(stableId) { mutableStateOf<LiveSeekWindow?>(null) }
     val positionCallback by rememberUpdatedState(onPlaybackPositionChanged)
     val seekCallback by rememberUpdatedState(onPlaybackSeek)
+    val seekRecordingBy: (Boolean) -> Boolean = { forward ->
+        val active = player?.takeIf {
+            it.currentMediaItem?.mediaId == stableId && it.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM) &&
+                it.isCurrentMediaItemSeekable && it.duration > 0L
+        }
+        if (active == null) false else {
+            val delta = if (forward) 10_000L else -10_000L
+            active.seekTo((active.currentPosition + delta).coerceIn(0L, active.duration))
+            true
+        }
+    }
+    val onVideoDoubleTap by rememberUpdatedState<(Offset, Int) -> Unit> { tap, width ->
+        if (recording == null) {
+            toggleFullScreen()
+        } else {
+            val forward = tap.x >= width / 2f
+            if (seekRecordingBy(forward)) skipFeedback = RecordingSkipFeedback(tap, forward)
+        }
+    }
     LaunchedEffect(player, stableId, isLiveStream) {
         if (isLiveStream) return@LaunchedEffect
         while (isActive) {
@@ -420,7 +470,7 @@ fun KickPlayerView(
         }
     }
 
-    LaunchedEffect(player, stableId, isLiveStream, lowLatencyEnabled) {
+    LaunchedEffect(player, stableId, isLiveStream, dvrUrl, liveStartMs) {
         val p = player ?: return@LaunchedEffect
         if (!isLiveStream) {
             isAtLiveEdge = true
@@ -429,9 +479,17 @@ fun KickPlayerView(
         }
 
         while (isActive) {
-            val currentOffset = if (p.currentMediaItem?.mediaId == stableId) {
-                p.distanceBehindLiveTargetMs()
-            } else C.TIME_UNSET
+            val active = p.takeIf { it.currentMediaItem?.mediaId == stableId }
+            val nativeOffset = active?.distanceBehindLiveTargetMs() ?: C.TIME_UNSET
+            val elapsed = (System.currentTimeMillis() - liveStartMs).coerceAtLeast(0L)
+            val dvrPosition = if (playingDvr) active?.currentPosition ?: dvrPlayback?.positionMs ?: 0L
+                else (elapsed - nativeOffset.coerceAtLeast(0L)).coerceAtLeast(0L)
+            val currentOffset = if (playingDvr) (elapsed - dvrPosition).coerceAtLeast(0L) else nativeOffset
+            if (showControls || isSeeking) {
+                liveSeekWindow = if (active != null && dvrUrl != null && elapsed > DVR_LIVE_GAP_MS) {
+                    LiveSeekWindow(C.TIME_UNSET, elapsed, dvrPosition, usesDvr = true)
+                } else active?.liveSeekWindow()
+            }
 
             liveOffsetMs = currentOffset
             isAtLiveEdge = p.playWhenReady && p.playbackState == Player.STATE_READY &&
@@ -454,8 +512,24 @@ fun KickPlayerView(
                 availableQualities.addAll(tracks.toQualityOptions())
             }
 
+            fun refreshPlaybackControls() {
+                val isCurrentMedia = p.currentMediaItem?.mediaId == stableId
+                isPlaying = isCurrentMedia && p.isPlaying
+                playRequested = if (isCurrentMedia) p.playWhenReady else playOnLoad
+            }
+
             val listener = object : Player.Listener {
+                override fun onEvents(player: Player, events: Player.Events) {
+                    // A new item can inherit playWhenReady without firing its change callback.
+                    refreshPlaybackControls()
+                    if (isPlaying) playbackError = null
+                }
+
                 override fun onPlaybackStateChanged(playbackState: Int) {
+                    if (playingDvr && p.currentMediaItem?.mediaId == stableId && playbackState == Player.STATE_ENDED) {
+                        dvrPlayback = null
+                        return
+                    }
                     if (p.currentMediaItem?.mediaId != stableId) return
                     val live = latestIsLiveStream
                     isBuffering = playbackState == Player.STATE_BUFFERING ||
@@ -477,18 +551,6 @@ fun KickPlayerView(
                     isPlayerReady = true
                     playbackError = null
                     loadedMediaId = p.currentMediaItem?.mediaId
-                }
-
-                override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-                    if (p.currentMediaItem?.mediaId == stableId) playRequested = playWhenReady
-                }
-
-                override fun onIsPlayingChanged(playing: Boolean) {
-                    if (p.currentMediaItem?.mediaId != stableId) return
-                    isPlaying = playing
-                    if (playing) {
-                        playbackError = null
-                    }
                 }
 
                 override fun onPositionDiscontinuity(
@@ -514,6 +576,12 @@ fun KickPlayerView(
 
                 override fun onPlayerError(error: PlaybackException) {
                     if (p.currentMediaItem?.mediaId != stableId) return
+                    if (playingDvr) {
+                        dvrPlayback = null
+                        dvrUrl = null
+                        Toast.makeText(context, R.string.player_dvr_unavailable, Toast.LENGTH_SHORT).show()
+                        return
+                    }
                     val live = latestIsLiveStream
                     if (live) {
                         playbackError = null
@@ -529,8 +597,7 @@ fun KickPlayerView(
             }
 
             val isSameMedia = p.currentMediaItem?.mediaId == stableId
-            isPlaying = isSameMedia && p.isPlaying
-            playRequested = isSameMedia && p.playWhenReady
+            refreshPlaybackControls()
             isBuffering = !isSameMedia || p.playbackState == Player.STATE_BUFFERING
             isPlayerReady = isSameMedia && p.playbackState == Player.STATE_READY
             loadedMediaId = p.currentMediaItem?.mediaId
@@ -554,9 +621,10 @@ fun KickPlayerView(
         }
     }
 
-    LaunchedEffect(player, stableId, playbackUrl, lowLatencyEnabled) {
+    LaunchedEffect(player, stableId, activePlaybackUrl, lowLatencyEnabled) {
         val p = player ?: return@LaunchedEffect
-        if (playbackUrl.isBlank()) return@LaunchedEffect
+        val requestedDvr = dvrPlayback
+        if (activePlaybackUrl.isBlank()) return@LaunchedEffect
 
         playbackError = null
 
@@ -567,7 +635,7 @@ fun KickPlayerView(
         val keepLiveSession = isLiveStream && p.isCurrentMediaItemLive && p.playerError == null &&
                 p.playbackState == Player.STATE_READY
         val alreadyLoaded = currentItem?.mediaId == stableId &&
-                (keepLiveSession || currentItem.localConfiguration?.uri?.toString() == playbackUrl) &&
+                (keepLiveSession || currentItem.localConfiguration?.uri?.toString() == activePlaybackUrl) &&
                 (!isLiveStream ||
                     (currentItem.mediaMetadata.extras?.getBoolean(EXTRA_LOW_LATENCY) == true) == lowLatencyEnabled)
         if (alreadyLoaded) {
@@ -602,7 +670,7 @@ fun KickPlayerView(
                 startTime = recording?.startTime ?: detail.livestream?.startTime ?: detail.livestream?.createdAt)
         }
         val baseMediaItem = buildPlaybackMediaItem(
-            playbackUrl = playbackUrl,
+            playbackUrl = activePlaybackUrl,
             mediaId = stableId,
             isLive = isLive,
             title = streamTitle.ifBlank { if (isLiveStream) "Canlı Yayın" else "Kayıt" },
@@ -626,6 +694,7 @@ fun KickPlayerView(
         )
 
         val extras = android.os.Bundle(baseMediaItem.mediaMetadata.extras ?: android.os.Bundle()).apply {
+            if (playingDvr) putBoolean(EXTRA_LIVE_DVR, true)
             historyEntry?.let { setPlaybackUsageChannel(it.channelSlug, it.channelName) }
             historyEntry?.let { putString(com.lechixy.kick.data.player.local.EXTRA_WATCH_HISTORY,
                 kotlinx.serialization.json.Json.encodeToString(it)) }
@@ -638,11 +707,13 @@ fun KickPlayerView(
                 saved.resumePosition(recording.durationMs.takeIf { it > 0 } ?: saved.durationMs)
             } ?: 0L
             p.setMediaItem(mediaItem, resumePosition)
+        } else if (requestedDvr != null) {
+            p.setMediaItem(mediaItem, requestedDvr.positionMs)
         } else {
             p.setMediaItem(mediaItem)
         }
         p.prepare()
-        p.play()
+        p.playWhenReady = playOnLoad
     }
 
     LaunchedEffect(
@@ -681,7 +752,7 @@ fun KickPlayerView(
             .pointerInput(isInPipMode, isMini, editingChatPosition) {
                 if (!isInPipMode && !isMini && !editingChatPosition) {
                     detectTapGestures(
-                        onDoubleTap = { toggleFullScreen() },
+                        onDoubleTap = { onVideoDoubleTap(it, size.width) },
                         onTap = { showControls = !showControls }
                     )
                 }
@@ -732,7 +803,7 @@ fun KickPlayerView(
                 val legacyFrame = if (Build.VERSION.SDK_INT < 31 && hasRenderedFirstFrame && overlayActive) {
                     rememberLegacyFullscreenChatFrame(playerTexture, isPlaying)
                 } else null
-                FullscreenChatVideoBlur(playerTexture, chatBlurBounds.takeIf { hasRenderedFirstFrame }) {
+                VideoBackdropBlur(playerTexture, listOfNotNull(chatBlurBounds.takeIf { hasRenderedFirstFrame })) {
                     if (editingChatPosition) 1f else playerHost.fullscreenChatOverlayAlpha
                 }
                 FullscreenChatBlur(updateChatBlurBounds, legacyFrame)
@@ -789,11 +860,9 @@ fun KickPlayerView(
         }
 
         val handleTogglePlay = {
-            val p = player
+            val p = player?.takeIf { it.currentMediaItem?.mediaId == stableId }
             if (p != null) {
-                val shouldPlay = !playRequested
-                playRequested = shouldPlay
-                if (!shouldPlay) {
+                if (p.playWhenReady) {
                     p.pause()
                 } else {
                     // Live resumes are handled once in the playback service, including
@@ -807,10 +876,11 @@ fun KickPlayerView(
         }
 
         val handleGoToLive = {
-            val p = player
-            if (p != null) {
-                // A paused player's play transition already seeks in LiveResumeListener.
-                if (p.playWhenReady) p.seekToDefaultPosition()
+            val p = player?.takeIf { it.currentMediaItem?.mediaId == stableId }
+            if (playingDvr) {
+                dvrPlayback = null
+            } else if (p != null) {
+                p.seekToDefaultPosition()
                 p.play()
             }
         }
@@ -839,12 +909,41 @@ fun KickPlayerView(
                 qualityLabel = qualityLabel,
                 sleepRemainingSeconds = if (sleepTimerMinutes > 0) remainingTimerSeconds else 0,
                 streamDuration = streamDuration,
-                positionMs = positionMs,
-                durationMs = durationMs,
-                onSeek = { target -> player?.seekTo(target.coerceIn(0L, durationMs.coerceAtLeast(0L))) },
+                positionMs = if (isLiveStream) liveSeekWindow?.positionMs ?: 0L else positionMs,
+                durationMs = if (isLiveStream) liveSeekWindow?.edgeMs ?: 0L else durationMs,
+                liveWindowStartMs = liveSeekWindow?.startMs ?: C.TIME_UNSET,
+                onSeek = { target, originalWindowStart, atEnd ->
+                    val active = player?.takeIf { it.currentMediaItem?.mediaId == stableId }
+                    if (isLiveStream) {
+                        val sliderWindow = liveSeekWindow
+                        val source = dvrUrl
+                        when {
+                            atEnd -> handleGoToLive()
+                            sliderWindow?.usesDvr == true && source != null && active != null -> {
+                                if (playingDvr) {
+                                    if (sliderWindow.edgeMs - target <= DVR_LIVE_GAP_MS) handleGoToLive()
+                                    else if (active.isCurrentMediaItemSeekable && active.duration > 0L) {
+                                        active.seekTo(target.coerceIn(0L, active.duration))
+                                    }
+                                } else {
+                                    val dvrEnd = (sliderWindow.edgeMs - DVR_LIVE_GAP_MS).coerceAtLeast(0L)
+                                    dvrPlayback = LiveDvrPlayback(source, target.coerceIn(0L, dvrEnd), active.playWhenReady)
+                                }
+                            }
+                            else -> active?.liveSeekWindow()?.let { window ->
+                                val shiftedTarget = if (originalWindowStart != C.TIME_UNSET && window.startMs != C.TIME_UNSET) {
+                                    target + originalWindowStart - window.startMs
+                                } else target
+                                active.seekTo(shiftedTarget.coerceIn(0L, window.edgeMs))
+                            }
+                        }
+                    } else if (active?.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM) == true) {
+                        active.seekTo(target.coerceIn(0L, durationMs.coerceAtLeast(0L)))
+                    }
+                },
                 onSeekingChanged = { isSeeking = it },
-                onSeekBack = { player?.let { it.seekTo((it.currentPosition - 10_000).coerceAtLeast(0)) } },
-                onSeekForward = { player?.let { it.seekTo((it.currentPosition + 10_000).coerceIn(0, durationMs.coerceAtLeast(0))) } },
+                onSeekBack = { seekRecordingBy(false) },
+                onSeekForward = { seekRecordingBy(true) },
                 isLive = isLiveStream,
                 isAtLiveEdge = isAtLiveEdge,
                 behindLiveText = if (liveOffsetMs == C.TIME_UNSET) "" else formatLiveOffset(liveOffsetMs),
@@ -869,7 +968,7 @@ fun KickPlayerView(
                             it.currentMediaItem?.mediaId == stableId && it.playbackState != Player.STATE_IDLE
                         }
                         val position = active?.let { current ->
-                            if (clipLiveSession == null) current.currentPosition else {
+                            if (clipLiveSession == null || playingDvr) current.currentPosition else {
                                 val timeline = current.currentTimeline
                                 val window = current.currentMediaItemIndex.takeIf { it in 0 until timeline.windowCount }
                                     ?.let { timeline.getWindow(it, Timeline.Window()) }
@@ -891,6 +990,12 @@ fun KickPlayerView(
             )
         }
 
+        if (!isInPipMode && !isMini && !editingChatPosition) {
+            skipFeedback?.let { feedback ->
+                RecordingSkipOverlay(feedback, Modifier.matchParentSize()) { skipFeedback = null }
+            }
+        }
+
         if (!isInPipMode && !isMini) {
             clipTarget?.let { target ->
                 CreateClipModal(
@@ -905,6 +1010,8 @@ fun KickPlayerView(
         if (isMini && !isInPipMode) {
             MiniControlsOverlay(
                 isPlaying = playRequested,
+                texture = playerTexture.takeIf { hasRenderedFirstFrame },
+                videoPlaying = isPlaying,
                 onTogglePlay = handleTogglePlay,
                 onClose = onClose
             )
@@ -1487,7 +1594,8 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
     streamDuration: String,
     positionMs: Long = 0L,
     durationMs: Long = 0L,
-    onSeek: (Long) -> Unit = {},
+    liveWindowStartMs: Long = C.TIME_UNSET,
+    onSeek: (Long, Long, Boolean) -> Unit = { _, _, _ -> },
     onSeekingChanged: (Boolean) -> Unit = {},
     onSeekBack: () -> Unit = {},
     onSeekForward: () -> Unit = {},
@@ -1677,12 +1785,18 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
             enter = slideInVertically(tween(260)) { it / 2 },
             exit = slideOutVertically(tween(180)) { it / 2 }
         )) {
-            if (!isLive) {
+            key(isLive) {
                 var remaining by remember { mutableStateOf(false) }
                 var scrubPosition by remember { mutableStateOf<Float?>(null) }
+                var scrubWindowStart by remember { mutableLongStateOf(C.TIME_UNSET) }
+                var scrubDuration by remember { mutableLongStateOf(0L) }
+                val sliderDuration = if (isLive && scrubPosition != null) scrubDuration else durationMs
+                val sliderMax = sliderDuration.coerceAtLeast(1).toFloat()
                 val shownPosition = scrubPosition?.toLong() ?: positionMs
+                val sliderPosition = (scrubPosition ?: positionMs.toFloat()).coerceIn(0f, sliderMax)
+                DisposableEffect(Unit) { onDispose { onSeekingChanged(false) } }
                 Column(Modifier.fillMaxWidth().padding(horizontal = if (isCompact) 12.dp else 20.dp)) {
-                    Text(
+                    if (!isLive) Text(
                         text = (if (remaining) "-" + FormatUtils.formatDuration((durationMs - shownPosition).coerceAtLeast(0))
                             else FormatUtils.formatDuration(shownPosition)) + " / " + FormatUtils.formatDuration(durationMs),
                         color = Color.White,
@@ -1690,14 +1804,21 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                         modifier = Modifier.clickable { remaining = !remaining }.padding(vertical = 2.dp)
                     )
                     CompactPlayerSlider(
-                        value = (scrubPosition ?: positionMs.toFloat()).coerceIn(0f, durationMs.coerceAtLeast(1).toFloat()),
-                        valueRange = 0f..durationMs.coerceAtLeast(1).toFloat(),
+                        value = if (isLive) sliderPosition / sliderMax else sliderPosition,
+                        valueRange = 0f..(if (isLive) 1f else sliderMax),
                         enabled = durationMs > 0,
                         wavyTrack = true,
-                        animateWave = isPlaying,
-                        onValueChange = { scrubPosition = it; onSeekingChanged(true) },
+                        animateWave = isPlaying && durationMs > 0L,
+                        onValueChange = {
+                            if (scrubPosition == null) {
+                                scrubWindowStart = liveWindowStartMs
+                                scrubDuration = durationMs
+                            }
+                            scrubPosition = if (isLive) it * sliderMax else it
+                            onSeekingChanged(true)
+                        },
                         onValueChangeFinished = {
-                            scrubPosition?.let { onSeek(it.toLong()) }
+                            scrubPosition?.let { onSeek(it.toLong(), scrubWindowStart, it >= sliderDuration.toFloat()) }
                             scrubPosition = null
                             onSeekingChanged(false)
                         },
@@ -1889,44 +2010,76 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
     }
 }
 
+private const val DVR_LIVE_GAP_MS = 30_000L
+private data class LiveDvrPlayback(val url: String, val positionMs: Long, val playWhenReady: Boolean)
+private data class LiveSeekWindow(val startMs: Long, val edgeMs: Long, val positionMs: Long, val usesDvr: Boolean = false)
+
+private fun Player.liveSeekWindow(): LiveSeekWindow? {
+    if (!isCurrentMediaItemLive || !isCurrentMediaItemSeekable ||
+        !isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
+    ) return null
+    val timeline = currentTimeline
+    val index = currentMediaItemIndex
+    if (index !in 0 until timeline.windowCount) return null
+    val window = timeline.getWindow(index, Timeline.Window())
+    val edge = window.defaultPositionMs.coerceAtMost(window.durationMs)
+    if (edge <= 0) return null
+    return LiveSeekWindow(window.windowStartTimeMs, edge, currentPosition.coerceIn(0L, edge))
+}
+
 /**
  * Miniplayer
  */
 @Composable
-internal fun MiniControlsOverlay(
+private fun MiniControlsOverlay(
     isPlaying: Boolean,
+    texture: TextureView?,
+    videoPlaying: Boolean,
     onTogglePlay: () -> Unit,
     onClose: () -> Unit,
-    modifier: Modifier = Modifier
 ) {
-    Box(
-        modifier
-            .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0f))
-    ) {
-        Row(
-            Modifier
-                .align(Alignment.TopEnd)
-                .padding(8.dp)
-        ) {
-            PlayerChromeButton(
-                painter = painterResource(R.drawable.close_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
-                contentDescription = stringResource(R.string.player_close),
-                size = 48.dp,
-                onClick = onClose
-            )
-        }
-        Row(
-            Modifier
-                .align(Alignment.BottomStart)
-                .padding(8.dp)
-        ) {
-            PlayerChromeButton(
-                painter = rememberPlayPausePainter(isPlaying),
-                contentDescription = "Play/Pause",
-                size = 48.dp,
-                onClick = onTogglePlay
-            )
+    var playRegion by remember { mutableStateOf<FullscreenChatBackdropRegion?>(null) }
+    var closeRegion by remember { mutableStateOf<FullscreenChatBackdropRegion?>(null) }
+    val legacyFrame = if (Build.VERSION.SDK_INT < 31 && texture != null) {
+        rememberLegacyFullscreenChatFrame(texture, videoPlaying)
+    } else null
+    val playBlur = FullscreenChatBlur(remember { { playRegion = it } }, legacyFrame)
+    val closeBlur = FullscreenChatBlur(remember { { closeRegion = it } }, legacyFrame)
+    VideoBackdropBlur(texture, listOfNotNull(playRegion, closeRegion))
+
+    Box(Modifier.fillMaxSize()) {
+        MiniCornerButton(
+            painter = painterResource(R.drawable.close_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
+            contentDescription = stringResource(R.string.player_close),
+            edges = FullscreenChatEdges(top = true, right = true),
+            blur = closeBlur,
+            onClick = onClose,
+            modifier = Modifier.align(AbsoluteAlignment.TopRight),
+        )
+        MiniCornerButton(
+            painter = rememberPlayPausePainter(isPlaying),
+            contentDescription = "Play/Pause",
+            edges = FullscreenChatEdges(left = true, bottom = true),
+            blur = playBlur,
+            onClick = onTogglePlay,
+            modifier = Modifier.align(AbsoluteAlignment.BottomLeft),
+        )
+    }
+}
+
+@Composable
+private fun MiniCornerButton(
+    painter: androidx.compose.ui.graphics.painter.Painter,
+    contentDescription: String,
+    edges: FullscreenChatEdges,
+    onClick: () -> Unit,
+    modifier: Modifier,
+    blur: FullscreenChatBlur? = null,
+) {
+    Box(modifier.size(56.dp), contentAlignment = Alignment.Center) {
+        FullscreenChatBackdrop(opacity = 0.28f, blur = blur, edges = edges)
+        IconButton(onClick = onClick, modifier = Modifier.size(48.dp)) {
+            Icon(painter, contentDescription, Modifier.size(24.dp), tint = Color.White)
         }
     }
 }
@@ -1935,14 +2088,12 @@ internal fun MiniControlsOverlay(
 internal fun ShellChrome(mode: PlayerMode, onMinimize: () -> Unit, onClose: () -> Unit) {
     Box(Modifier.fillMaxSize()) {
         if (mode == PlayerMode.Mini) {
-            PlayerChromeButton(
+            MiniCornerButton(
                 painter = painterResource(R.drawable.close_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
                 contentDescription = stringResource(R.string.player_close),
-                size = 48.dp,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(8.dp),
-                onClick = onClose
+                edges = FullscreenChatEdges(top = true, right = true),
+                onClick = onClose,
+                modifier = Modifier.align(AbsoluteAlignment.TopRight),
             )
         } else {
             PlayerChromeButton(

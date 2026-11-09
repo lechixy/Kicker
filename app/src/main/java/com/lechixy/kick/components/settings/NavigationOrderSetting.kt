@@ -3,7 +3,8 @@ package com.lechixy.kick.components.settings
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -187,8 +188,10 @@ private fun OrderDialog(
                 Column(Modifier.fillMaxWidth().onSizeChanged { viewportHeight = it.height }.verticalScroll(scroll)) {
                     Column(Modifier.fillMaxWidth().pointerInput(rowPx) {
                         var beforeDrag = ""
-                        detectDragGesturesAfterLongPress(
-                            onDragStart = { point ->
+                        detectDragGestures(
+                            orientationLock = Orientation.Vertical,
+                            onDragStart = { down, _, _ ->
+                                val point = down.position
                                 dragged = order().getOrNull((point.y / rowPx).toInt())?.id
                                 beforeDrag = draft
                                 offset = 0f
@@ -200,11 +203,12 @@ private fun OrderDialog(
                                 dragged = null
                                 offset = 0f
                             },
-                        ) { change, amount ->
-                            change.consume()
-                            fingerY += amount.y
-                            dragBy(amount.y)
-                        }
+                            onDrag = { change, amount ->
+                                change.consume()
+                                fingerY += amount.y
+                                dragBy(amount.y)
+                            },
+                        )
                     }) {
                         rows.forEachIndexed { index, item ->
                             key(item.id) {

@@ -39,7 +39,8 @@ fun AccountFollowingSection(onChannelClick: (String) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SectionHeader("Takip edilen kanallar",
             onMore = if (state.nextCursor != null) AccountGraph.following::loadMore else null,
-            moreEnabled = !state.loading)
+            moreEnabled = !state.loading,
+            compact = true)
         if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
         state.error?.let {
             Text(it, color = MaterialTheme.colorScheme.error)

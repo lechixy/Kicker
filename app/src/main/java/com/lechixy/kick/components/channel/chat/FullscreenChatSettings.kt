@@ -12,8 +12,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -31,6 +33,7 @@ import com.lechixy.kick.components.settings.SettingFloatSlider
 import com.lechixy.kick.components.settings.SettingSection
 import com.lechixy.kick.components.settings.SettingSlider
 import com.lechixy.kick.components.settings.SettingSwitch
+import com.lechixy.kick.components.settings.SettingsExpander
 import com.lechixy.kick.data.settings.model.FullscreenChatShape
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
@@ -41,65 +44,77 @@ internal data class FullscreenChatOption(
     @StringRes val title: Int,
     @StringRes val section: Int,
     @StringRes val description: Int? = null,
-    val content: @Composable () -> Unit,
+    val content: @Composable (Boolean) -> Unit,
 )
 
 internal fun fullscreenChatOptions(
     horizontal: Boolean,
-    onEditPosition: @Composable () -> Unit,
+    onEditPosition: @Composable (Boolean) -> Unit,
 ): List<FullscreenChatOption> = buildList {
     val layout = R.string.fullscreen_chat_layout
     val appearance = R.string.fullscreen_chat_appearance
-    add(FullscreenChatOption(R.string.fullscreen_chat_mode, layout) {
+    add(FullscreenChatOption(R.string.fullscreen_chat_mode, layout) { enabled ->
         SettingDropdown(
             key = SettingsKeys.FULLSCREEN_CHAT_HORIZONTAL,
             title = stringResource(R.string.fullscreen_chat_mode),
+            icon = R.drawable.swap_vert_24dp,
+            enabled = enabled,
             options = listOf(
                 false to stringResource(R.string.fullscreen_chat_vertical),
                 true to stringResource(R.string.fullscreen_chat_horizontal),
             ),
         )
     })
-    if (horizontal) add(FullscreenChatOption(R.string.fullscreen_chat_lane_count, layout) {
+    if (horizontal) add(FullscreenChatOption(R.string.fullscreen_chat_lane_count, layout) { enabled ->
         SettingSlider(
             key = SettingsKeys.FULLSCREEN_CHAT_LANES,
             title = stringResource(R.string.fullscreen_chat_lane_count),
+            icon = R.drawable.view_agenda_24dp,
+            enabled = enabled,
             valueRange = 1f..4f,
             steps = 2,
         )
     })
-    add(FullscreenChatOption(R.string.fullscreen_chat_scale, layout, R.string.fullscreen_chat_scale_description) {
+    add(FullscreenChatOption(R.string.fullscreen_chat_scale, layout, R.string.fullscreen_chat_scale_description) { enabled ->
         val percent = rememberPercentFormat()
         SettingSlider(
             key = SettingsKeys.FULLSCREEN_CHAT_SCALE,
             title = stringResource(R.string.fullscreen_chat_scale),
             description = stringResource(R.string.fullscreen_chat_scale_description),
+            icon = R.drawable.fullscreen_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+            enabled = enabled,
             valueRange = 70f..150f,
             steps = 15,
             valueFormatter = { percent.format(it / 100.0) },
         )
     })
     add(FullscreenChatOption(R.string.fullscreen_chat_edit_position, layout, content = onEditPosition))
-    add(FullscreenChatOption(R.string.fullscreen_chat_lock_position, layout, R.string.fullscreen_chat_lock_position_description) {
+    add(FullscreenChatOption(R.string.fullscreen_chat_lock_position, layout, R.string.fullscreen_chat_lock_position_description) { enabled ->
         SettingSwitch(
             key = SettingsKeys.FULLSCREEN_CHAT_POSITION_LOCKED,
             title = stringResource(R.string.fullscreen_chat_lock_position),
             description = stringResource(R.string.fullscreen_chat_lock_position_description),
+            icon = R.drawable.lock_24dp,
+            enabled = enabled,
         )
     })
-    add(FullscreenChatOption(R.string.fullscreen_chat_font_size, appearance) {
+    add(FullscreenChatOption(R.string.fullscreen_chat_font_size, appearance) { enabled ->
         SettingSlider(
             key = rememberFullscreenChatFontSizeSetting(),
             title = stringResource(R.string.fullscreen_chat_font_size),
+            icon = R.drawable.format_size_24dp,
+            enabled = enabled,
             valueRange = 10f..24f,
             steps = 13,
             valueFormatter = { "$it sp" },
         )
     })
-    add(FullscreenChatOption(R.string.fullscreen_chat_shape, appearance) {
+    add(FullscreenChatOption(R.string.fullscreen_chat_shape, appearance) { enabled ->
         SettingDropdown(
             key = SettingsKeys.FULLSCREEN_CHAT_SHAPE,
             title = stringResource(R.string.fullscreen_chat_shape),
+            icon = R.drawable.category_24dp,
+            enabled = enabled,
             options = listOf(
                 FullscreenChatShape.Square.value to stringResource(R.string.fullscreen_chat_shape_square),
                 FullscreenChatShape.Rounded.value to stringResource(R.string.fullscreen_chat_shape_rounded),
@@ -107,23 +122,28 @@ internal fun fullscreenChatOptions(
             ),
         )
     })
-    add(FullscreenChatOption(R.string.fullscreen_chat_opacity, appearance) {
+    add(FullscreenChatOption(R.string.fullscreen_chat_opacity, appearance) { enabled ->
         val percent = rememberPercentFormat()
         SettingFloatSlider(
             key = SettingsKeys.FULLSCREEN_CHAT_OPACITY,
             title = stringResource(R.string.fullscreen_chat_opacity),
+            icon = R.drawable.opacity_24dp,
+            enabled = enabled,
             valueRange = 0.35f..0.85f,
             valueFormatter = { percent.format(it.toDouble()) },
         )
     })
-    add(FullscreenChatOption(R.string.fullscreen_chat_blur, appearance) {
-        SettingSwitch(SettingsKeys.FULLSCREEN_CHAT_BLUR, stringResource(R.string.fullscreen_chat_blur))
+    add(FullscreenChatOption(R.string.fullscreen_chat_blur, appearance) { enabled ->
+        SettingSwitch(SettingsKeys.FULLSCREEN_CHAT_BLUR, stringResource(R.string.fullscreen_chat_blur),
+            icon = R.drawable.blur_on_24dp, enabled = enabled)
     })
-    add(FullscreenChatOption(R.string.fullscreen_chat_badges, appearance, R.string.fullscreen_chat_badges_description) {
+    add(FullscreenChatOption(R.string.fullscreen_chat_badges, appearance, R.string.fullscreen_chat_badges_description) { enabled ->
         SettingSwitch(
             key = SettingsKeys.FULLSCREEN_CHAT_BADGES,
             title = stringResource(R.string.fullscreen_chat_badges),
             description = stringResource(R.string.fullscreen_chat_badges_description),
+            icon = R.drawable.local_activity_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+            enabled = enabled,
         )
     })
 }
@@ -136,14 +156,10 @@ private fun rememberPercentFormat(): NumberFormat {
 
 @Composable
 internal fun FullscreenChatSettings(horizontal: Boolean, onEditPosition: () -> Unit, onConnect: (() -> Unit)?) {
-    val groups = fullscreenChatOptions(horizontal) {
-        SettingAction(stringResource(R.string.fullscreen_chat_edit_position), onClick = onEditPosition)
-    }.groupBy { it.section }
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
-        groups.forEach { (title, options) ->
-            SettingSection(stringResource(title), itemSpacing = 10.dp) {
-                options.forEach { it.content() }
-            }
+        FullscreenChatSettingsExpander(horizontal, initiallyExpanded = true) { enabled ->
+            SettingAction(stringResource(R.string.fullscreen_chat_edit_position), onClick = onEditPosition,
+                icon = R.drawable.open_with_24dp, enabled = enabled)
         }
         if (onConnect != null) {
             SettingSection(stringResource(R.string.fullscreen_chat_connection)) {
@@ -154,11 +170,34 @@ internal fun FullscreenChatSettings(horizontal: Boolean, onEditPosition: () -> U
 }
 
 @Composable
-internal fun FullscreenChatPositionSetting() {
+internal fun FullscreenChatSettingsExpander(
+    horizontal: Boolean,
+    initiallyExpanded: Boolean = false,
+    onEditPosition: @Composable (Boolean) -> Unit,
+) {
+    val groups = fullscreenChatOptions(horizontal, onEditPosition).groupBy { it.section }
+    SettingsExpander(
+        title = stringResource(R.string.fullscreen_chat_title),
+        description = stringResource(R.string.settings_fullscreen_chat_enabled),
+        icon = R.drawable.chat_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+        toggleKey = SettingsKeys.FULLSCREEN_CHAT_ENABLED,
+        initiallyExpanded = initiallyExpanded,
+    ) { enabled ->
+        groups.forEach { (title, options) ->
+            Text(stringResource(title), style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.primary)
+            options.forEach { option -> key(option.title) { option.content(enabled) } }
+        }
+    }
+}
+
+@Composable
+internal fun FullscreenChatPositionSetting(enabled: Boolean) {
     var editing by remember { mutableStateOf(false) }
     val repository = LocalSettingsRepository.current
     val scope = rememberCoroutineScope()
-    SettingAction(stringResource(R.string.fullscreen_chat_edit_position), onClick = { editing = true })
+    SettingAction(stringResource(R.string.fullscreen_chat_edit_position), onClick = { editing = true },
+        icon = R.drawable.open_with_24dp, enabled = enabled)
     if (editing) {
         val preferences = rememberFullscreenChatPreferences()
         PredictiveDialog(onDismissRequest = { editing = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {

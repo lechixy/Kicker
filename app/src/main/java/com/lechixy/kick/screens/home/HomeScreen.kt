@@ -1,14 +1,18 @@
 package com.lechixy.kick.screens.home
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -22,6 +26,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -29,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -43,6 +49,7 @@ import com.lechixy.kick.R
 import com.lechixy.kick.components.CategoryRow
 import com.lechixy.kick.components.ContentGrid
 import com.lechixy.kick.components.ContentState
+import com.lechixy.kick.components.ContinueWatchingCard
 import com.lechixy.kick.components.ExpansionSource
 import com.lechixy.kick.components.HomeTopBar
 import com.lechixy.kick.components.LocalContentNavigation
@@ -52,8 +59,15 @@ import com.lechixy.kick.components.StreamCard
 import com.lechixy.kick.components.StreamCardSkeleton
 import com.lechixy.kick.components.cardSection
 import com.lechixy.kick.components.home.LiveTotalsButton
+import com.lechixy.kick.data.player.local.WatchHistoryEntry
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
+
+private data class ExitingHistoryCard(
+    val index: Int,
+    val entry: WatchHistoryEntry,
+    val scale: Animatable<Float, AnimationVector1D> = Animatable(1f),
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -69,6 +83,13 @@ fun HomeScreen(
     val navigation = LocalContentNavigation.current
     val state by viewModel.uiState.collectAsState()
     val history by viewModel.watchHistory.collectAsState()
+    val exitingHistory = remember { mutableStateListOf<ExitingHistoryCard>() }
+    val displayedHistory = remember(history, exitingHistory.toList()) {
+        val exitingKeys = exitingHistory.map { it.entry.key }.toSet()
+        history.filterNot { it.key in exitingKeys }.toMutableList().apply {
+            exitingHistory.sortedBy { it.index }.forEach { add(it.index.coerceAtMost(size), it.entry) }
+        }
+    }
     val sectionOrder by LocalSettingsRepository.current.get(SettingsKeys.HOME_SECTION_ORDER)
         .collectAsStateWithLifecycle(SettingsKeys.HOME_SECTION_ORDER.defaultValue)
     val sections = remember(sectionOrder) { orderedHomeSections(sectionOrder) }
@@ -129,24 +150,41 @@ fun HomeScreen(
                     sections.forEach { section ->
                         when (section) {
                             HomeSection.CONTINUE_WATCHING -> {
-                                if (history.isNotEmpty()) {
+                                if (displayedHistory.isNotEmpty()) {
                                     item(key = "continue_header", span = { GridItemSpan(maxLineSpan) }) {
                                         SectionHeader(stringResource(R.string.home_continue_watching),
-                                            leadingIcon = R.drawable.motion_play_24dp_e3e3e3_fill0_wght400_grad0_opsz24)
+                                            leadingIcon = R.drawable.motion_play_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+                                            compact = true)
                                     }
-                                    items(history.take(columns), key = { "history_${it.key}" }) { entry ->
-                                        com.lechixy.kick.components.ContinueWatchingCard(entry, enabled = !openingHistory) { source ->
-                                            scope.launch {
-                                                openingHistory = true
-                                                try {
-                                                    val recording = viewModel.resolveHistoryRecording(entry)
-                                                    if (recording != null) navigation.recording(entry.channelSlug, recording, source)
-                                                    else android.widget.Toast.makeText(context, R.string.home_recording_unavailable, android.widget.Toast.LENGTH_SHORT).show()
-                                                } catch (error: kotlinx.coroutines.CancellationException) {
-                                                    throw error
-                                                } catch (_: Exception) {
-                                                    android.widget.Toast.makeText(context, R.string.home_recording_unavailable, android.widget.Toast.LENGTH_SHORT).show()
-                                                } finally { openingHistory = false }
+                                    itemsIndexed(displayedHistory.take(columns), key = { _, entry -> "history_${entry.key}" }) { index, entry ->
+                                        val exit = exitingHistory.firstOrNull { it.entry.key == entry.key }
+                                        Box(Modifier.animateItem(fadeOutSpec = null).graphicsLayer {
+                                            val scale = exit?.scale?.value ?: 1f
+                                            scaleX = scale
+                                            scaleY = scale
+                                            alpha = scale
+                                        }) {
+                                            ContinueWatchingCard(entry, enabled = !openingHistory && exit == null, onRemove = {
+                                                val removal = ExitingHistoryCard(index, entry)
+                                                exitingHistory.add(removal)
+                                                viewModel.removeHistory(entry.key)
+                                                scope.launch {
+                                                    removal.scale.animateTo(0f, tween(220))
+                                                    exitingHistory.remove(removal)
+                                                }
+                                            }) { source ->
+                                                scope.launch {
+                                                    openingHistory = true
+                                                    try {
+                                                        val recording = viewModel.resolveHistoryRecording(entry)
+                                                        if (recording != null) navigation.recording(entry.channelSlug, recording, source)
+                                                        else android.widget.Toast.makeText(context, R.string.home_recording_unavailable, android.widget.Toast.LENGTH_SHORT).show()
+                                                    } catch (error: kotlinx.coroutines.CancellationException) {
+                                                        throw error
+                                                    } catch (_: Exception) {
+                                                        android.widget.Toast.makeText(context, R.string.home_recording_unavailable, android.widget.Toast.LENGTH_SHORT).show()
+                                                    } finally { openingHistory = false }
+                                                }
                                             }
                                         }
                                     }
@@ -171,7 +209,7 @@ fun HomeScreen(
                                 }
                             }
                             HomeSection.CATEGORIES -> {
-                                item(key = "categories_header", span = { GridItemSpan(maxLineSpan) }) { SectionHeader(stringResource(R.string.section_categories), onMore = { onCategoryClick("") }) }
+                                item(key = "categories_header", span = { GridItemSpan(maxLineSpan) }) { SectionHeader(stringResource(R.string.section_categories), onMore = { onCategoryClick("") }, compact = true) }
                                 item(key = "categories_row", span = { GridItemSpan(maxLineSpan) }) { CategoryRow(state.categories, loading, onCategoryClick) }
                                 state.categoriesError?.let { message -> item(key = "categories_error", span = { GridItemSpan(maxLineSpan) }) { ContentState(message, viewModel::loadStreams) } }
                             }

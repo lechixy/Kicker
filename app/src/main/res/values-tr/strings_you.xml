@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="you_title">Sen</string>
     <string name="you_downloads">İndirilenler</string>
     <string name="you_downloads_loading">İndirilenler yükleniyor…</string>
     <string name="you_downloads_failed">İndirilenler yüklenemedi.</string>

@@ -9,6 +9,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 
 import com.lechixy.kick.data.player.local.PlaybackProgressStore
+import com.lechixy.kick.data.player.local.WatchHistoryStore
 import com.lechixy.kick.service.EXTRA_RECORDING_ID
 
 /** Runs on the player's looper, including background playback and notification controls. */
@@ -29,7 +30,8 @@ internal class PlaybackProgressTracker(private val player: Player) : Player.List
 
     override fun onEvents(player: Player, events: Player.Events) {
         if (events.containsAny(Player.EVENT_IS_PLAYING_CHANGED, Player.EVENT_PLAY_WHEN_READY_CHANGED,
-                Player.EVENT_PLAYBACK_STATE_CHANGED, Player.EVENT_POSITION_DISCONTINUITY)) saveCurrent()
+                Player.EVENT_PLAYBACK_STATE_CHANGED, Player.EVENT_POSITION_DISCONTINUITY,
+                Player.EVENT_MEDIA_ITEM_TRANSITION)) saveCurrent()
     }
 
     override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
@@ -43,7 +45,7 @@ internal class PlaybackProgressTracker(private val player: Player) : Player.List
             if (watchedCurrent && oldItem.mediaId == lastMediaId) historyEntry(oldItem)?.let {
                 val position = if (it.livestreamId == null) oldPosition.positionMs
                     else livePositionOffsetMs?.plus(oldPosition.positionMs)
-                if (position != null) com.lechixy.kick.data.player.local.WatchHistoryStore.save(
+                if (position != null) WatchHistoryStore.save(
                     it, position, if (it.livestreamId == null) duration else 0)
             }
         }
@@ -55,12 +57,15 @@ internal class PlaybackProgressTracker(private val player: Player) : Player.List
     private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
 
     private fun saveCurrent() {
-        val item = player.currentMediaItem ?: return
-        if (lastMediaId != item.mediaId) {
-            lastMediaId = item.mediaId
+        val item = player.currentMediaItem
+        val entry = item?.let(::historyEntry)
+        if (lastMediaId != item?.mediaId) {
+            lastMediaId = item?.mediaId
+            WatchHistoryStore.setActivePlayback(entry?.key)
             watchedCurrent = false
             livePositionOffsetMs = null
         }
+        if (item == null) return
         if (player.isPlaying) watchedCurrent = true
         if (player.playbackState == Player.STATE_IDLE || !watchedCurrent) return
         val duration = player.duration.takeIf { it > 0 && it != C.TIME_UNSET }
@@ -68,7 +73,7 @@ internal class PlaybackProgressTracker(private val player: Player) : Player.List
         item.mediaMetadata.extras?.getString(EXTRA_RECORDING_ID)?.let {
             PlaybackProgressStore.save(it, player.currentPosition, duration)
         }
-        val entry = historyEntry(item) ?: return
+        if (entry == null) return
         val position = if (entry.livestreamId != null) {
             val timeline = player.currentTimeline
             if (player.currentMediaItemIndex !in 0 until timeline.windowCount) return
@@ -79,7 +84,7 @@ internal class PlaybackProgressTracker(private val player: Player) : Player.List
             livePositionOffsetMs = window.windowStartTimeMs - start
             broadcastPositionMs(window.windowStartTimeMs, player.currentPosition, start) ?: return
         } else player.currentPosition
-        com.lechixy.kick.data.player.local.WatchHistoryStore.save(entry, position,
+        WatchHistoryStore.save(entry, position,
             if (entry.livestreamId != null) 0 else duration)
     }
 
@@ -90,6 +95,7 @@ internal class PlaybackProgressTracker(private val player: Player) : Player.List
 
     fun close() {
         saveCurrent()
+        WatchHistoryStore.setActivePlayback(null)
         handler.removeCallbacks(tick)
         player.removeListener(this)
     }

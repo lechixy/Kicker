@@ -45,6 +45,8 @@ class HomeViewModel @Inject constructor(
 
     val watchHistory = com.lechixy.kick.data.player.local.WatchHistoryStore.entries
 
+    fun removeHistory(key: String) = com.lechixy.kick.data.player.local.WatchHistoryStore.remove(key)
+
     suspend fun resolveHistoryRecording(entry: com.lechixy.kick.data.player.local.WatchHistoryEntry): com.lechixy.kick.data.player.model.RecordedPlayback? {
         val recording = entry.recording ?: run {
             entry.vodId?.takeIf { it.isNotBlank() }?.let {

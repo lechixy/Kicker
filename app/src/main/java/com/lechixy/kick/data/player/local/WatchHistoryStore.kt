@@ -28,6 +28,8 @@ data class WatchHistoryEntry(
 object WatchHistoryStore {
     private val json = Json { ignoreUnknownKeys = true }
     private var preferences: SharedPreferences? = null
+    private var activePlaybackKey: String? = null
+    private var suppressActivePlayback = false
     private val mutableEntries = MutableStateFlow<List<WatchHistoryEntry>>(emptyList())
     val entries = mutableEntries.asStateFlow()
 
@@ -44,11 +46,29 @@ object WatchHistoryStore {
     @Synchronized
     fun save(entry: WatchHistoryEntry, positionMs: Long, durationMs: Long) {
         if (entry.channelSlug.isBlank() || positionMs <= 0) return
+        if (suppressActivePlayback && activePlaybackKey == entry.key) return
         val current = mutableEntries.value.firstOrNull()
         if (current?.key == entry.key && current.positionMs == positionMs && current.durationMs == durationMs.coerceAtLeast(0)) return
         val updated = entry.copy(positionMs = positionMs, durationMs = durationMs.coerceAtLeast(0),
             watchedAt = System.currentTimeMillis())
-        val entries = mergeWatchHistory(mutableEntries.value, updated)
+        persist(mergeWatchHistory(mutableEntries.value, updated))
+    }
+
+    @Synchronized
+    internal fun setActivePlayback(key: String?) {
+        if (activePlaybackKey == key) return
+        activePlaybackKey = key
+        suppressActivePlayback = false
+    }
+
+    @Synchronized
+    internal fun remove(key: String) {
+        if (activePlaybackKey == key) suppressActivePlayback = true
+        val remaining = mutableEntries.value.filterNot { it.key == key }
+        if (remaining.size != mutableEntries.value.size) persist(remaining)
+    }
+
+    private fun persist(entries: List<WatchHistoryEntry>) {
         mutableEntries.value = entries
         preferences?.edit()?.putString("entries", json.encodeToString(entries))?.apply()
     }

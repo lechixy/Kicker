@@ -10,6 +10,7 @@
     <string name="navigation_expand">Expand navigation</string>
     <string name="navigation_collapse">Collapse navigation</string>
     <string name="home_continue_watching">Continue watching</string>
+    <string name="home_remove_history">Remove</string>
     <string name="home_last_position">Last watched: %1$s</string>
     <string name="home_recording_unavailable">The recording is not available yet, try again later</string>
 </resources>

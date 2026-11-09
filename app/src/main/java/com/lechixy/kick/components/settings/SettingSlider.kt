@@ -35,16 +35,18 @@ import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 @Composable
 fun SettingSlider(key: SettingKey<Int>, title: String, valueRange: ClosedFloatingPointRange<Float>,
     modifier: Modifier = Modifier, steps: Int = 0, description: String? = null, icon: Int? = null,
+    enabled: Boolean = true,
     valueFormatter: (Int) -> String = { it.toString() }) {
     NumberSettingSlider(key, title, { it.toFloat() }, { it.roundToInt() }, valueRange,
-        modifier, steps, description, icon, valueFormatter)
+        modifier, steps, description, icon, enabled, valueFormatter)
 }
 
 @Composable
 fun SettingFloatSlider(key: SettingKey<Float>, title: String, valueRange: ClosedFloatingPointRange<Float>,
     modifier: Modifier = Modifier, steps: Int = 0, description: String? = null, icon: Int? = null,
+    enabled: Boolean = true,
     valueFormatter: (Float) -> String = { it.toString() }) {
-    NumberSettingSlider(key, title, { it }, { it }, valueRange, modifier, steps, description, icon, valueFormatter)
+    NumberSettingSlider(key, title, { it }, { it }, valueRange, modifier, steps, description, icon, enabled, valueFormatter)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -59,11 +61,13 @@ private fun <T> NumberSettingSlider(
     steps: Int = 0,
     description: String? = null,
     icon: Int? = null,
+    enabled: Boolean,
     valueFormatter: (T) -> String = { it.toString() }
 ) {
     val repository = LocalSettingsRepository.current
     val coroutineScope = rememberCoroutineScope()
     val persistentValue by repository.get(key).collectAsStateWithLifecycle(initialValue = key.defaultValue)
+    val contentAlpha = if (enabled) 1f else 0.38f
 
     var sliderPosition by remember {
         mutableFloatStateOf(toFloat(persistentValue).coerceIn(valueRange.start, valueRange.endInclusive))
@@ -76,10 +80,10 @@ private fun <T> NumberSettingSlider(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(8.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        color = MaterialTheme.colorScheme.surfaceContainerLow.copy(alpha = if (enabled) 1f else 0.5f),
         border = BorderStroke(
             1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f * contentAlpha)
         )
     ) {
         Column(
@@ -92,18 +96,18 @@ private fun <T> NumberSettingSlider(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (icon != null) SettingLeadingIcon(icon)
+                if (icon != null) SettingLeadingIcon(icon, enabled)
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = title,
                         style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = contentAlpha)
                     )
                     if (description != null) {
                         Text(
                             text = description,
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = contentAlpha)
                         )
                     }
                 }
@@ -111,7 +115,7 @@ private fun <T> NumberSettingSlider(
                     text = valueFormatter(fromFloat(sliderPosition)),
                     modifier = Modifier.padding(start = 12.dp),
                     style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = contentAlpha)
                 )
             }
 
@@ -128,10 +132,11 @@ private fun <T> NumberSettingSlider(
             sliderState.value = coercedPosition
             Slider(
                 state = sliderState,
+                enabled = enabled,
                 onValueChange = { sliderPosition = it.coerceIn(valueRange.start, valueRange.endInclusive) },
                 onValueChangeFinished = {
                     val finalValue = fromFloat(sliderPosition)
-                    if (finalValue != persistentValue) {
+                    if (enabled && finalValue != persistentValue) {
                         coroutineScope.launch {
                             repository.set(key, finalValue)
                         }

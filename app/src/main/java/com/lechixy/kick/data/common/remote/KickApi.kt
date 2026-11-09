@@ -23,6 +23,7 @@ import com.lechixy.kick.data.common.model.LiveTotalsResponse
 import com.lechixy.kick.data.common.model.LivestreamResponse
 import com.lechixy.kick.data.common.model.RecommendedLivestreamResponse
 import com.lechixy.kick.data.player.model.CurrentViewersResponse
+import com.lechixy.kick.data.player.model.LivePlaybackDetails
 import com.lechixy.kick.data.player.model.PlaybackRequest
 import com.lechixy.kick.data.player.model.PlaybackResponse
 
@@ -85,6 +86,9 @@ interface KickApi {
         @Path("id") id: String,
         @Body request: PlaybackRequest
     ): PlaybackResponse
+
+    @GET("api/v1/channels/{slug}/livestream")
+    suspend fun getLivePlaybackDetails(@Path("slug") slug: String): LivePlaybackDetails
 
     @GET("https://kick.com/api/v2/clips/{id}")
     suspend fun getClip(@Path("id") id: String): ClipResponse

@@ -98,7 +98,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -141,6 +144,7 @@ import com.lechixy.kick.data.channel.model.ChannelEvent
 import com.lechixy.kick.data.channel.model.ChannelVideo
 import com.lechixy.kick.data.channel.model.VideoThumbnail
 import com.lechixy.kick.data.channel.model.getBannerUrl
+import com.lechixy.kick.data.chat.model.ChatTimestampMode
 import com.lechixy.kick.data.player.model.RecordedPlayback
 import com.lechixy.kick.data.player.model.toRecording
 import com.lechixy.kick.data.settings.model.SettingsKeys
@@ -524,8 +528,16 @@ fun ChannelScreen(
                                         Tabs()
                                         ChannelTabPager(state = pagerState, tabs = visibleTabs,
                                             modifier = Modifier.fillMaxWidth().weight(1f)) { pageTab ->
-                                            if (channel == null || state.isLoading) {
-                                                ChannelTabSkeleton(pageTab, isControlsVisible) { target ->
+                                            if (pageTab == ChannelTab.CHAT && !hasSideChat && isChatVisible &&
+                                                (channel == null || state.isLoading)
+                                            ) {
+                                                ChannelChatSkeleton(
+                                                    canHideChat = playerHost != null,
+                                                    isReplay = playerHost?.recording != null,
+                                                    isLive = hasPlayback
+                                                )
+                                            } else if (pageTab != ChannelTab.CHAT && (channel == null || state.isLoading)) {
+                                                ChannelTabSkeleton(pageTab) { target ->
                                                     scope.launch { pagerState.animateScrollToPage(visibleTabs.indexOf(target)) }
                                                 }
                                             } else if (pageTab == ChannelTab.CHAT && !hasSideChat) {
@@ -534,7 +546,7 @@ fun ChannelScreen(
                                                     Modifier.scrollable(rememberScrollableState { 0f }, Orientation.Vertical)
                                                 } else Modifier
                                                 Box(Modifier.fillMaxSize().then(chatScroll)) {
-                                                    if (isChatVisible) {
+                                                    if (isChatVisible && channel != null) {
                                                         sharedChat(channel, playerHost?.let { host ->
                                                             { host.updateChatVisibility(visible = false) }
                                                         }, Modifier.fillMaxSize(), true)
@@ -553,7 +565,7 @@ fun ChannelScreen(
                                                         }
                                                     }
                                                 }
-                                            } else {
+                                            } else if (channel != null) {
                                                 LazyColumn(state = tabScrollStates.getValue(pageTab), modifier = Modifier.fillMaxSize()) {
                                                     item(key = "channel_content") {
                                                         ChannelTabContent(
@@ -609,7 +621,12 @@ fun ChannelScreen(
                                         }
                                 ) {
                                     if (channel == null || state.isLoading) {
-                                        ChannelChatSkeleton(configuration.smallestScreenWidthDp >= 600 || isControlsVisible)
+                                        ChannelChatSkeleton(
+                                            canHideChat = true,
+                                            isReplay = playerHost?.recording != null,
+                                            isLive = channel?.livestream != null ||
+                                                (channel == null && playerHost?.openingChannelIsLive != false)
+                                        )
                                     } else CompositionLocalProvider(LocalChatContentActive provides sideChatActive) {
                                         sharedChat(
                                             channel,
@@ -745,30 +762,105 @@ private fun ChannelHeaderSkeleton(hasPlayback: Boolean) {
 }
 
 @Composable
-private fun ChannelChatSkeleton(showHeader: Boolean) {
+private fun ChannelChatSkeleton(canHideChat: Boolean, isReplay: Boolean, isLive: Boolean) {
+    val settings = LocalSettingsRepository.current
+    val fontSize by settings.get(SettingsKeys.CHAT_FONT_SIZE)
+        .collectAsStateWithLifecycle(initialValue = SettingsKeys.CHAT_FONT_SIZE.defaultValue)
+    val spacing by settings.get(SettingsKeys.CHAT_MESSAGE_SPACING)
+        .collectAsStateWithLifecycle(initialValue = SettingsKeys.CHAT_MESSAGE_SPACING.defaultValue)
+    val timestamps by settings.get(SettingsKeys.CHAT_TIMESTAMPS)
+        .collectAsStateWithLifecycle(initialValue = SettingsKeys.CHAT_TIMESTAMPS.defaultValue)
+    val showTimestamps = ChatTimestampMode.fromValue(timestamps).shows(isReplay)
+    val lineHeight = with(LocalDensity.current) { (fontSize + 5).sp.toDp() }
+    val barHeight = with(LocalDensity.current) { (fontSize - 4).sp.toDp() }
+
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        if (showHeader) {
-            Box(Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 12.dp), contentAlignment = Alignment.CenterStart) {
-                SkeletonBlock(Modifier.width(72.dp).height(16.dp))
-            }
-        }
-        LazyColumn(
-            Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+        Row(
+            Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            items(12) { index ->
-                SkeletonBlock(Modifier.fillMaxWidth(if (index % 3 == 0) 0.78f else 0.52f).height(14.dp))
+            if (canHideChat) SkeletonBlock(Modifier.size(20.dp))
+            SkeletonBlock(Modifier.width(42.dp).height(12.dp))
+            Spacer(Modifier.weight(1f))
+            SkeletonBlock(Modifier.size(8.dp), CircleShape)
+            SkeletonBlock(Modifier.width(32.dp).height(10.dp))
+            repeat(2) {
+                Box(Modifier.size(32.dp), contentAlignment = Alignment.Center) {
+                    SkeletonBlock(Modifier.size(20.dp))
+                }
             }
         }
-        SkeletonBlock(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp).height(40.dp))
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            val rowCount = (maxHeight / (lineHeight + spacing.dp)).toInt() + 1
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                reverseLayout = true,
+                userScrollEnabled = false,
+                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(spacing.dp),
+            ) {
+                items(rowCount) { index ->
+                    ChatMessageSkeleton(index, lineHeight, barHeight, showTimestamps)
+                }
+            }
+        }
+        if (!isReplay) {
+            val compact = LocalConfiguration.current.smallestScreenWidthDp < 600 && isLive
+            val session by com.lechixy.kick.data.account.AccountGraph.auth.session.collectAsStateWithLifecycle()
+            Box(
+                Modifier.fillMaxWidth().padding(horizontal = 10.dp).height(if (compact) 48.dp else 64.dp),
+                contentAlignment = if (compact) Alignment.CenterEnd else Alignment.CenterStart,
+            ) {
+                when {
+                    compact -> SkeletonBlock(Modifier.width(116.dp).height(18.dp))
+                    !session.signedIn -> SkeletonBlock(Modifier.width(96.dp).height(40.dp), CircleShape)
+                    else -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SkeletonBlock(Modifier.size(24.dp), CircleShape)
+                        SkeletonBlock(Modifier.weight(1f).height(40.dp), RoundedCornerShape(12.dp))
+                        SkeletonBlock(Modifier.size(24.dp), CircleShape)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private val chatSkeletonMessageWidths = listOf(0.28f, 0.7f, 0.46f, 1f, 0.56f, 0.18f, 0.84f, 0.36f)
+
+@Composable
+private fun ChatMessageSkeleton(
+    index: Int,
+    lineHeight: Dp,
+    barHeight: Dp,
+    showTimestamps: Boolean,
+) {
+    val pattern = index % chatSkeletonMessageWidths.size
+    Column {
+        Row(
+            Modifier.fillMaxWidth().height(lineHeight),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            if (showTimestamps) SkeletonBlock(Modifier.width(barHeight * 3).height(barHeight))
+            if (index % 3 == 0) SkeletonBlock(Modifier.size(barHeight * 1.2f))
+            SkeletonBlock(Modifier.width(barHeight * (4 + index % 5)).height(barHeight))
+            Box(Modifier.weight(1f)) {
+                SkeletonBlock(Modifier.fillMaxWidth(chatSkeletonMessageWidths[pattern]).height(barHeight))
+            }
+        }
+        if (pattern == 3) {
+            Box(Modifier.fillMaxWidth().height(lineHeight), contentAlignment = Alignment.CenterStart) {
+                SkeletonBlock(Modifier.fillMaxWidth(0.4f).height(barHeight))
+            }
+        }
     }
 }
 
 @Composable
-private fun ChannelTabSkeleton(tab: ChannelTab, showChatHeader: Boolean, onNavigate: (ChannelTab) -> Unit) {
+private fun ChannelTabSkeleton(tab: ChannelTab, onNavigate: (ChannelTab) -> Unit) {
     when (tab) {
-        ChannelTab.CHAT -> ChannelChatSkeleton(showChatHeader)
+        ChannelTab.CHAT -> Unit
         ChannelTab.HOME -> LazyColumn(Modifier.fillMaxSize()) {
             item {
                 CardSection<Unit>(stringResource(R.string.recent_broadcasts), emptyList(), Modifier.padding(16.dp),
@@ -777,7 +869,7 @@ private fun ChannelTabSkeleton(tab: ChannelTab, showChatHeader: Boolean, onNavig
             item {
                 Column(Modifier.padding(16.dp)) {
                     com.lechixy.kick.components.SectionHeader(stringResource(R.string.channel_popular_clips),
-                        onMore = { onNavigate(ChannelTab.CLIPS) })
+                        onMore = { onNavigate(ChannelTab.CLIPS) }, compact = true)
                     CardSection<Unit>(null, emptyList(), previewRows = 1, loading = true) { }
                 }
             }
@@ -1166,12 +1258,23 @@ private fun ChannelTabsRow(
             Tab(
                 selected = selectedTab == tab,
                 onClick = { onTabSelected(tab) },
-                text = {
-                    Text(
-                        text = stringResource(tab.label),
-                        fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal
-                    )
-                }
+                icon = if (tab == ChannelTab.CHAT) {
+                    {
+                        Icon(
+                            painter = painterResource(R.drawable.chat_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
+                            contentDescription = stringResource(tab.label),
+                            modifier = Modifier.size(24.dp),
+                        )
+                    }
+                } else null,
+                text = if (tab != ChannelTab.CHAT) {
+                    {
+                        Text(
+                            text = stringResource(tab.label),
+                            fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal
+                        )
+                    }
+                } else null
             )
         }
     }
@@ -1214,7 +1317,7 @@ private fun ChannelTabContent(
 
             Column(Modifier.padding(16.dp)) {
                 com.lechixy.kick.components.SectionHeader(stringResource(R.string.channel_popular_clips),
-                    onMore = { onNavigateToTab(ChannelTab.CLIPS) })
+                    onMore = { onNavigateToTab(ChannelTab.CLIPS) }, compact = true)
                 when {
                     popularClips.failed -> ContentState(stringResource(R.string.channel_section_error), onRetryHome)
                     popularClips.loaded && popularClips.value.orEmpty().isEmpty() -> ContentState(stringResource(R.string.media_no_clips))
@@ -1333,7 +1436,7 @@ private fun ChannelCategoriesSection(
     val navigation = LocalContentNavigation.current
     Column(Modifier.padding(16.dp)) {
         if (preview) com.lechixy.kick.components.SectionHeader(
-            stringResource(R.string.channel_recent_categories), onMore)
+            stringResource(R.string.channel_recent_categories), onMore, compact = true)
         when {
             state.failed -> ContentState(stringResource(R.string.channel_section_error), onRetry)
             state.loaded && state.value.orEmpty().isEmpty() -> ContentState(stringResource(R.string.channel_no_categories))

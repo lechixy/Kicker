@@ -25,6 +25,15 @@ data class PlaybackResponse(
 )
 @Serializable
 data class PlaybackUrls(val vod: String = "")
+
+@Serializable
+data class LivePlaybackDetails(val data: LivePlaybackData = LivePlaybackData())
+
+@Serializable
+data class LivePlaybackData(val livestream: LivePlaybackIdentity? = null)
+
+@Serializable
+data class LivePlaybackIdentity(val id: String)
 @Serializable
 data class PlaybackVideoSession(
     @SerialName("video_duration") val durationSeconds: Long = 0,

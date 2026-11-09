@@ -37,8 +37,8 @@ fun BrowseScreen(viewModel: BrowseViewModel = viewModel(),
             PullToRefreshBox(state.loading, viewModel::refresh, Modifier.fillMaxSize().padding(padding)) {
                 LazyVerticalGrid(GridCells.Adaptive(150.dp), state = grid, modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader(stringResource(R.string.section_categories)) }
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader(stringResource(R.string.section_categories), compact = true) }
                     if (state.loading) items(12) { CategoryCard(BrowseCategory(name = "", slug = ""), {}, loading = true) }
                     else items(state.categories, key = { it.slug }) { CategoryCard(it, { navigation.search(it.name) }) }
                     state.error?.let { message -> item(span = { GridItemSpan(maxLineSpan) }) {

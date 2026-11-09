@@ -148,7 +148,10 @@ class SettingsBackupManager @Inject constructor(
     }
 
     private fun exportToJson(current: Preferences): String {
-        val values = exportableSettings.associate { it.key.name to it.encode(current) }
+        val values = exportableSettings
+            // An unset mini player width should use the destination device's default.
+            .filter { it.key != SettingsKeys.MINI_PLAYER_WIDTH_DP.key || SettingsKeys.MINI_PLAYER_WIDTH_DP.key in current }
+            .associate { it.key.name to it.encode(current) }
         return backupJson.encodeToString(
             JsonObject(mapOf("version" to JsonPrimitive(FORMAT_VERSION), "settings" to JsonObject(values)))
         )

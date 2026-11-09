@@ -55,7 +55,8 @@ import com.lechixy.kick.R
 fun contentColumns(width: Dp): Int = if (width < 600.dp) 2 else (width / 280.dp).toInt().coerceAtLeast(2)
 
 @Composable
-fun SectionHeader(title: String, onMore: (() -> Unit)? = null, moreEnabled: Boolean = true, leadingIcon: Int? = null, modifier: Modifier = Modifier) {
+fun SectionHeader(title: String, onMore: (() -> Unit)? = null, moreEnabled: Boolean = true,
+    leadingIcon: Int? = null, modifier: Modifier = Modifier, compact: Boolean = false) {
     val interactions = remember { MutableInteractionSource() }
     val hovered by interactions.collectIsHoveredAsState()
     val focused by interactions.collectIsFocusedAsState()
@@ -79,7 +80,7 @@ fun SectionHeader(title: String, onMore: (() -> Unit)? = null, moreEnabled: Bool
         if (highlighted) primary else MaterialTheme.colorScheme.onSurface,
         label = "section header text")
     val moreLabel = stringResource(R.string.home_more)
-    Row(modifier = modifier.wrapContentWidth(Alignment.Start).heightIn(min = 48.dp)
+    Row(modifier = modifier.wrapContentWidth(Alignment.Start).heightIn(min = if (compact) 36.dp else 48.dp)
         .clip(MaterialTheme.shapes.medium)
         .background(background)
         .then(if (onMore != null) Modifier.clickable(
@@ -87,7 +88,7 @@ fun SectionHeader(title: String, onMore: (() -> Unit)? = null, moreEnabled: Bool
             indication = ripple(), role = Role.Button, onClickLabel = moreLabel, onClick = onMore
         ) else Modifier)
         .semantics { heading() }
-        .padding(horizontal = 8.dp, vertical = 8.dp),
+        .padding(horizontal = 8.dp, vertical = if (compact) 4.dp else 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         if (leadingIcon != null) Icon(painterResource(leadingIcon), null, Modifier.size(24.dp), tint = primary)
@@ -117,7 +118,7 @@ fun ContentGrid(
         LazyVerticalGrid(columns = GridCells.Fixed(columns), state = state,
             modifier = Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)) { content(columns) }
+            verticalArrangement = Arrangement.spacedBy(8.dp)) { content(columns) }
     }
 }
 
@@ -128,7 +129,7 @@ fun <T> LazyGridScope.cardSection(
     skeleton: @Composable () -> Unit,
     card: @Composable (T) -> Unit
 ) {
-    item(key = "${key}_header", span = { GridItemSpan(maxLineSpan) }) { SectionHeader(title, onMore) }
+    item(key = "${key}_header", span = { GridItemSpan(maxLineSpan) }) { SectionHeader(title, onMore, compact = true) }
     val rowColumns = (columns / itemSpan.coerceIn(1, columns)).coerceAtLeast(1)
     val count = if (previewRows != null) rowColumns * previewRows else data.size.takeIf { it > 0 } ?: (rowColumns * 3)
     if (loading) items(count, key = { "${key}_skeleton_$it" }, span = { GridItemSpan(itemSpan) }) { skeleton() }
@@ -146,13 +147,15 @@ fun <T> CardSection(title: String?, data: List<T>, modifier: Modifier = Modifier
         val columns = contentColumns(maxWidth)
         val count = if (loading) columns * (previewRows ?: 2) else
             data.size.coerceAtMost(previewRows?.times(columns) ?: Int.MAX_VALUE)
-        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            if (title != null) SectionHeader(title, onMore)
-            (0 until count).chunked(columns).forEach { indices ->
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    repeat(columns) { column ->
-                        Box(Modifier.weight(1f)) {
-                            indices.getOrNull(column)?.let { if (loading) skeleton() else card(data[it]) }
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (title != null) SectionHeader(title, onMore, compact = true)
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                (0 until count).chunked(columns).forEach { indices ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        repeat(columns) { column ->
+                            Box(Modifier.weight(1f)) {
+                                indices.getOrNull(column)?.let { if (loading) skeleton() else card(data[it]) }
+                            }
                         }
                     }
                 }

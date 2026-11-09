@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="you_title" translatable="false">You</string>
+    <string name="you_title">You</string>
     <string name="you_downloads">Downloads</string>
     <string name="you_downloads_loading">Loading downloads…</string>
     <string name="you_downloads_failed">Could not load downloads.</string>

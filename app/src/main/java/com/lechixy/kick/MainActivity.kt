@@ -1,6 +1,5 @@
 package com.lechixy.kick
 
-import android.animation.ValueAnimator
 import android.app.PictureInPictureUiState
 import android.content.Context
 import android.content.Intent
@@ -55,6 +54,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -62,6 +62,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.Layout
@@ -226,10 +230,6 @@ class MainActivity : ComponentActivity() {
                 }.collectAsStateWithLifecycle(initialValue = null)
                 val theme = themeSettings?.first ?: SettingsKeys.THEME.defaultValue
                 val dynamicColor = themeSettings?.second ?: SettingsKeys.DYNAMIC_COLOR.defaultValue
-                var launchSplashVisible by rememberSaveable {
-                    mutableStateOf(savedInstanceState == null && ValueAnimator.areAnimatorsEnabled())
-                }
-
                 val themeEnum = when (theme) {
                     "system" -> Theme.SYSTEM
                     "light" -> Theme.LIGHT
@@ -241,15 +241,8 @@ class MainActivity : ComponentActivity() {
                 KickTheme(
                     theme = themeEnum,
                     dynamicColor = dynamicColor,
-                    launchSplashVisible = launchSplashVisible
+                    launchSplashVisible = !nativeSplashDismissed
                 ) {
-                    // KickSplash
-//                    LaunchSplashHost(
-//                        visible = launchSplashVisible,
-//                        appReady = themeSettings != null,
-//                        playAnimation = nativeSplashDismissed,
-//                        onFinished = { launchSplashVisible = false }
-//                    ) { KickApp() }
                     SettingsBackupHost(settingsBackupManager) { restorePending ->
                         KickApp(restorePending)
                     }
@@ -347,6 +340,24 @@ fun KickApp(restorePending: Boolean = false) {
     val pipActive = pipActivity?.inPipMode == true
     val enteringPip = pipActivity?.enteringPip == true
     val isInPipMode = pipActive || enteringPip
+    val winterSnow by settingsRepository.get(SettingsKeys.WINTER_SNOW)
+        .collectAsStateWithLifecycle(SettingsKeys.WINTER_SNOW.defaultValue)
+    val showSnow = winterSnow && !isInPipMode && playerHost.mode != PlayerMode.Fullscreen && chatClipId == null
+    val snowFollowsScroll by settingsRepository.get(SettingsKeys.WINTER_SNOW_SCROLL)
+        .collectAsStateWithLifecycle(SettingsKeys.WINTER_SNOW_SCROLL.defaultValue)
+    val snowScrollOffset = remember { mutableDoubleStateOf(0.0) }
+    val snowScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (consumed.y != 0f) snowScrollOffset.doubleValue += consumed.y
+                return Offset.Zero
+            }
+        }
+    }
+    var snowPlayerBounds by remember { mutableStateOf<androidx.compose.ui.geometry.Rect?>(null) }
+    val updateSnowPlayerBounds: (androidx.compose.ui.geometry.Rect?) -> Unit = remember {
+        { snowPlayerBounds = it }
+    }
 
     val openChannel: (String, ExpansionSource?) -> Unit =
         { slug, source -> playerHost.open(slug, source) }
@@ -403,7 +414,8 @@ fun KickApp(restorePending: Boolean = false) {
                 }
             )
         ) {
-            Box(Modifier.fillMaxSize()) {
+            val trackSnowScroll = showSnow && snowFollowsScroll && !playerHost.isChannelVisible
+            Box(Modifier.fillMaxSize().then(if (trackSnowScroll) Modifier.nestedScroll(snowScrollConnection) else Modifier)) {
                 KickNavScaffold(
                     hidden = isScaffoldHidden,
                     navigationProgress = { playerHost.navigationOpenProgress.value },
@@ -595,6 +607,7 @@ fun KickApp(restorePending: Boolean = false) {
 
                         PlayerHost(
                             host = playerHost,
+                            onVideoBoundsChanged = updateSnowPlayerBounds.takeIf { showSnow },
                             navigationRailAvailable = !useBottomBar,
                             isInPipMode = pipActive,
                             enteringPip = enteringPip,
@@ -614,6 +627,14 @@ fun KickApp(restorePending: Boolean = false) {
                         )
 
                     }
+                }
+                if (winterSnow) {
+                    com.lechixy.kick.components.WinterSnowfall(
+                        visible = showSnow,
+                        playerBounds = { snowPlayerBounds },
+                        scrollOffset = { snowScrollOffset.doubleValue },
+                        modifier = Modifier.matchParentSize(),
+                    )
                 }
                 if (!isInPipMode) {
                     com.lechixy.kick.components.InAppNotificationHost(

@@ -177,16 +177,22 @@ internal fun rememberLegacyFullscreenChatFrame(
 internal fun BoxScope.FullscreenChatBackdrop(
     opacity: Float,
     blur: FullscreenChatBlur?,
+    edges: FullscreenChatEdges? = null,
 ) {
     val dock = LocalFullscreenChatDock.current
     val shape = LocalFullscreenChatShape.current
-    if (blur == null && dock?.edges?.isDocked != true) {
+    if (blur == null && edges == null && dock?.edges?.isDocked != true) {
         Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = opacity), shape.backgroundShape()))
         return
     }
     var anchor by remember { mutableStateOf<Rect?>(null) }
     val region = anchor?.takeUnless { it.isEmpty }?.let {
-        (dock?.extend(it) ?: FullscreenChatBackdropRegion(it)).copy(shape = shape)
+        val bounds = when {
+            edges != null -> FullscreenChatBackdropRegion(it, edges)
+            dock != null -> dock.extend(it)
+            else -> FullscreenChatBackdropRegion(it)
+        }
+        bounds.copy(shape = shape)
     }
     val onBoundsChanged = blur?.onBoundsChanged
     DisposableEffect(onBoundsChanged) {
@@ -242,40 +248,50 @@ internal fun BoxScope.FullscreenChatBackdrop(
 }
 
 @Composable
-internal fun FullscreenChatVideoBlur(texture: TextureView?, region: FullscreenChatBackdropRegion?, opacity: () -> Float = { 1f }) {
-    if (Build.VERSION.SDK_INT < 31 || texture == null || region == null || region.bounds.isEmpty) return
+internal fun VideoBackdropBlur(
+    texture: TextureView?,
+    regions: List<FullscreenChatBackdropRegion>,
+    opacity: () -> Float = { 1f },
+) {
+    if (Build.VERSION.SDK_INT < 31 || texture == null || regions.isEmpty()) return
     val radius = with(LocalDensity.current) { 15.dp.toPx() }
     val maxFeather = with(LocalDensity.current) { 28.dp.toPx() }
     val roundedRadius = with(LocalDensity.current) { 8.dp.toPx() }
-    val shader = remember(texture) { if (Build.VERSION.SDK_INT >= 33) ProgressiveBlurShader() else null }
-    val maskedBlur = remember(texture) { if (Build.VERSION.SDK_INT < 33) MaskedVideoBlur() else null }
-    val currentRegion by rememberUpdatedState(region)
+    val effects = remember(texture, regions.size) {
+        List(regions.size) {
+            if (Build.VERSION.SDK_INT >= 33) ProgressiveBlurShader()::effect
+            else MaskedVideoBlur()::effect
+        }
+    }
+    val currentRegions by rememberUpdatedState(regions)
     val currentOpacity by rememberUpdatedState(opacity)
     val scope = rememberCoroutineScope()
-    DisposableEffect(texture, radius, maxFeather, roundedRadius, shader) {
+    DisposableEffect(texture, radius, maxFeather, roundedRadius, effects) {
         val location = IntArray(2)
-        var lastRegion: FullscreenChatBackdropRegion? = null
+        var lastRegions = emptyList<FullscreenChatBackdropRegion>()
         var lastOpacity = 0f
         var lastTextureSize = IntSize.Zero
         fun updateEffect() {
             texture.getLocationInWindow(location)
-            val windowRegion = currentRegion
-            val bounds = windowRegion.bounds.translate(-location[0].toFloat(), -location[1].toFloat())
             val textureSize = IntSize(texture.width, texture.height)
             val textureBounds = Rect(0f, 0f, textureSize.width.toFloat(), textureSize.height.toFloat())
             val alpha = currentOpacity().coerceIn(0f, 1f)
-            val visibleRegion = if (alpha > 0f && !textureBounds.isEmpty && bounds.overlaps(textureBounds)) {
-                windowRegion.copy(bounds = bounds)
-            } else null
-            val visibleOpacity = if (visibleRegion != null) alpha else 0f
-            if (visibleRegion == lastRegion && visibleOpacity == lastOpacity && textureSize == lastTextureSize) return
-            lastRegion = visibleRegion
+            val localRegions = currentRegions.map {
+                it.copy(bounds = it.bounds.translate(-location[0].toFloat(), -location[1].toFloat()))
+            }
+            val visibleOpacity = if (!textureBounds.isEmpty) alpha else 0f
+            if (localRegions == lastRegions && visibleOpacity == lastOpacity && textureSize == lastTextureSize) return
+            lastRegions = localRegions
             lastOpacity = visibleOpacity
             lastTextureSize = textureSize
-            val effect = visibleRegion?.let {
-                val cornerRadius = it.shape.radius(bounds.width, bounds.height, roundedRadius)
-                shader?.effect(it, textureSize, radius, maxFeather, visibleOpacity, cornerRadius)
-                    ?: maskedBlur?.effect(it, radius, maxFeather, visibleOpacity, cornerRadius)
+            var effect: RenderEffect? = null
+            if (visibleOpacity > 0f) localRegions.forEachIndexed { index, region ->
+                val bounds = region.bounds
+                if (!bounds.isEmpty && bounds.overlaps(textureBounds)) {
+                    val cornerRadius = region.shape.radius(bounds.width, bounds.height, roundedRadius)
+                    val next = effects[index](region, textureSize, radius, maxFeather, visibleOpacity, cornerRadius)
+                    effect = effect?.let { RenderEffect.createChainEffect(next, it) } ?: next
+                }
             }
             texture.setRenderEffect(effect)
         }
@@ -283,7 +299,7 @@ internal fun FullscreenChatVideoBlur(texture: TextureView?, region: FullscreenCh
         texture.addOnLayoutChangeListener(listener)
         updateEffect()
         val updates = scope.launch {
-            snapshotFlow { currentRegion to currentOpacity() }.collect { updateEffect() }
+            snapshotFlow { currentRegions to currentOpacity() }.collect { updateEffect() }
         }
         onDispose {
             updates.cancel()
@@ -299,9 +315,10 @@ private class MaskedVideoBlur {
     private var maskKey: MaskKey? = null
     private var maskBitmap: Bitmap? = null
 
-    fun effect(region: FullscreenChatBackdropRegion, radius: Float, maxFeather: Float, opacity: Float, cornerRadius: Float): RenderEffect {
+    fun effect(region: FullscreenChatBackdropRegion, textureSize: IntSize, radius: Float, maxFeather: Float, opacity: Float, cornerRadius: Float): RenderEffect {
         val source = RenderEffect.createOffsetEffect(0f, 0f)
-        val blurred = RenderEffect.createBlurEffect(radius, radius, Shader.TileMode.CLAMP)
+        val blurred = RenderEffect.createBlurEffect(radius.coerceAtMost(textureSize.width.toFloat()),
+            radius.coerceAtMost(textureSize.height.toFloat()), Shader.TileMode.CLAMP)
         val mask = RenderEffect.createShaderEffect(featherMask(region.bounds, maxFeather, region.edges, opacity))
         val feathered = RenderEffect.createBlendModeEffect(blurred, mask, AndroidBlendMode.DST_IN)
         val roundedMask = cornerMask(region, cornerRadius)
