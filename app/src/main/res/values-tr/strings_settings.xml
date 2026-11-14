@@ -30,11 +30,11 @@
     <string name="settings_general">Genel</string>
     <string name="settings_general_description">Dil, öneriler ve ayar yedeği</string>
     <string name="settings_backup_import">Ayarları içe aktar</string>
-    <string name="settings_backup_import_description">Tercihlerini bir yedek dosyasından geri yükle</string>
+    <string name="settings_backup_import_description">Ayarları ve izleme verilerini bir yedekten geri yükle</string>
     <string name="settings_backup_export">Ayarları dışa aktar</string>
     <string name="settings_backup_export_description">Mevcut ayarlarının ayrı bir kopyasını kaydet</string>
     <string name="settings_backup_location">Otomatik yedek konumu</string>
-    <string name="settings_backup_location_message">Kicker, ayarların değiştikçe kicker_settings.json dosyasını günceller. Bu dosyanın kaydedileceği konumu seç</string>
+    <string name="settings_backup_location_message">Kicker, ayarların ve izleme verilerin değiştikçe %1$s dosyasını günceller.</string>
     <string name="settings_backup_location_default_summary">İndirilenler/Kicker/kicker_settings.json</string>
     <string name="settings_backup_location_custom_summary">Özel konum seçili</string>
     <string name="settings_backup_location_choose">Konum seç</string>
@@ -42,7 +42,7 @@
     <string name="settings_backup_location_saved">Otomatik yedek konumu kaydedildi</string>
     <string name="settings_backup_location_failed">Otomatik yedek konumu değiştirilemedi</string>
     <string name="settings_backup_restore_title">Eski ayarlarını geri yüklemek ister misin?</string>
-    <string name="settings_backup_restore_message">Önceki Kicker ayarlarının yedeği bulundu, kayıtlı tercihlerini uygulamak için yedeği geri yükle</string>
+    <string name="settings_backup_restore_message">%1$s yedeği bulundu. Ayarları ve yedekteki izleme verilerini geri yükleyebilirsin.</string>
     <string name="settings_backup_restore">Geri yükle</string>
     <string name="settings_backup_skip">Atla</string>
     <string name="settings_backup_imported">Ayarlar içe aktarıldı</string>
@@ -128,4 +128,10 @@
     <string name="settings_fullscreen_chat_enabled">Tam ekranda sohbet katmanını göster</string>
     <string name="settings_fullscreen_chat_layout">Tam ekran sohbet düzeni</string>
     <string name="settings_fullscreen_chat_appearance">Tam ekran sohbet görünümü</string>
+    <string name="settings_backup_find_message">Önceki kurulumdan bir yedeğin varsa %1$s dosyasını seç.</string>
+    <string name="settings_backup_choose_file">Yedek dosyasını seç</string>
+    <string name="you_download_link">Mevcut videoları ekle</string>
+    <string name="you_download_link_failed">Bazı videolar eklenemedi</string>
+    <string name="you_download_unlink">Listeden kaldır</string>
+    <string name="you_download_unlink_message">%1$s listeden kaldırılsın mı? Video dosyası cihazda kalır.</string>
 </resources>

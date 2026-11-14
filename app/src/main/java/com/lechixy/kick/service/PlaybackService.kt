@@ -90,7 +90,8 @@ class PlaybackService : MediaSessionService() {
                 /* bufferForPlaybackMs = */ 600,
                 /* bufferForPlaybackAfterRebufferMs = */ 1200
             )
-            .setPrioritizeTimeOverSizeThresholds(true)
+            .setTargetBufferBytes(24 * 1024 * 1024)
+            .setPrioritizeTimeOverSizeThresholds(false)
             .build()
 
         val liveSpeedControl = DiagnosticLiveSpeedControl(DefaultLivePlaybackSpeedControl.Builder()
@@ -125,10 +126,12 @@ class PlaybackService : MediaSessionService() {
                 val factory = if (path.endsWith(".mp4", ignoreCase = true)) {
                     DefaultMediaSourceFactory(source)
                 } else {
-                    val lowLatency = mediaItem.mediaMetadata.extras?.getBoolean(EXTRA_LOW_LATENCY) == true
-                    HlsMediaSource.Factory(source)
-                        .setPlaylistParserFactory(KickHlsPlaylistParserFactory(lowLatency))
-                        .setAllowChunklessPreparation(true)
+                    val extras = mediaItem.mediaMetadata.extras
+                    HlsMediaSource.Factory(source).setAllowChunklessPreparation(true).apply {
+                        if (extras?.getBoolean(EXTRA_IS_LIVE) == true && !extras.getBoolean(EXTRA_LIVE_DVR)) {
+                            setPlaylistParserFactory(KickHlsPlaylistParserFactory(extras.getBoolean(EXTRA_LOW_LATENCY)))
+                        }
+                    }
                 }
                 drmProvider?.let(factory::setDrmSessionManagerProvider)
                 loadErrorPolicy?.let(factory::setLoadErrorHandlingPolicy)

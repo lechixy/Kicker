@@ -67,6 +67,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.Dp
@@ -127,7 +128,8 @@ internal fun rememberFullscreenChatPreferences(): FullscreenChatPreferences {
 
 @Composable
 internal fun rememberFullscreenChatFontSizeSetting(): SettingKey<Int> {
-    val chatFontSize by fullscreenChatSetting(SettingsKeys.CHAT_FONT_SIZE)
+    val smallestWidth = androidx.compose.ui.platform.LocalConfiguration.current.smallestScreenWidthDp
+    val chatFontSize by fullscreenChatSetting(SettingsKeys.chatFontSize(smallestWidth))
     return remember(chatFontSize) { SettingsKeys.FULLSCREEN_CHAT_FONT_SIZE.copy(defaultValue = chatFontSize) }
 }
 
@@ -258,6 +260,7 @@ internal fun FullscreenChatOverlay(
                     }
                 }
         }
+        val alignRight = travelX * draft.x + panelWidth / 2 > maxWidth / 2
         Box(
             Modifier.absoluteOffset {
                 IntOffset((travelX.toPx() * draft.x).roundToInt(), (travelY.toPx() * draft.y).roundToInt())
@@ -267,6 +270,7 @@ internal fun FullscreenChatOverlay(
             CompositionLocalProvider(
                 LocalFullscreenChatDock provides dock,
                 LocalFullscreenChatShape provides preferences.shape,
+                LocalFullscreenChatAlignRight provides alignRight,
             ) {
                 if (editing) {
                     val samples = listOf(
@@ -276,6 +280,7 @@ internal fun FullscreenChatOverlay(
                     val preview = if (horizontal) List(lanes) { samples[it % samples.size] } else samples
                     ChatStack(preview.size, preferences.opacity, measuredContent, blur) { index ->
                         Text(preview[index], color = Color.White, fontSize = fontSize.sp, maxLines = 1,
+                            textAlign = if (alignRight) TextAlign.Right else TextAlign.Left,
                             overflow = TextOverflow.Ellipsis, modifier = Modifier
                                 .then(if (horizontal) Modifier.height(laneHeight) else Modifier)
                                 .padding(horizontal = 6.dp, vertical = 2.dp))
@@ -405,6 +410,8 @@ private fun FullscreenChatMessages(
 }
 
 /** The stack keeps the newest complete rows when messages wrap or font scaling increases. */
+private val LocalFullscreenChatAlignRight = androidx.compose.runtime.compositionLocalOf { false }
+
 @Composable
 private fun ChatStack(
     count: Int,
@@ -413,6 +420,7 @@ private fun ChatStack(
     blur: FullscreenChatBlur? = null,
     content: @Composable (Int) -> Unit,
 ) {
+    val alignRight = LocalFullscreenChatAlignRight.current
     Box(modifier.fillMaxWidth()) {
         FullscreenChatBackdrop(opacity, blur)
         Layout(
@@ -431,7 +439,7 @@ private fun ChatStack(
                 var bottom = height
                 fittingRows.forEach { row ->
                     bottom -= row.height
-                    row.placeRelative(0, bottom)
+                    row.place(if (alignRight) constraints.maxWidth - row.width else 0, bottom)
                 }
             }
         }
@@ -588,6 +596,7 @@ internal fun OverlayMessage(message: ChatMessage, fontSize: Int, lines: Int, ide
         parsed.annotatedString, inlineContent = parsed.inlineContent, color = Color.White,
         style = MaterialTheme.typography.bodySmall.copy(shadow = Shadow(color = Color.Black, blurRadius = 3f)),
         fontSize = fontSize.sp, lineHeight = (fontSize + 4).sp, maxLines = lines,
+        textAlign = if (LocalFullscreenChatAlignRight.current) TextAlign.Right else TextAlign.Left,
         overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
     )
 }

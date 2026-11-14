@@ -59,7 +59,7 @@ import com.lechixy.kick.components.channel.chat.FullscreenChatIdentityStyle
 import com.lechixy.kick.components.channel.chat.FullscreenChatOverlay
 import com.lechixy.kick.components.channel.chat.FullscreenChatPreferences
 import com.lechixy.kick.components.channel.chat.FullscreenChatVideoFrame
-import com.lechixy.kick.components.channel.chat.FullscreenChatVideoBlur
+import com.lechixy.kick.components.channel.chat.VideoBackdropBlur
 import com.lechixy.kick.components.channel.chat.HorizontalChat
 import com.lechixy.kick.components.channel.chat.OverlayMessage
 import com.lechixy.kick.data.channel.model.ChannelDetail
@@ -284,7 +284,9 @@ class FullscreenChatOverlayUiTest {
                     },
                 )
                 val dock = viewport?.takeIf { dockedTop }?.let { FullscreenChatDock(it, FullscreenChatEdges(top = true)) }
-                FullscreenChatVideoBlur(texture, region?.let { dock?.extend(it) ?: FullscreenChatBackdropRegion(it) }) { blurOpacity }
+                VideoBackdropBlur(texture, listOfNotNull(region?.let { dock?.extend(it) ?: FullscreenChatBackdropRegion(it) })) {
+                    blurOpacity
+                }
             }
         }
         compose.waitUntil(10_000) { displayedFrame.get() == 1 }

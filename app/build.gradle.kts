@@ -41,6 +41,7 @@ android {
         targetSdk = 36
         versionCode = 2
         versionName = "1.1.0"
+        manifestPlaceholders["appLabel"] = "@string/app_name"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -63,7 +64,12 @@ android {
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            manifestPlaceholders["appLabel"] = "Kicker Test"
+        }
         release {
+            signingConfig = signingConfigs.getByName("debug")
             if (hasReleaseSigning) {
                 signingConfig = signingConfigs.getByName("release")
             }

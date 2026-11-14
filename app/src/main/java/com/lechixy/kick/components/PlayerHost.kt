@@ -110,7 +110,7 @@ import com.lechixy.kick.util.buildOptimizedImageRequest
 import com.lechixy.kick.util.findActivity
 
 internal const val WIDE_BREAKPOINT_DP = 700
-internal const val CHAT_WIDTH_FRACTION = 0.35f
+internal const val CHAT_WIDTH_FRACTION = 0.32f
 internal val ChannelTabSpace = 144.dp
 
 private const val MINI_MIN_WIDTH_DP = com.lechixy.kick.data.settings.model.MiniPlayerSize.MIN_WIDTH_DP

@@ -107,7 +107,8 @@ class OfflineBannerUiTest {
         val bannerBounds = compose.onNodeWithTag("banner").fetchSemanticsNode().boundsInRoot
         assertEquals(with(compose.density) { 128.dp.toPx() }, bannerBounds.height, 1f)
         val button = compose.onNodeWithContentDescription(context.getString(R.string.offline_minimize)).fetchSemanticsNode().boundsInRoot
-        val text = compose.onNodeWithText(context.getString(R.string.offline_channel_name, "tester"), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        compose.onNodeWithText(context.getString(R.string.offline_channel_name, "tester"), useUnmergedTree = true).assertDoesNotExist()
+        val text = compose.onNodeWithText("tester", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         assertTrue(text.left > button.right)
     }
 
@@ -118,7 +119,7 @@ class OfflineBannerUiTest {
             val banner = remember { OfflineBannerState(scope) }
             val scroll = remember { ChannelHeaderScrollConnection(banner::drag, banner::settle) }
             SideEffect { state = banner }
-            Column(Modifier.fillMaxSize().nestedScroll(scroll)) {
+            Column(Modifier.widthIn(max = 700.dp).fillMaxSize().nestedScroll(scroll)) {
                 OfflineChannelBanner(ChannelDetail(1, slug = "tester"), null, banner, banner::toggle, {},
                     onTravelChanged = { banner.travelPx = it })
                 val tabs = listOf(ChannelTab.HOME, ChannelTab.VIDEOS)

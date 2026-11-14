@@ -3,10 +3,16 @@ package com.lechixy.kick.data.settings.local
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.DocumentsContract
 import android.util.Log
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import com.lechixy.kick.data.settings.model.SettingKey
+import com.lechixy.kick.BuildConfig
+import com.lechixy.kick.data.player.local.DownloadBackupEntry
+import com.lechixy.kick.data.player.local.downloadBackupChanges
+import com.lechixy.kick.data.player.local.downloadBackupIndex
+import com.lechixy.kick.data.player.local.restoreDownloadIndex
 import com.lechixy.kick.data.settings.model.SettingType
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.SettingsRepository
@@ -14,9 +20,13 @@ import com.lechixy.kick.data.settings.repository.setSetting
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -24,6 +34,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.encodeToJsonElement
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.floatOrNull
 import kotlinx.serialization.json.intOrNull
@@ -38,59 +50,95 @@ class SettingsBackupManager @Inject constructor(
 ) {
     private val exportableSettings = SettingsKeys.ALL_KEYS.filter { it.isExportable }
     private val storage by lazy { AutomaticSettingsBackupStorage(context) }
-    private val startupBackup = CompletableDeferred<Uri?>()
+    private val startupBackup = CompletableDeferred<StartupBackup>()
     private val restoreHandled = CompletableDeferred<Unit>()
     private val writeLock = Mutex()
     private val selectedLocation = MutableStateFlow<Uri?>(null)
     val customLocation = selectedLocation.asStateFlow()
+    val fileName get() = storage.fileName
+    val defaultPath get() = storage.directory + fileName
 
+    internal sealed interface StartupBackup {
+        data object None : StartupBackup
+        data object PickFile : StartupBackup
+        data class Found(val uri: Uri) : StartupBackup
+    }
+
+    @OptIn(FlowPreview::class)
     internal suspend fun runAutomaticBackup() {
         selectedLocation.value = runCatching { storage.readCustomLocation() }
             .onFailure { Log.w(TAG, "Cannot read automatic backup location", it) }.getOrNull()
         val oldBackup = runCatching {
             when {
                 storage.hasRestoreDecision -> null
-                storage.restoredCopy.baseFile.isFile -> Uri.fromFile(storage.restoredCopy.baseFile)
+                selectedLocation.value != null -> selectedLocation.value
                 else -> storage.findSharedBackup()
+                    ?: storage.restoredCopy.baseFile.takeIf { it.isFile }?.let(Uri::fromFile)
             }
         }.onFailure { Log.w(TAG, "Cannot locate previous settings backup", it) }.getOrNull()
-        if (oldBackup == null && !storage.hasRestoreDecision) {
-            runCatching { finishStartupRestore() }
-                .onFailure { Log.w(TAG, "Cannot mark settings restore as handled", it) }
+        val offer = when {
+            oldBackup != null -> StartupBackup.Found(oldBackup)
+            storage.hasRestoreDecision -> StartupBackup.None
+            // Downloads from a previous install can survive without granting the new install access.
+            else -> StartupBackup.PickFile
         }
-        startupBackup.complete(oldBackup)
+        startupBackup.complete(offer)
         // Keep the previous file intact until the user restores it or skips the offer.
-        if (oldBackup != null) restoreHandled.await()
+        if (offer != StartupBackup.None) restoreHandled.await()
 
         // Skipping an import keeps the old backup until an exportable preference actually changes.
         var skippedSettings = runCatching { storage.skippedSettings() }
             .onFailure { Log.w(TAG, "Cannot read the settings restore decision", it) }.getOrNull()
         var lastSaved = skippedSettings
-        repository.snapshots.retryWhen { failure, _ ->
+        val preferences = repository.snapshots.retryWhen { failure, _ ->
             if (failure is IOException) delay(1_000)
             failure is IOException
-        }.collect {
+        }
+        combine(preferences, playbackBackupChanges, downloadBackupChanges) { _, _, revision -> revision }.debounce(750).collect { revision ->
             writeLock.withLock {
-                val json = exportToJson(repository.snapshot())
+                val json = exportToJson(repository.snapshot(), currentDownloadIndex(revision))
                 if (json == lastSaved) return@withLock
-                runCatching {
+                try {
+                    storage.saveRestoreCopy(json)
+                    saveToLocation(selectedLocation.value, json)
                     if (skippedSettings != null) {
                         storage.saveRestoreDecision()
                         skippedSettings = null
                     }
-                    storage.saveRestoreCopy(json)
-                    saveToLocation(selectedLocation.value, json)
                     lastSaved = json
-                }.onFailure { Log.w(TAG, "Cannot save automatic settings backup", it) }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    Log.w(TAG, "Cannot save automatic settings backup", failure)
+                }
             }
         }
     }
 
-    suspend fun shouldOfferRestore(): Boolean = startupBackup.await() != null && !restoreHandled.isCompleted
+    internal suspend fun startupRestoreOffer(): StartupBackup =
+        startupBackup.await().takeUnless { restoreHandled.isCompleted } ?: StartupBackup.None
 
     suspend fun restoreDefaultBackup(): String? {
-        val uri = checkNotNull(startupBackup.await())
+        val uri = (startupBackup.await() as StartupBackup.Found).uri
         val language = importFrom(uri)
+        finishStartupRestore()
+        return language
+    }
+
+    internal suspend fun restorePickedBackup(uri: Uri): String? {
+        val language = importFrom(uri)
+        withContext(Dispatchers.IO) {
+            val path = if (uri.authority == "com.android.externalstorage.documents") {
+                runCatching { DocumentsContract.getDocumentId(uri).removePrefix("primary:") }.getOrNull()
+            } else null
+            if (path == defaultPath) {
+                runCatching {
+                    context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                    storage.saveCustomLocation(uri)
+                    selectedLocation.value = uri
+                }.onFailure { Log.w(TAG, "Cannot reuse the existing backup file for writes", it) }
+            }
+        }
         finishStartupRestore()
         return language
     }
@@ -126,6 +174,16 @@ class SettingsBackupManager @Inject constructor(
         if (uri == null) storage.saveSharedBackup(json) else context.contentResolver.writeBackup(uri, json)
     }
 
+    private var cachedDownloadIndex: Pair<Int, List<DownloadBackupEntry>>? = null
+
+    private fun currentDownloadIndex(revision: Int): List<DownloadBackupEntry> {
+        val cached = cachedDownloadIndex
+        if (cached?.first == revision) return cached.second
+        return runCatching { context.downloadBackupIndex() }
+            .onSuccess { cachedDownloadIndex = revision to it }
+            .getOrElse { cached?.second.orEmpty() }
+    }
+
     suspend fun exportTo(uri: Uri) = withContext(Dispatchers.IO) {
         context.contentResolver.writeBackup(uri, exportToJson(repository.snapshot()))
     }
@@ -134,26 +192,34 @@ class SettingsBackupManager @Inject constructor(
         val input = context.contentResolver.openInputStream(uri)
             ?: throw IOException("Cannot open backup for reading")
         val json = input.bufferedReader().use { reader ->
-            val buffer = CharArray(MAX_BACKUP_CHARS + 1)
-            var length = 0
-            while (length < buffer.size) {
-                val read = reader.read(buffer, length, buffer.size - length)
+            val buffer = CharArray(8192)
+            val text = StringBuilder()
+            while (true) {
+                val read = reader.read(buffer)
                 if (read == -1) break
-                length += read
+                require(text.length + read <= MAX_BACKUP_CHARS) { "Settings backup is too large" }
+                text.append(buffer, 0, read)
             }
-            require(length <= MAX_BACKUP_CHARS) { "Settings backup is too large" }
-            buffer.concatToString(0, length)
+            text.toString()
         }
         importFromJson(json)
     }
 
-    private fun exportToJson(current: Preferences): String {
+    private fun exportToJson(
+        current: Preferences,
+        downloads: List<DownloadBackupEntry> = context.downloadBackupIndex(),
+    ): String {
         val values = exportableSettings
-            // An unset mini player width should use the destination device's default.
-            .filter { it.key != SettingsKeys.MINI_PLAYER_WIDTH_DP.key || SettingsKeys.MINI_PLAYER_WIDTH_DP.key in current }
+            .filter { it.key !in adaptiveDefaults || it.key in current }
             .associate { it.key.name to it.encode(current) }
         return backupJson.encodeToString(
-            JsonObject(mapOf("version" to JsonPrimitive(FORMAT_VERSION), "settings" to JsonObject(values)))
+            JsonObject(mapOf(
+                "version" to JsonPrimitive(FORMAT_VERSION),
+                "edition" to JsonPrimitive(edition),
+                "settings" to JsonObject(values),
+                "playback" to backupJson.encodeToJsonElement(playbackBackupSnapshot()),
+                "downloads" to backupJson.encodeToJsonElement(downloads),
+            ))
         )
     }
 
@@ -171,7 +237,9 @@ class SettingsBackupManager @Inject constructor(
             root
         }
         val included = exportableSettings.filter { it.key.name in values }
-        require(included.isNotEmpty()) { "No recognized settings" }
+        val playback = root["playback"]?.let { backupJson.decodeFromJsonElement<PlaybackBackupData>(it).withoutPlaybackUrls() }
+        val downloads = root["downloads"]?.let { backupJson.decodeFromJsonElement<List<DownloadBackupEntry>>(it) }
+        require(included.isNotEmpty() || playback != null) { "No recognized backup data" }
         val updated = repository.editSettings {
             for (setting in included) {
                 val value = values[setting.key.name] as? JsonPrimitive
@@ -179,6 +247,8 @@ class SettingsBackupManager @Inject constructor(
                 writeImportedSetting(setting, value)
             }
         }
+        withContext(Dispatchers.Main.immediate) { playback?.restore() }
+        if (downloads != null) context.restoreDownloadIndex(downloads)
         return updated[SettingsKeys.APP_LANGUAGE.key].takeIf { SettingsKeys.APP_LANGUAGE in included }
     }
 
@@ -204,11 +274,16 @@ class SettingsBackupManager @Inject constructor(
     class UnsupportedVersion : IllegalArgumentException("Unsupported settings backup version")
 
     companion object {
-        const val FILE_NAME = "kicker_settings.json"
         const val MIME_TYPE = "application/json"
         private const val TAG = "SettingsBackup"
         private const val FORMAT_VERSION = 1
-        private const val MAX_BACKUP_CHARS = 64 * 1024
-        private val backupJson = Json { prettyPrint = true }
+        private const val MAX_BACKUP_CHARS = 2 * 1024 * 1024
+        private val edition = if (BuildConfig.DEBUG) "test" else "stable"
+        private val adaptiveDefaults = setOf(
+            SettingsKeys.MINI_PLAYER_WIDTH_DP.key, SettingsKeys.CHAT_WIDTH_FRACTION.key,
+            SettingsKeys.CHAT_FONT_SIZE.key, SettingsKeys.CHAT_MESSAGE_SPACING.key,
+            SettingsKeys.FULLSCREEN_CHAT_FONT_SIZE.key,
+        )
+        private val backupJson = Json { prettyPrint = true; ignoreUnknownKeys = true }
     }
 }

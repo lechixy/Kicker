@@ -75,7 +75,9 @@ internal fun DownloadPlaybackDialog(recording: RecordingDownload, onDismiss: () 
         }
         player.addListener(listener)
         val extras = android.os.Bundle().apply {
-            recording.metadata?.channelSlug?.let { setPlaybackUsageChannel(it, recording.metadata.channelName ?: it) }
+            recording.metadata?.let { metadata ->
+                metadata.channelSlug?.let { setPlaybackUsageChannel(it, metadata.channelName ?: it, metadata.channelAvatar) }
+            }
         }
         player.setMediaItem(MediaItem.Builder().setUri(recording.uri)
             .setMediaMetadata(MediaMetadata.Builder().setExtras(extras).build()).build())

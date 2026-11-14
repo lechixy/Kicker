@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="you_data_usage_clear_all">Clear all usage data</string>
+    <string name="you_data_usage_clear_channel">Clear usage data for %1$s</string>
+    <string name="you_data_usage_clear_title">Clear usage data</string>
+    <string name="you_data_usage_clear_all_message">Delete all recorded watch time and data usage?</string>
+    <string name="you_data_usage_clear_channel_message">Delete recorded watch time and data usage for %1$s?</string>
+    <string name="audio_attribution_empty_tag" translatable="false"></string>
+    <string name="audio_attribution_label">Media playback</string>
     <string name="you_title">You</string>
     <string name="you_downloads">Downloads</string>
     <string name="you_downloads_loading">Loading downloads…</string>
@@ -35,4 +42,15 @@
     <string name="you_data_usage_vpn">VPN</string>
     <string name="you_data_usage_other">Other connection</string>
     <string name="you_data_usage_offline">Offline playback</string>
+    <string name="you_download_waiting">Waiting in queue</string>
+    <string name="you_download_written">%1$s written to disk</string>
+    <string name="you_download_cancel_task">Cancel download</string>
+    <string name="you_download_cancel_task_message">Cancel the download of %1$s?</string>
+    <string name="you_download_remove_task">Remove from queue</string>
+    <string name="you_download_remove_task_message">Remove %1$s from the download queue?</string>
+    <string name="you_download_play">Play video</string>
+    <string name="you_download_linked">Linked video</string>
+    <string name="you_data_usage_open_channel">Open channel</string>
+    <string name="you_data_usage_watch_time">Watch time</string>
+    <string name="you_data_usage_transferred">Data transferred</string>
 </resources>

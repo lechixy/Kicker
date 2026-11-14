@@ -109,7 +109,7 @@ object SettingsKeys {
     )
     val CHAT_FONT_SIZE = SettingKey(
         key = intPreferencesKey("chat_font_size"),
-        defaultValue = 14,
+        defaultValue = 15,
         type = SettingType.IntType,
         validator = { it in 10..24 }
     )
@@ -120,15 +120,25 @@ object SettingsKeys {
     )
     val CHAT_MESSAGE_SPACING = SettingKey(
         key = intPreferencesKey("chat_message_spacing"),
-        defaultValue = 2,
+        defaultValue = 3,
         type = SettingType.IntType,
         validator = { it in 0..25 }
     )
     val CHAT_WIDTH_FRACTION = SettingKey(
         key = floatPreferencesKey("chat_width_fraction"),
-        defaultValue = 0.35f,
+        defaultValue = 0.32f,
         type = SettingType.FloatType,
         validator = { it in 0.18f..0.60f }
+    )
+    fun chatFontSize(smallestWidthDp: Int) =
+        CHAT_FONT_SIZE.copy(defaultValue = if (smallestWidthDp >= 600) 16 else CHAT_FONT_SIZE.defaultValue)
+
+    fun chatMessageSpacing(smallestWidthDp: Int) =
+        CHAT_MESSAGE_SPACING.copy(defaultValue = if (smallestWidthDp >= 600) 4 else CHAT_MESSAGE_SPACING.defaultValue)
+
+    fun chatWidth(screenWidthDp: Int): SettingKey<Float> = CHAT_WIDTH_FRACTION.copy(
+        defaultValue = if (screenWidthDp < 700) CHAT_WIDTH_FRACTION.defaultValue else
+            ((screenWidthDp * .28f).coerceIn(280f, 360f) / screenWidthDp).coerceIn(.18f, .60f),
     )
     val FULLSCREEN_CHAT_ENABLED = SettingKey(
         booleanPreferencesKey("fullscreen_chat_enabled"), false, SettingType.BooleanType

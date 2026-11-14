@@ -162,6 +162,8 @@
     <string name="followers">takipçi</string>
     <string name="go_to_live">Canlıya Git</string>
     <string name="player_skip_ten_seconds">10 saniye</string>
+    <string name="player_skip_back">10 saniye geri</string>
+    <string name="player_skip_forward">10 saniye ileri</string>
     <string name="player_dvr_unavailable">Geri sarma kullanılamıyor. Canlı yayına dönüldü.</string>
     <string name="hide">Gizle</string>
     <string name="hide_chat">Sohbeti gizle</string>

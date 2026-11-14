@@ -37,7 +37,7 @@ internal data class RecordingChatSeek(val sequence: Int, val positionMs: Long)
 class PlayerHostState(
     initialMode: PlayerMode = PlayerMode.Hidden,
     initialSlug: String? = null,
-    initialChatWidthFraction: Float = 0.35f
+    initialChatWidthFraction: Float = CHAT_WIDTH_FRACTION
 ) {
     // Read by PlayerHost during layout so returning live shares the page's height animation.
     var offlineCollapseProgress by mutableStateOf<androidx.compose.runtime.State<Float>?>(null)
@@ -402,7 +402,7 @@ class PlayerHostState(
                 PlayerHostState(
                     initialMode = PlayerMode.valueOf(it[0] as String),
                     initialSlug = it[1] as String?,
-                    initialChatWidthFraction = (it.getOrNull(2) as? Float) ?: 0.35f
+                    initialChatWidthFraction = (it.getOrNull(2) as? Float) ?: CHAT_WIDTH_FRACTION
                 ).apply {
                     recording = (it.getOrNull(3) as? String)?.let { saved ->
                         runCatching { Json.decodeFromString<RecordedPlayback>(saved) }.getOrNull()
@@ -414,5 +414,5 @@ class PlayerHostState(
 }
 
 @Composable
-fun rememberPlayerHostState(): PlayerHostState =
-    rememberSaveable(saver = PlayerHostState.Saver) { PlayerHostState() }
+fun rememberPlayerHostState(initialChatWidthFraction: Float = CHAT_WIDTH_FRACTION): PlayerHostState =
+    rememberSaveable(saver = PlayerHostState.Saver) { PlayerHostState(initialChatWidthFraction = initialChatWidthFraction) }

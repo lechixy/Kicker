@@ -44,6 +44,8 @@ import com.lechixy.kick.data.player.local.RecordingDownloadQueue
 import com.lechixy.kick.data.player.local.RecordingDownloadTask
 import com.lechixy.kick.data.player.local.cleanInterruptedRecordingDownloads
 import com.lechixy.kick.data.player.local.queryRecordingDownloads
+import com.lechixy.kick.data.player.local.downloadBackupChanges
+import kotlinx.coroutines.flow.update
 import com.lechixy.kick.data.player.local.recordingThumbnail
 import com.lechixy.kick.data.player.local.removeRecordingMetadata
 import com.lechixy.kick.data.player.local.saveRecordingMetadata
@@ -166,7 +168,8 @@ class RecordingDownloadService : Service() {
                 }
                 tempFile = file
                 export(source, file, task.id)
-                setProgress(RecordingDownloadProgress(task.id, saving = true))
+                val fileSize = withContext(Dispatchers.IO) { file.length() }
+                setProgress(RecordingDownloadProgress(task.id, percent = 100, saving = true, writtenBytes = fileSize))
                 saveToDownloads(file, task.id, resolved.copy(title = resolved.title.ifBlank { resolved.id }))
             }
             queue.remove(task.id)
@@ -188,7 +191,7 @@ class RecordingDownloadService : Service() {
         if (recording.id.startsWith("clip_")) {
             try {
                 val clip = KickNetwork.api.getClipDetail(recording.id).data.toRecording()
-                if (!clip.directUrl.isNullOrBlank()) return clip
+                if (!clip.directUrl.isNullOrBlank()) return clip.copy(channelAvatar = clip.channelAvatar ?: recording.channelAvatar)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (_: Exception) {
@@ -199,8 +202,11 @@ class RecordingDownloadService : Service() {
     }
 
     private fun setProgress(progress: RecordingDownloadProgress) {
+        val previous = queue.progress.value
         queue.updateProgress(progress)
-        publishProgress()
+        if (previous?.id != progress.id || previous.percent != progress.percent || previous.saving != progress.saving) {
+            publishProgress()
+        }
     }
 
     private fun publishProgress() {
@@ -233,13 +239,13 @@ class RecordingDownloadService : Service() {
         transformer.start(MediaItem.fromUri(source), file.absolutePath)
         val progress = launch {
             val holder = ProgressHolder()
-            var displayed = -1
             while (true) {
                 delay(1_000)
-                if (transformer.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE && holder.progress != displayed) {
-                    displayed = holder.progress
-                    setProgress(RecordingDownloadProgress(id, displayed))
-                }
+                val percent = if (transformer.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) {
+                    holder.progress.coerceIn(0, 100)
+                } else null
+                val writtenBytes = withContext(Dispatchers.IO) { file.length() }
+                setProgress(RecordingDownloadProgress(id, percent, writtenBytes = writtenBytes))
             }
         }
         try {
@@ -281,6 +287,7 @@ class RecordingDownloadService : Service() {
             val ready = ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }
             check(contentResolver.update(uri, ready, null, null) == 1)
             published = true
+            downloadBackupChanges.update { it + 1 }
         } finally {
             if (!published) {
                 runCatching { contentResolver.delete(uri, null, null) }

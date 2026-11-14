@@ -33,6 +33,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -137,6 +138,7 @@ import coil3.compose.AsyncImage
 import com.lechixy.kick.R
 import com.lechixy.kick.components.channel.chat.FullscreenChatBackdrop
 import com.lechixy.kick.components.channel.chat.FullscreenChatBlur
+import com.lechixy.kick.components.channel.chat.FullscreenChatVideoFrame
 import com.lechixy.kick.components.channel.chat.FullscreenChatBackdropRegion
 import com.lechixy.kick.components.channel.chat.FullscreenChatEdges
 import com.lechixy.kick.components.channel.chat.FullscreenChatOverlay
@@ -277,6 +279,7 @@ fun KickPlayerView(
     var viewport by remember { mutableStateOf(IntSize.Zero) }
     var playerTexture by remember { mutableStateOf<TextureView?>(null) }
     var chatBlurBounds by remember { mutableStateOf<FullscreenChatBackdropRegion?>(null) }
+    val controlBlur = remember { FrostedPlayerRegions() }
     val updateChatBlurBounds: (FullscreenChatBackdropRegion?) -> Unit = remember { { chatBlurBounds = it } }
     val downloadRecording = rememberRecordingDownloadAction()
     val sleepTimer by com.lechixy.kick.service.player.SleepTimer.state.collectAsStateWithLifecycle()
@@ -455,7 +458,7 @@ fun KickPlayerView(
             toggleFullScreen()
         } else {
             val forward = tap.x >= width / 2f
-            if (seekRecordingBy(forward)) skipFeedback = RecordingSkipFeedback(tap, forward)
+            if (seekRecordingBy(forward)) skipFeedback = RecordingSkipFeedback(forward)
         }
     }
     LaunchedEffect(player, stableId, isLiveStream) {
@@ -695,7 +698,7 @@ fun KickPlayerView(
 
         val extras = android.os.Bundle(baseMediaItem.mediaMetadata.extras ?: android.os.Bundle()).apply {
             if (playingDvr) putBoolean(EXTRA_LIVE_DVR, true)
-            historyEntry?.let { setPlaybackUsageChannel(it.channelSlug, it.channelName) }
+            historyEntry?.let { setPlaybackUsageChannel(it.channelSlug, it.channelName, channel.user?.profilePic) }
             historyEntry?.let { putString(com.lechixy.kick.data.player.local.EXTRA_WATCH_HISTORY,
                 kotlinx.serialization.json.Json.encodeToString(it)) }
         }
@@ -795,6 +798,14 @@ fun KickPlayerView(
             )
         }
 
+        if (!isMini && hasRenderedFirstFrame) {
+            val chatRegion = chatBlurBounds.takeIf {
+                overlayPreferences?.blur == true && (fullscreenChatOverlayEnabled || editingChatPosition)
+            }
+            VideoBackdropBlur(playerTexture, listOfNotNull(chatRegion) + controlBlur.regions.values) {
+                if (editingChatPosition) 1f else playerHost?.fullscreenChatOverlayAlpha ?: 0f
+            }
+        }
         if (overlayPreferences != null && playerHost != null && channel != null &&
             (fullscreenChatOverlayEnabled || editingChatPosition)
         ) {
@@ -803,9 +814,6 @@ fun KickPlayerView(
                 val legacyFrame = if (Build.VERSION.SDK_INT < 31 && hasRenderedFirstFrame && overlayActive) {
                     rememberLegacyFullscreenChatFrame(playerTexture, isPlaying)
                 } else null
-                VideoBackdropBlur(playerTexture, listOfNotNull(chatBlurBounds.takeIf { hasRenderedFirstFrame })) {
-                    if (editingChatPosition) 1f else playerHost.fullscreenChatOverlayAlpha
-                }
                 FullscreenChatBlur(updateChatBlurBounds, legacyFrame)
             } else null
             CompositionLocalProvider(LocalChatContentActive provides overlayActive) {
@@ -891,6 +899,9 @@ fun KickPlayerView(
             exit = fadeOut(),
             modifier = Modifier.fillMaxSize()
         ) {
+            val controlFrame = if (Build.VERSION.SDK_INT < 31 && hasRenderedFirstFrame && playerTexture != null) {
+                rememberLegacyFullscreenChatFrame(playerTexture, isPlaying)
+            } else null
             PlayerControlsOverlay(
                 isFullScreen = isFullScreen,
                 isTheaterMode = isTheaterMode,
@@ -907,6 +918,8 @@ fun KickPlayerView(
                 isSettingsDialogVisible = showSettingsDialog,
                 isCastDialogVisible = showCastDialog,
                 qualityLabel = qualityLabel,
+                controlFrame = controlFrame,
+                controlBlur = controlBlur,
                 sleepRemainingSeconds = if (sleepTimerMinutes > 0) remainingTimerSeconds else 0,
                 streamDuration = streamDuration,
                 positionMs = if (isLiveStream) liveSeekWindow?.positionMs ?: 0L else positionMs,
@@ -1079,268 +1092,229 @@ fun KickPlayerView(
                         .fillMaxWidth()
                         .padding(bottom = 16.dp)
                 ) {
-//                    // Header
-//                    Row(
-//                        modifier = Modifier
-//                            .fillMaxWidth()
-//                            .padding(horizontal = 16.dp, vertical = 4.dp),
-//                        verticalAlignment = Alignment.CenterVertically
-//                    ) {
-//                        AnimatedVisibility(
-//                            visible = settingsPage != PlayerSettingsPage.MAIN
-//                        ) {
-//                            IconButton(
-//                                onClick = { settingsPage = PlayerSettingsPage.MAIN },
-//                                modifier = Modifier.size(36.dp)
-//                            ) {
-//                                Icon(
-//                                    painter = painterResource(id = R.drawable.arrow_back_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
-//                                    contentDescription = stringResource(R.string.player_back)
-//                                )
-//                            }
-//                            Spacer(modifier = Modifier.width(16.dp))
-//                        }
-//                        Text(
-//                            text = when (settingsPage) {
-//                                PlayerSettingsPage.MAIN -> stringResource(R.string.settings)
-//                                PlayerSettingsPage.QUALITY -> stringResource(R.string.player_quality)
-//                                PlayerSettingsPage.SLEEP_TIMER -> stringResource(R.string.player_sleep_timer)
-//                                PlayerSettingsPage.MORE -> stringResource(R.string.player_more)
-//                            },
-//                            style = MaterialTheme.typography.titleLarge,
-//                            fontWeight = FontWeight.Bold,
-//                            modifier = Modifier.weight(1f)
-//                        )
-//                        IconButton(
-//                            onClick = closeSettings,
-//                            modifier = Modifier.size(36.dp)
-//                        ) {
-//                            Icon(
-//                                painter = painterResource(id = R.drawable.close_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
-//                                contentDescription = stringResource(R.string.player_close)
-//                            )
-//                        }
-//                    }
-
-//                    HorizontalDivider(modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
-
-                    AnimatedVisibility(
-                        visible = settingsPage != PlayerSettingsPage.MAIN,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            IconButton(
-                                onClick = {
-                                    settingsPage = PlayerSettingsPage.MAIN
-                                },
-                                modifier = Modifier.size(36.dp),
-                                enabled = !dismissing
-                            ) {
-                                Icon(
-                                    painter = painterResource(id = R.drawable.arrow_back_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
-                                    contentDescription = stringResource(R.string.player_back)
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = when (settingsPage) {
-                                    PlayerSettingsPage.MAIN -> stringResource(R.string.settings)
-                                    PlayerSettingsPage.QUALITY -> stringResource(R.string.player_quality)
-                                    PlayerSettingsPage.SLEEP_TIMER -> stringResource(R.string.player_sleep_timer)
-                                    PlayerSettingsPage.CHAT_OVERLAY -> stringResource(R.string.fullscreen_chat_title)
-                                    PlayerSettingsPage.MORE -> stringResource(R.string.player_more)
-                                },
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-
                     AnimatedContent(
                         targetState = settingsPage,
                         transitionSpec = {
-                            if (initialState == PlayerSettingsPage.MAIN) {
+                            val transition = if (initialState == PlayerSettingsPage.MAIN) {
                                 (slideInHorizontally { it } + fadeIn()).togetherWith(
                                     slideOutHorizontally { -it } + fadeOut())
                             } else {
                                 (slideInHorizontally { -it } + fadeIn()).togetherWith(
                                     slideOutHorizontally { it } + fadeOut())
                             }
+                            transition.using(SizeTransform { _, _ -> tween(260) })
                         },
                         label = "PlayerSettingsPageTransition"
                     ) { targetPage ->
-                        when (targetPage) {
-                            PlayerSettingsPage.MAIN -> {
-                                Column(
+                        Column(Modifier.fillMaxWidth()) {
+                            if (targetPage != PlayerSettingsPage.MAIN) {
+                                Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 16.dp)
-                                        .verticalScroll(rememberScrollState())
+                                        .padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    PlayerSettingsCategoryRow(
-                                        icon = R.drawable.hd_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
-                                        title = stringResource(R.string.player_quality),
-                                        value = qualityLabel,
-                                        onClick = { settingsPage = PlayerSettingsPage.QUALITY }
-                                    )
-                                    PlayerSettingsCategoryRow(
-                                        icon = R.drawable.timer_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
-                                        title = stringResource(R.string.player_sleep_timer),
-                                        value = if (sleepTimerMinutes > 0) stringResource(R.string.player_minutes, (remainingTimerSeconds + 59) / 60) else stringResource(R.string.player_off),
-                                        onClick = { settingsPage = PlayerSettingsPage.SLEEP_TIMER }
-                                    )
-                                    if (overlayPreferences != null) {
-                                        PlayerSettingsCategoryRow(
-                                            icon = R.drawable.chat_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
-                                            title = stringResource(R.string.fullscreen_chat_title),
-                                            value = stringResource(if (overlayPreferences.horizontal) {
-                                                R.string.fullscreen_chat_horizontal
-                                            } else R.string.fullscreen_chat_vertical),
-                                            onClick = { settingsPage = PlayerSettingsPage.CHAT_OVERLAY }
+                                    IconButton(
+                                        onClick = {
+                                            settingsPage = PlayerSettingsPage.MAIN
+                                        },
+                                        modifier = Modifier.size(36.dp),
+                                        enabled = !dismissing
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(id = R.drawable.arrow_back_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
+                                            contentDescription = stringResource(R.string.player_back)
                                         )
                                     }
-                                    if (recording != null) {
-                                        PlayerSettingsCategoryRow(
-                                            icon = R.drawable.download_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
-                                            title = stringResource(R.string.recording_download),
-                                            value = null,
-                                            showChevron = false,
-                                            onClick = {
-                                                dismissSettings { downloadRecording(recording.copy(channelName = channelName, channelSlug = channel?.slug)) }
-                                            }
-                                        )
-                                    }
-                                    PlayerSettingsCategoryRow(
-                                        icon = R.drawable.tune_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
-                                        title = stringResource(R.string.player_more),
-                                        value = null,
-                                        onClick = { settingsPage = PlayerSettingsPage.MORE }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = when (targetPage) {
+                                            PlayerSettingsPage.QUALITY -> stringResource(R.string.player_quality)
+                                            PlayerSettingsPage.SLEEP_TIMER -> stringResource(R.string.player_sleep_timer)
+                                            PlayerSettingsPage.CHAT_OVERLAY -> stringResource(R.string.fullscreen_chat_title)
+                                            PlayerSettingsPage.MORE -> stringResource(R.string.player_more)
+                                            PlayerSettingsPage.MAIN -> stringResource(R.string.settings)
+                                        },
+                                        style = MaterialTheme.typography.titleLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.weight(1f)
                                     )
                                 }
                             }
-
-                            PlayerSettingsPage.QUALITY -> {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp)
-                                        .verticalScroll(rememberScrollState()),
-                                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                                ) {
-                                    PlayerSettingsOptionRow(
-                                        title = stringResource(R.string.player_auto),
-                                        subtitle = stringResource(R.string.player_auto_network),
-                                        selected = selectedQualityHeight == -1,
-                                        onClick = {
-                                            selectedQualityHeight = -1
-                                            coroutineScope.launch {
-                                                settingsRepository.set(SettingsKeys.VIDEO_QUALITY, -1)
-                                            }
-                                            applyQualityToPlayer(player, -1, availableQualities)
-                                            dismissSettings()
+                            when (targetPage) {
+                                PlayerSettingsPage.MAIN -> {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp)
+                                            .verticalScroll(rememberScrollState())
+                                    ) {
+                                        PlayerSettingsCategoryRow(
+                                            icon = R.drawable.hd_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+                                            title = stringResource(R.string.player_quality),
+                                            value = qualityLabel,
+                                            onClick = { settingsPage = PlayerSettingsPage.QUALITY }
+                                        )
+                                        PlayerSettingsCategoryRow(
+                                            icon = R.drawable.timer_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+                                            title = stringResource(R.string.player_sleep_timer),
+                                            value = if (sleepTimerMinutes > 0) stringResource(R.string.player_minutes, (remainingTimerSeconds + 59) / 60) else stringResource(R.string.player_off),
+                                            onClick = { settingsPage = PlayerSettingsPage.SLEEP_TIMER }
+                                        )
+                                        if (overlayPreferences != null) {
+                                            PlayerSettingsCategoryRow(
+                                                icon = R.drawable.chat_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+                                                title = stringResource(R.string.fullscreen_chat_title),
+                                                value = stringResource(if (overlayPreferences.horizontal) {
+                                                    R.string.fullscreen_chat_horizontal
+                                                } else R.string.fullscreen_chat_vertical),
+                                                onClick = { settingsPage = PlayerSettingsPage.CHAT_OVERLAY }
+                                            )
                                         }
-                                    )
-
-                                    availableQualities.forEach { quality ->
-                                        PlayerSettingsOptionRow(
-                                            title = quality.label,
-                                            subtitle = quality.dataPerHourText.replace("/saat", stringResource(R.string.player_per_hour)),
-                                            selected = selectedQualityHeight == quality.height,
-                                            onClick = {
-                                                selectedQualityHeight = quality.height
-                                                coroutineScope.launch {
-                                                    settingsRepository.set(
-                                                        SettingsKeys.VIDEO_QUALITY,
-                                                        quality.height
-                                                    )
+                                        if (recording != null) {
+                                            PlayerSettingsCategoryRow(
+                                                icon = R.drawable.download_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+                                                title = stringResource(R.string.recording_download),
+                                                value = null,
+                                                showChevron = false,
+                                                onClick = {
+                            dismissSettings {
+                                downloadRecording(recording.copy(
+                                    channelName = channelName,
+                                    channelSlug = channel?.slug,
+                                    channelAvatar = channel?.user?.profilePic,
+                                ))
+                            }
                                                 }
-                                                applyQualityToPlayer(
-                                                    player,
-                                                    quality.height,
-                                                    availableQualities
-                                                )
+                                            )
+                                        }
+                                        PlayerSettingsCategoryRow(
+                                            icon = R.drawable.tune_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+                                            title = stringResource(R.string.player_more),
+                                            value = null,
+                                            onClick = { settingsPage = PlayerSettingsPage.MORE }
+                                        )
+                                    }
+                                }
+
+                                PlayerSettingsPage.QUALITY -> {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp)
+                                            .verticalScroll(rememberScrollState()),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                                    ) {
+                                        PlayerSettingsOptionRow(
+                                            title = stringResource(R.string.player_auto),
+                                            subtitle = stringResource(R.string.player_auto_network),
+                                            selected = selectedQualityHeight == -1,
+                                            onClick = {
+                                                selectedQualityHeight = -1
+                                                coroutineScope.launch {
+                                                    settingsRepository.set(SettingsKeys.VIDEO_QUALITY, -1)
+                                                }
+                                                applyQualityToPlayer(player, -1, availableQualities)
                                                 dismissSettings()
                                             }
                                         )
+
+                                        availableQualities.forEach { quality ->
+                                            PlayerSettingsOptionRow(
+                                                title = quality.label,
+                                                subtitle = quality.dataPerHourText.replace("/saat", stringResource(R.string.player_per_hour)),
+                                                selected = selectedQualityHeight == quality.height,
+                                                onClick = {
+                                                    selectedQualityHeight = quality.height
+                                                    coroutineScope.launch {
+                                                        settingsRepository.set(
+                                                            SettingsKeys.VIDEO_QUALITY,
+                                                            quality.height
+                                                        )
+                                                    }
+                                                    applyQualityToPlayer(
+                                                        player,
+                                                        quality.height,
+                                                        availableQualities
+                                                    )
+                                                    dismissSettings()
+                                                }
+                                            )
+                                        }
                                     }
                                 }
-                            }
 
-                            PlayerSettingsPage.SLEEP_TIMER -> {
-                                PlayerSleepTimerSettings(
-                                    timer = sleepTimer,
-                                    lastMinutes = lastSleepTimerMinutes,
-                                    enabled = !dismissing,
-                                    onApply = selectSleepTimer
-                                )
-                            }
-
-                            PlayerSettingsPage.CHAT_OVERLAY -> {
-                                if (overlayPreferences != null && playerHost != null) {
-                                    val connection = if (recording == null) {
-                                        liveChatViewModel?.chatConnectionState?.collectAsStateWithLifecycle()?.value
-                                    } else null
-                                    val canConnect = connection == ChatConnectionState.DISCONNECTED || connection == ChatConnectionState.ERROR
-                                    FullscreenChatSettings(
-                                        horizontal = overlayPreferences.horizontal,
-                                        onEditPosition = {
-                                            dismissSettings {
-                                                playerHost.editFullscreenChatPosition(true)
-                                                showControls = false
-                                            }
-                                        },
-                                        onConnect = liveChatViewModel?.takeIf { canConnect }?.let { it::connectChat },
+                                PlayerSettingsPage.SLEEP_TIMER -> {
+                                    PlayerSleepTimerSettings(
+                                        timer = sleepTimer,
+                                        lastMinutes = lastSleepTimerMinutes,
+                                        enabled = !dismissing,
+                                        onApply = selectSleepTimer
                                     )
                                 }
-                            }
 
-                            PlayerSettingsPage.MORE -> {
-                                Column(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp)
-                                        .verticalScroll(rememberScrollState()),
-                                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    SettingSwitch(
-                                        title = stringResource(R.string.player_stats_for_nerds),
-                                        checked = showStats,
-                                        onCheckedChange = { checked -> dismissSettings { showStats = checked } },
-                                        icon = R.drawable.eyeglasses_3_24dp_e3e3e3_fill0_wght400_grad0_opsz24
-                                    )
+                                PlayerSettingsPage.CHAT_OVERLAY -> {
+                                    if (overlayPreferences != null && playerHost != null) {
+                                        val connection = if (recording == null) {
+                                            liveChatViewModel?.chatConnectionState?.collectAsStateWithLifecycle()?.value
+                                        } else null
+                                        val canConnect = connection == ChatConnectionState.DISCONNECTED || connection == ChatConnectionState.ERROR
+                                        FullscreenChatSettings(
+                                            horizontal = overlayPreferences.horizontal,
+                                            modifier = Modifier.padding(horizontal = 16.dp),
+                                            onEditPosition = {
+                                                dismissSettings {
+                                                    playerHost.editFullscreenChatPosition(true)
+                                                    showControls = false
+                                                }
+                                            },
+                                            onConnect = liveChatViewModel?.takeIf { canConnect }?.let { it::connectChat },
+                                        )
+                                    }
+                                }
 
-                                    SettingSwitch(
-                                        key = SettingsKeys.SYNC_PLAYER_VOLUME_WITH_DEVICE,
-                                        title = stringResource(R.string.player_sync_volume),
-                                        icon = R.drawable.volume_up_24dp_e3e3e3_fill0_wght400_grad0_opsz24
-                                    )
+                                PlayerSettingsPage.MORE -> {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp)
+                                            .verticalScroll(rememberScrollState()),
+                                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        SettingSwitch(
+                                            title = stringResource(R.string.player_stats_for_nerds),
+                                            checked = showStats,
+                                            onCheckedChange = { checked -> dismissSettings { showStats = checked } },
+                                            icon = R.drawable.eyeglasses_3_24dp_e3e3e3_fill0_wght400_grad0_opsz24
+                                        )
 
-                                    SettingSwitch(
-                                        key = SettingsKeys.PIP_ENABLED,
-                                        title = stringResource(R.string.player_pip),
-                                        description = stringResource(R.string.player_pip_description),
-                                        icon = R.drawable.picture_in_picture_alt_24dp_e3e3e3_fill0_wght400_grad0_opsz24
-                                    )
+                                        SettingSwitch(
+                                            key = SettingsKeys.SYNC_PLAYER_VOLUME_WITH_DEVICE,
+                                            title = stringResource(R.string.player_sync_volume),
+                                            icon = R.drawable.volume_up_24dp_e3e3e3_fill0_wght400_grad0_opsz24
+                                        )
 
-                                    SettingSwitch(
-                                        key = SettingsKeys.LOW_LATENCY,
-                                        title = stringResource(R.string.player_low_latency),
-                                        description = stringResource(R.string.player_low_latency_description),
-                                        icon = R.drawable.bolt_24dp_e3e3e3_fill0_wght400_grad0_opsz24
-                                    )
+                                        SettingSwitch(
+                                            key = SettingsKeys.PIP_ENABLED,
+                                            title = stringResource(R.string.player_pip),
+                                            description = stringResource(R.string.player_pip_description),
+                                            icon = R.drawable.picture_in_picture_alt_24dp_e3e3e3_fill0_wght400_grad0_opsz24
+                                        )
 
-                                    SettingSwitch(
-                                        key = SettingsKeys.AUTO_FULLSCREEN_LIVE,
-                                        title = stringResource(R.string.player_auto_fullscreen),
-                                        description = stringResource(R.string.player_auto_fullscreen_description),
-                                        icon = R.drawable.fullscreen_24dp_e3e3e3_fill0_wght400_grad0_opsz24
-                                    )
+                                        SettingSwitch(
+                                            key = SettingsKeys.LOW_LATENCY,
+                                            title = stringResource(R.string.player_low_latency),
+                                            description = stringResource(R.string.player_low_latency_description),
+                                            icon = R.drawable.bolt_24dp_e3e3e3_fill0_wght400_grad0_opsz24
+                                        )
+
+                                        SettingSwitch(
+                                            key = SettingsKeys.AUTO_FULLSCREEN_LIVE,
+                                            title = stringResource(R.string.player_auto_fullscreen),
+                                            description = stringResource(R.string.player_auto_fullscreen_description),
+                                            icon = R.drawable.fullscreen_24dp_e3e3e3_fill0_wght400_grad0_opsz24
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1590,6 +1564,8 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
     isSettingsDialogVisible: Boolean,
     isCastDialogVisible: Boolean,
     qualityLabel: String,
+    controlFrame: State<FullscreenChatVideoFrame?>? = null,
+    controlBlur: FrostedPlayerRegions? = null,
     sleepRemainingSeconds: Int,
     streamDuration: String,
     positionMs: Long = 0L,
@@ -1620,7 +1596,7 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.5f))
+            .background(Color.Black.copy(alpha = 0.36f))
             .let {
                 if (isFullScreen) it.windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
                 else it
@@ -1683,7 +1659,8 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                         tint = Color.White,
                     )
                 }
-                Surface(color = Color.Black.copy(alpha = 0.6f), shape = RoundedCornerShape(4.dp)) {
+                Box(contentAlignment = Alignment.Center) {
+                    FrostedPlayerControl(controlFrame, controlBlur)
                     Text(
                         text = qualityLabel,
                         color = Color.White,
@@ -1691,7 +1668,7 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
                         softWrap = false,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                     )
                 }
 
@@ -1747,34 +1724,34 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
             verticalAlignment = Alignment.CenterVertically
         ) {
             if (!isLive) {
-                IconButton(
+                FrostedPlaybackButton(
                     onClick = onSeekBack,
-                    modifier = Modifier
-                        .size(48.dp)
+                    frame = controlFrame,
+                    backdrop = controlBlur,
+                    modifier = Modifier.size(48.dp)
                 ) {
                     Icon(painterResource(R.drawable.replay_10_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
-                        contentDescription = "10 saniye geri", tint = MaterialTheme.colorScheme.primary)
+                        contentDescription = stringResource(R.string.player_skip_back), tint = Color.White)
                 }
             }
-            IconButton(
+            FrostedPlaybackButton(
                 onClick = onTogglePlay,
-                modifier = Modifier
-                    .size(60.dp)
-//                    .background(Color.Black.copy(alpha = 0.25f), CircleShape)
+                frame = controlFrame,
+                backdrop = controlBlur,
+                modifier = Modifier.size(60.dp)
             ) {
                 Icon(
                     painter = rememberPlayPausePainter(isPlaying),
                     contentDescription = "Play/Pause",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier
-                        .size(60.dp)
+                    tint = Color.White,
+                    modifier = Modifier.size(32.dp)
                 )
             }
 
             if (!isLive) {
-                IconButton(onClick = onSeekForward, modifier = Modifier.size(48.dp)) {
+                FrostedPlaybackButton(onSeekForward, controlFrame, Modifier.size(48.dp), controlBlur) {
                     Icon(painterResource(R.drawable.forward_10_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
-                        contentDescription = "10 saniye ileri", tint = MaterialTheme.colorScheme.primary)
+                        contentDescription = stringResource(R.string.player_skip_forward), tint = Color.White)
                 }
             }
         }

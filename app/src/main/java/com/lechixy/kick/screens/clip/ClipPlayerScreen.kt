@@ -1,6 +1,8 @@
 package com.lechixy.kick.screens.clip
 
 import android.content.res.Configuration
+import android.os.Build
+import android.view.TextureView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -15,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -32,6 +35,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,6 +53,12 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.lechixy.kick.R
+import com.lechixy.kick.components.FrostedPlaybackButton
+import com.lechixy.kick.components.FrostedPlayerRegions
+import com.lechixy.kick.components.RecordingSkipFeedback
+import com.lechixy.kick.components.RecordingSkipOverlay
+import com.lechixy.kick.components.channel.chat.rememberLegacyFullscreenChatFrame
+import com.lechixy.kick.components.channel.chat.VideoBackdropBlur
 import com.lechixy.kick.data.channel.model.ClipChannel
 import com.lechixy.kick.data.channel.model.ClipCreator
 import com.lechixy.kick.data.channel.model.ClipDetail
@@ -81,6 +91,7 @@ internal fun ClipPlayerScreen(
     onWatchFullVideo: (ClipDetail) -> Unit,
     video: @Composable () -> Unit,
     modifier: Modifier = Modifier,
+    videoTexture: TextureView? = null,
 ) {
     BoxWithConstraints(modifier.fillMaxSize()) {
         val videoHeight = minOf(maxWidth * (9f / 16f), maxHeight * .55f)
@@ -88,7 +99,7 @@ internal fun ClipPlayerScreen(
         val videoPane: @Composable (Modifier) -> Unit = { paneModifier ->
             ClipVideoPane(
                 uiState, playback, fullscreen, onPlayPauseToggle, onSeekTo, onMuteToggle,
-                onFullscreenToggle, onCloseClick, onRetryPlayback, video, paneModifier,
+                onFullscreenToggle, onCloseClick, onRetryPlayback, video, paneModifier, videoTexture,
             )
         }
         val panel: @Composable (Modifier) -> Unit = { panelModifier ->
@@ -134,11 +145,23 @@ private fun ClipVideoPane(
     onRetryPlayback: () -> Unit,
     video: @Composable () -> Unit,
     modifier: Modifier,
+    videoTexture: TextureView?,
 ) {
     val clip = uiState.clip
     var controlsVisible by remember(clip?.id) { mutableStateOf(true) }
     var interaction by remember { mutableIntStateOf(0) }
     var scrubbing by remember { mutableStateOf<Float?>(null) }
+    var skipFeedback by remember(clip?.id) { mutableStateOf<RecordingSkipFeedback?>(null) }
+    val currentPlayback by rememberUpdatedState(playback)
+    val seekTo by rememberUpdatedState(onSeekTo)
+    fun skip(forward: Boolean): Boolean {
+        val current = currentPlayback
+        if (current.durationMs <= 0L || !current.renderedFrame || current.failed) return false
+        val delta = if (forward) 10_000L else -10_000L
+        seekTo((current.positionMs + delta).coerceIn(0L, current.durationMs))
+        interaction++
+        return true
+    }
     val dragging = scrubbing != null
     LaunchedEffect(controlsVisible, playback.playing, interaction, dragging, fullscreen) {
         if (controlsVisible && playback.playing && !dragging) {
@@ -148,6 +171,8 @@ private fun ClipVideoPane(
     }
 
     Box(modifier.background(Color.Black), contentAlignment = Alignment.Center) {
+        val backdrop = remember { FrostedPlayerRegions() }
+        VideoBackdropBlur(videoTexture.takeIf { playback.renderedFrame }, backdrop.regions.values.toList())
         video()
         if (clip != null && !playback.renderedFrame) {
             val context = LocalContext.current
@@ -161,11 +186,47 @@ private fun ClipVideoPane(
             )
         }
         if (clip != null) {
-            Box(Modifier.matchParentSize().pointerInput(Unit) {
-                detectTapGestures { controlsVisible = !controlsVisible }
+            Box(Modifier.matchParentSize().pointerInput(clip.id) {
+                detectTapGestures(
+                    onTap = { controlsVisible = !controlsVisible },
+                    onDoubleTap = { tap ->
+                        val forward = tap.x >= size.width / 2f
+                        if (skip(forward)) {
+                            skipFeedback = RecordingSkipFeedback(forward)
+                        }
+                    },
+                )
             })
             if (controlsVisible || !playback.playing) {
                 ClipTitleOverlay(clip, fullscreen, onCloseClick)
+                if (!playback.failed) {
+                    val frame = if (Build.VERSION.SDK_INT < 31 && videoTexture != null && playback.renderedFrame) {
+                        rememberLegacyFullscreenChatFrame(videoTexture, playback.playing)
+                    } else null
+                    Row(
+                        Modifier.align(Alignment.Center),
+                        horizontalArrangement = Arrangement.spacedBy(28.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        FrostedPlaybackButton({ skip(false) }, frame, Modifier.size(48.dp), backdrop) {
+                            Icon(painterResource(R.drawable.replay_10_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
+                                stringResource(R.string.player_skip_back), tint = Color.White)
+                        }
+                        FrostedPlaybackButton({ interaction++; controlsVisible = true; onPlayPauseToggle() },
+                            frame, Modifier.size(60.dp), backdrop) {
+                            Icon(
+                                painterResource(if (playback.playRequested) R.drawable.pause_24dp_e3e3e3_fill1_wght400_grad0_opsz24
+                                    else R.drawable.play_arrow_24dp_e3e3e3_fill1_wght400_grad0_opsz24),
+                                stringResource(if (playback.playRequested) R.string.clip_pause else R.string.clip_play),
+                                Modifier.size(32.dp), tint = Color.White,
+                            )
+                        }
+                        FrostedPlaybackButton({ skip(true) }, frame, Modifier.size(48.dp), backdrop) {
+                            Icon(painterResource(R.drawable.forward_10_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
+                                stringResource(R.string.player_skip_forward), tint = Color.White)
+                        }
+                    }
+                }
                 ClipControls(
                     playback, fullscreen, scrubbing,
                     onScrub = { scrubbing = it },
@@ -174,11 +235,13 @@ private fun ClipVideoPane(
                         scrubbing = null
                         interaction++
                     },
-                    onPlayPause = { interaction++; controlsVisible = true; onPlayPauseToggle() },
                     onMute = { interaction++; onMuteToggle() },
                     onFullscreen = { interaction++; onFullscreenToggle() },
                 )
             }
+        }
+        skipFeedback?.let { feedback ->
+            RecordingSkipOverlay(feedback, Modifier.matchParentSize()) { skipFeedback = null }
         }
         when {
             uiState.loading || (playback.buffering && !playback.failed && clip != null) ->
@@ -238,7 +301,6 @@ private fun BoxScope.ClipControls(
     scrubbing: Float?,
     onScrub: (Float) -> Unit,
     onSeek: () -> Unit,
-    onPlayPause: () -> Unit,
     onMute: () -> Unit,
     onFullscreen: () -> Unit,
 ) {
@@ -260,12 +322,6 @@ private fun BoxScope.ClipControls(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp),
         )
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            ClipControlButton(
-                if (playback.playRequested) R.drawable.pause_24dp_e3e3e3_fill1_wght400_grad0_opsz24
-                else R.drawable.play_arrow_24dp_e3e3e3_fill1_wght400_grad0_opsz24,
-                if (playback.playRequested) R.string.clip_pause else R.string.clip_play,
-                onPlayPause, Color.White,
-            )
             ClipControlButton(
                 if (playback.muted) R.drawable.volume_off_24dp_e3e3e3_fill0_wght400_grad0_opsz24
                 else R.drawable.volume_up_24dp_e3e3e3_fill0_wght400_grad0_opsz24,

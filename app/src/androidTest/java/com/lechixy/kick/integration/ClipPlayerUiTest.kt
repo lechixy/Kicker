@@ -8,6 +8,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
@@ -15,6 +16,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
@@ -131,5 +133,34 @@ class ClipPlayerUiTest {
             val wideHeading = compose.onNodeWithText(compose.activity.getString(R.string.chat)).getUnclippedBoundsInRoot()
             assertTrue(wideHeading.left >= wideVideo.right)
         }
+    }
+
+    @Test fun doubleTapSeeksWithinTheClip() {
+        val position = mutableStateOf(7_000L)
+        val clip = ClipDetail(
+            id, "Clip", 12.0, "",
+            startedAt = "2026-11-07T21:58:54Z", createdAt = "2026-11-07T21:59:31Z",
+            channel = ClipChannel(1, "Streamer", "streamer"),
+            creator = ClipCreator(2, "Viewer", "viewer"),
+        )
+        compose.setContent {
+            MaterialTheme {
+                ClipPlayerScreen(
+                    uiState = ClipPlayerUiState(clip = clip, loading = false),
+                    playback = ClipPlaybackState(position.value, 12_000, buffering = false, renderedFrame = true),
+                    fullscreen = true, showChat = false, onPlayPauseToggle = {}, onSeekTo = { position.value = it },
+                    onMuteToggle = {}, onFullscreenToggle = {}, onChatVisibilityToggle = {}, onCloseClick = {},
+                    onRetryPlayback = {}, onRetryChat = {}, onWatchLivestream = {}, onWatchFullVideo = {},
+                    video = { Box(Modifier.fillMaxSize().testTag("clip-video")) },
+                )
+            }
+        }
+        val video = compose.onNodeWithTag("clip-video")
+        video.performTouchInput { doubleClick(Offset(width * .75f, center.y)) }
+        compose.runOnIdle { assertEquals(12_000L, position.value) }
+        video.performTouchInput { doubleClick(Offset(width * .25f, center.y)) }
+        compose.runOnIdle { assertEquals(2_000L, position.value) }
+        video.performTouchInput { doubleClick(Offset(width * .25f, center.y)) }
+        compose.runOnIdle { assertEquals(0L, position.value) }
     }
 }

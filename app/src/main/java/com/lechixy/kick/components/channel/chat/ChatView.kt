@@ -146,15 +146,18 @@ fun ChatView(
 ) {
     val repository = LocalSettingsRepository.current
     val chatActive = LocalChatContentActive.current
+    val smallestWidth = androidx.compose.ui.platform.LocalConfiguration.current.smallestScreenWidthDp
+    val fontSetting = SettingsKeys.chatFontSize(smallestWidth)
+    val spacingSetting = SettingsKeys.chatMessageSpacing(smallestWidth)
     val fontSize by repository
-        .get(SettingsKeys.CHAT_FONT_SIZE)
-        .collectAsStateWithLifecycle(initialValue = SettingsKeys.CHAT_FONT_SIZE.defaultValue)
+        .get(fontSetting)
+        .collectAsStateWithLifecycle(initialValue = fontSetting.defaultValue)
     val autoConnectChat by repository
         .get(SettingsKeys.AUTO_CONNECT_CHAT)
         .collectAsStateWithLifecycle(initialValue = SettingsKeys.AUTO_CONNECT_CHAT.defaultValue)
     val messageSpacing by repository
-        .get(SettingsKeys.CHAT_MESSAGE_SPACING)
-        .collectAsStateWithLifecycle(initialValue = SettingsKeys.CHAT_MESSAGE_SPACING.defaultValue)
+        .get(spacingSetting)
+        .collectAsStateWithLifecycle(initialValue = spacingSetting.defaultValue)
 
     val timestampPreference by repository.get(SettingsKeys.CHAT_TIMESTAMPS)
         .collectAsStateWithLifecycle(initialValue = SettingsKeys.CHAT_TIMESTAMPS.defaultValue)
@@ -355,7 +358,7 @@ fun ChatView(
                         com.lechixy.kick.components.settings.ChatTimestampSetting()
 
                         SettingSlider(
-                            key = SettingsKeys.CHAT_FONT_SIZE,
+                            key = fontSetting,
                             title = stringResource(R.string.chat_font_size_title),
                             description = stringResource(R.string.chat_font_size_description),
                             valueRange = 10f..24f,
@@ -364,7 +367,7 @@ fun ChatView(
                         )
 
                         SettingSlider(
-                            key = SettingsKeys.CHAT_MESSAGE_SPACING,
+                            key = spacingSetting,
                             title = stringResource(R.string.chat_spacing_title),
                             description = stringResource(R.string.chat_spacing_description),
                             valueRange = 0f..25f,
@@ -1160,6 +1163,9 @@ private fun ChatEventTickerOverlay(
     }
 
     val chatActive = LocalChatContentActive.current
+    val smallestWidth = androidx.compose.ui.platform.LocalConfiguration.current.smallestScreenWidthDp
+    val fontSetting = SettingsKeys.chatFontSize(smallestWidth)
+    val spacingSetting = SettingsKeys.chatMessageSpacing(smallestWidth)
     LaunchedEffect(currentItem?.id, chatActive) {
         if (!chatActive) return@LaunchedEffect
         if (currentItem == null) {
@@ -1395,6 +1401,9 @@ internal fun ContinuousTickerRow(
     }
 
     val chatActive = LocalChatContentActive.current
+    val smallestWidth = androidx.compose.ui.platform.LocalConfiguration.current.smallestScreenWidthDp
+    val fontSetting = SettingsKeys.chatFontSize(smallestWidth)
+    val spacingSetting = SettingsKeys.chatMessageSpacing(smallestWidth)
     LaunchedEffect(speedPxPerSec, stridePx, isUserScrolling, chatActive) {
         if (!chatActive || stridePx <= 0f || speedPxPerSec <= 0f || isUserScrolling) return@LaunchedEffect
         var lastFrameNanos = withFrameNanos { it }

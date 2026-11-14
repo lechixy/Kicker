@@ -54,7 +54,18 @@ object FavoriteUsersStore {
 
     @Synchronized
     fun toggle(userId: Long?, username: String, slug: String = "") {
-        val updated = mutableFavorites.value.toggle(FavoriteUser(userId, username, slug))
+        persist(mutableFavorites.value.toggle(FavoriteUser(userId, username, slug)))
+    }
+
+    @Synchronized
+    internal fun restore(users: List<FavoriteUser>) {
+        val updated = users.fold(mutableFavorites.value) { favorites, user ->
+            if (favorites.contains(user.userId, user.username, user.slug)) favorites else favorites.toggle(user)
+        }
+        persist(updated)
+    }
+
+    private fun persist(updated: FavoriteUsers) {
         mutableFavorites.value = updated
         preferences?.edit()?.putString("users", json.encodeToString(updated.users))?.apply()
     }

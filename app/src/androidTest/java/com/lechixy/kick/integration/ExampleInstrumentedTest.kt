@@ -17,6 +17,6 @@ class ExampleInstrumentedTest {
     fun useAppContext() {
         // Context of the app under test.
         val appContext = InstrumentationRegistry.getInstrumentation().targetContext
-        assertEquals("com.lechixy.kicker", appContext.packageName)
+        assertEquals(com.lechixy.kick.BuildConfig.APPLICATION_ID, appContext.packageName)
     }
 }

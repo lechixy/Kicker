@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="you_data_usage_clear_all">Tüm kullanım verilerini sil</string>
+    <string name="you_data_usage_clear_channel">%1$s kanalının kullanım verilerini sil</string>
+    <string name="you_data_usage_clear_title">Kullanım verilerini sil</string>
+    <string name="you_data_usage_clear_all_message">Kaydedilen tüm izleme süresi ve veri kullanımı silinsin mi?</string>
+    <string name="you_data_usage_clear_channel_message">%1$s kanalının izleme süresi ve veri kullanımı silinsin mi?</string>
+    <string name="audio_attribution_label">Medya oynatma</string>
     <string name="you_title">Sen</string>
     <string name="you_downloads">İndirilenler</string>
     <string name="you_downloads_loading">İndirilenler yükleniyor…</string>
@@ -35,4 +41,15 @@
     <string name="you_data_usage_vpn">VPN</string>
     <string name="you_data_usage_other">Diğer bağlantı</string>
     <string name="you_data_usage_offline">Çevrimdışı oynatma</string>
+    <string name="you_download_waiting">İndirme sırasında bekliyor</string>
+    <string name="you_download_written">Diske %1$s yazıldı</string>
+    <string name="you_download_cancel_task">İndirmeyi iptal et</string>
+    <string name="you_download_cancel_task_message">%1$s için indirme iptal edilsin mi?</string>
+    <string name="you_download_remove_task">Sıradan kaldır</string>
+    <string name="you_download_remove_task_message">%1$s indirme sırasından kaldırılsın mı?</string>
+    <string name="you_download_play">Videoyu oynat</string>
+    <string name="you_download_linked">Bağlı video</string>
+    <string name="you_data_usage_open_channel">Kanalı aç</string>
+    <string name="you_data_usage_watch_time">İzleme süresi</string>
+    <string name="you_data_usage_transferred">Aktarılan veri</string>
 </resources>

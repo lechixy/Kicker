@@ -320,12 +320,13 @@ fun KickApp(restorePending: Boolean = false) {
     val activity = remember(context) { context.findActivity() }
 
     // Tek yerde tutulan player oturumu; ChannelScreen, mini player ve nav bar buradan beslenir.
-    val playerHost = rememberPlayerHostState()
+    val chatWidth = SettingsKeys.chatWidth(androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp)
+    val playerHost = rememberPlayerHostState(chatWidth.defaultValue)
     var chatClipId by rememberSaveable { mutableStateOf<String?>(null) }
     val openChatClip: (String) -> Unit = remember { { chatClipId = it } }
     val settingsRepository = LocalSettingsRepository.current
-    LaunchedEffect(settingsRepository) {
-        settingsRepository.get(SettingsKeys.CHAT_WIDTH_FRACTION).collect { savedFraction ->
+    LaunchedEffect(settingsRepository, chatWidth) {
+        settingsRepository.get(chatWidth).collect { savedFraction ->
             playerHost.updateChatWidthFraction(savedFraction)
         }
     }

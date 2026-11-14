@@ -1,5 +1,6 @@
 package com.lechixy.kick.screens.clip
 
+import android.view.TextureView
 import androidx.annotation.OptIn
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
@@ -44,6 +45,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
@@ -77,12 +79,15 @@ internal fun ClipPlayerDialog(
     val state by model.state.collectAsStateWithLifecycle()
     var fullscreen by rememberSaveable(clipId) { mutableStateOf(false) }
     var showChat by rememberSaveable(clipId) { mutableStateOf(true) }
+    var videoTexture by remember(clipId) { mutableStateOf<TextureView?>(null) }
 
     val playback = state.clip?.let { rememberClipPlayback(it) }
     val video = remember(playback) {
         movableContentOf {
             if (playback != null) {
-                PlayerVideoSurface(playback.player, playback.state.playing, Modifier.fillMaxSize())
+                PlayerVideoSurface(playback.player, playback.state.playing, Modifier.fillMaxSize()) {
+                    videoTexture = it
+                }
             }
         }
     }
@@ -129,6 +134,7 @@ internal fun ClipPlayerDialog(
                     onWatchLivestream = onWatchLivestream,
                     onWatchFullVideo = onWatchFullVideo,
                     video = video,
+                    videoTexture = videoTexture,
                 )
             }
         }
@@ -196,6 +202,11 @@ private fun rememberClipPlayback(clip: ClipDetail): ClipPlayback {
         val source = playbackHttpDataSourceFactory().trackUsage(PlaybackUsageChannel(clip.channel.slug, clip.channel.username))
         val player = ExoPlayer.Builder(context)
             .setMediaSourceFactory(DefaultMediaSourceFactory(source))
+            .setLoadControl(DefaultLoadControl.Builder()
+                .setBufferDurationsMsForStreaming(2500, 10000, 600, 1200)
+                .setTargetBufferBytes(12 * 1024 * 1024)
+                .setPrioritizeTimeOverSizeThresholdsForStreaming(false)
+                .build())
             .setHandleAudioBecomingNoisy(true)
             .build()
         ClipPlayback(player, clip.durationMs)
@@ -216,7 +227,9 @@ private fun rememberClipPlayback(clip: ClipDetail): ClipPlayback {
                         .setArtist(clip.channel.username)
                         .setArtworkUri(clip.thumbnailUrl?.toUri())
                         .setMediaType(MediaMetadata.MEDIA_TYPE_VIDEO)
-                        .setExtras(android.os.Bundle().apply { setPlaybackUsageChannel(clip.channel.slug, clip.channel.username) })
+                .setExtras(android.os.Bundle().apply {
+                    setPlaybackUsageChannel(clip.channel.slug, clip.channel.username, clip.channel.profilePicture)
+                })
                         .build()
                 )
                 .build()

@@ -9,6 +9,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
@@ -22,6 +23,7 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults.Indicator
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -44,6 +46,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 import com.lechixy.kick.R
 import com.lechixy.kick.components.CategoryRow
@@ -88,6 +91,16 @@ fun HomeScreen(
         val exitingKeys = exitingHistory.map { it.entry.key }.toSet()
         history.filterNot { it.key in exitingKeys }.toMutableList().apply {
             exitingHistory.sortedBy { it.index }.forEach { add(it.index.coerceAtMost(size), it.entry) }
+        }
+    }
+    val hasHistory = displayedHistory.isNotEmpty()
+    val showHistoryHeader = history.isNotEmpty()
+    var keepHistoryHeader by remember { mutableStateOf(showHistoryHeader) }
+    LaunchedEffect(showHistoryHeader) {
+        if (showHistoryHeader) keepHistoryHeader = true
+        else if (keepHistoryHeader) {
+            delay(220)
+            keepHistoryHeader = false
         }
     }
     val sectionOrder by LocalSettingsRepository.current.get(SettingsKeys.HOME_SECTION_ORDER)
@@ -150,40 +163,49 @@ fun HomeScreen(
                     sections.forEach { section ->
                         when (section) {
                             HomeSection.CONTINUE_WATCHING -> {
-                                if (displayedHistory.isNotEmpty()) {
+                                if (hasHistory || keepHistoryHeader) {
                                     item(key = "continue_header", span = { GridItemSpan(maxLineSpan) }) {
-                                        SectionHeader(stringResource(R.string.home_continue_watching),
-                                            leadingIcon = R.drawable.motion_play_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
-                                            compact = true)
+                                        AnimatedVisibility(visible = showHistoryHeader,
+                                            exit = shrinkVertically(tween(200), shrinkTowards = Alignment.Top) + fadeOut(tween(150))) {
+                                            SectionHeader(stringResource(R.string.home_continue_watching),
+                                                leadingIcon = R.drawable.motion_play_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+                                                compact = true)
+                                        }
                                     }
                                     itemsIndexed(displayedHistory.take(columns), key = { _, entry -> "history_${entry.key}" }) { index, entry ->
                                         val exit = exitingHistory.firstOrNull { it.entry.key == entry.key }
-                                        Box(Modifier.animateItem(fadeOutSpec = null).graphicsLayer {
-                                            val scale = exit?.scale?.value ?: 1f
-                                            scaleX = scale
-                                            scaleY = scale
-                                            alpha = scale
-                                        }) {
-                                            ContinueWatchingCard(entry, enabled = !openingHistory && exit == null, onRemove = {
-                                                val removal = ExitingHistoryCard(index, entry)
-                                                exitingHistory.add(removal)
-                                                viewModel.removeHistory(entry.key)
-                                                scope.launch {
-                                                    removal.scale.animateTo(0f, tween(220))
-                                                    exitingHistory.remove(removal)
-                                                }
-                                            }) { source ->
-                                                scope.launch {
-                                                    openingHistory = true
-                                                    try {
-                                                        val recording = viewModel.resolveHistoryRecording(entry)
-                                                        if (recording != null) navigation.recording(entry.channelSlug, recording, source)
-                                                        else android.widget.Toast.makeText(context, R.string.home_recording_unavailable, android.widget.Toast.LENGTH_SHORT).show()
-                                                    } catch (error: kotlinx.coroutines.CancellationException) {
-                                                        throw error
-                                                    } catch (_: Exception) {
-                                                        android.widget.Toast.makeText(context, R.string.home_recording_unavailable, android.widget.Toast.LENGTH_SHORT).show()
-                                                    } finally { openingHistory = false }
+                                        AnimatedVisibility(
+                                            visible = exit == null || history.isNotEmpty(),
+                                            modifier = Modifier.animateItem(fadeOutSpec = null),
+                                            exit = shrinkVertically(tween(220), shrinkTowards = Alignment.Top),
+                                        ) {
+                                            Box(Modifier.graphicsLayer {
+                                                val scale = exit?.scale?.value ?: 1f
+                                                scaleX = scale
+                                                scaleY = scale
+                                                alpha = scale
+                                            }) {
+                                                ContinueWatchingCard(entry, enabled = !openingHistory && exit == null, onRemove = {
+                                                    val removal = ExitingHistoryCard(index, entry)
+                                                    exitingHistory.add(removal)
+                                                    viewModel.removeHistory(entry.key)
+                                                    scope.launch {
+                                                        removal.scale.animateTo(0f, tween(220))
+                                                        exitingHistory.remove(removal)
+                                                    }
+                                                }) { source ->
+                                                    scope.launch {
+                                                        openingHistory = true
+                                                        try {
+                                                            val recording = viewModel.resolveHistoryRecording(entry)
+                                                            if (recording != null) navigation.recording(entry.channelSlug, recording, source)
+                                                            else android.widget.Toast.makeText(context, R.string.home_recording_unavailable, android.widget.Toast.LENGTH_SHORT).show()
+                                                        } catch (error: kotlinx.coroutines.CancellationException) {
+                                                            throw error
+                                                        } catch (_: Exception) {
+                                                            android.widget.Toast.makeText(context, R.string.home_recording_unavailable, android.widget.Toast.LENGTH_SHORT).show()
+                                                        } finally { openingHistory = false }
+                                                    }
                                                 }
                                             }
                                         }

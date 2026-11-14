@@ -37,6 +37,7 @@ data class ClipDetail(
         directUrl = playbackUrl,
         channelName = channel.username,
         channelSlug = channel.slug,
+        channelAvatar = channel.profilePicture,
     )
 }
 

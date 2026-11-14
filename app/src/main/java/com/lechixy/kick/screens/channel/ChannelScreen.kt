@@ -50,6 +50,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -110,8 +111,8 @@ import kotlin.math.roundToInt
 import com.lechixy.kick.R
 import com.lechixy.kick.components.channel.chat.LocalChatContentActive
 import com.lechixy.kick.components.channel.chat.collectAsChatState
-import com.lechixy.kick.components.CHAT_WIDTH_FRACTION
 import com.lechixy.kick.components.CardSection
+import com.lechixy.kick.components.contentColumns
 import com.lechixy.kick.components.ChannelTabSpace
 import com.lechixy.kick.components.ContentState
 import com.lechixy.kick.components.LiveBadge
@@ -208,7 +209,7 @@ fun ChannelScreen(
     var isProfilePhotoExpanded by remember(channelSlug) { mutableStateOf(false) }
     val isControlsVisible = playerHost?.isControlsVisible ?: true
     val isChatVisible = playerHost?.isChatVisible ?: true
-    val chatWidthFraction = playerHost?.chatWidthFraction ?: CHAT_WIDTH_FRACTION
+    val chatWidthFraction = playerHost?.chatWidthFraction ?: SettingsKeys.chatWidth(configuration.screenWidthDp).defaultValue
     val isTheaterMode = playerHost?.isTheaterMode ?: false
 
     val theaterAnim = remember {
@@ -316,7 +317,7 @@ fun ChannelScreen(
                 val screenHeightDp = maxHeight
                 val isWide = screenWidthDp >= WIDE_BREAKPOINT_DP.dp
                 val scrollWideHeader = isWide && !isFullScreen && !isTheaterMode &&
-                    channel?.livestream != null && playerHost?.recording == null
+                    (channel?.livestream != null || playerHost?.recording != null)
                 var headerOffsetPx by remember(channelSlug, scrollWideHeader) { mutableFloatStateOf(0f) }
                 var headerHeightPx by remember(channelSlug, scrollWideHeader) { mutableFloatStateOf(0f) }
                 val headerScroll = remember(offline, offlineCollapse, scrollWideHeader, channelSlug) {
@@ -566,30 +567,27 @@ fun ChannelScreen(
                                                     }
                                                 }
                                             } else if (channel != null) {
-                                                LazyColumn(state = tabScrollStates.getValue(pageTab), modifier = Modifier.fillMaxSize()) {
-                                                    item(key = "channel_content") {
-                                                        ChannelTabContent(
-                                                            tab = pageTab, channel = channel,
-                                                            linksState = state.links, goalState = state.goals,
-                                                            onRetryAbout = { viewModel.loadAbout(retry = true) },
-                                                            videos = state.videos,
-                                                            videoSort = videoSort, onVideoSort = { videoSort = it },
-                                                            clipState = state, onClipFilters = viewModel::updateClipFilters,
-                                                            onLoadMoreClips = viewModel::loadMoreClips,
-                                                            popularClips = state.popularClips, recentCategories = state.recentCategories,
-                                                            onRetryHome = viewModel::loadHomeSections,
-                                                            onRetryClips = viewModel::retryClips,
-                                                            onPlayRecording = { playerHost?.playRecording(it) },
-                                                            onDownloadRecording = { recording ->
-                                                                downloadRecording(recording.copy(channelName = channel.user?.username ?: channel.slug,
-                                                                    channelSlug = channel.slug))
-                                                            },
-                                                            onNavigateToTab = { target -> scope.launch {
-                                                                pagerState.animateScrollToPage(visibleTabs.indexOf(target))
-                                                            } }
-                                                        )
-                                                    }
-                                                }
+                                                ChannelTabContent(
+                                                    tab = pageTab, channel = channel,
+                                                    listState = tabScrollStates.getValue(pageTab),
+                                                    linksState = state.links, goalState = state.goals,
+                                                    onRetryAbout = { viewModel.loadAbout(retry = true) },
+                                                    videos = state.videos,
+                                                    videoSort = videoSort, onVideoSort = { videoSort = it },
+                                                    clipState = state, onClipFilters = viewModel::updateClipFilters,
+                                                    onLoadMoreClips = viewModel::loadMoreClips,
+                                                    popularClips = state.popularClips, recentCategories = state.recentCategories,
+                                                    onRetryHome = viewModel::loadHomeSections,
+                                                    onRetryClips = viewModel::retryClips,
+                                                    onPlayRecording = { playerHost?.playRecording(it) },
+                                                    onDownloadRecording = { recording ->
+                                                        downloadRecording(recording.copy(channelName = channel.user?.username ?: channel.slug,
+                                                            channelSlug = channel.slug, channelAvatar = channel.user?.profilePic))
+                                                    },
+                                                    onNavigateToTab = { target -> scope.launch {
+                                                        pagerState.animateScrollToPage(visibleTabs.indexOf(target))
+                                                    } }
+                                                )
                                             }
                                         }
                                     }
@@ -764,10 +762,13 @@ private fun ChannelHeaderSkeleton(hasPlayback: Boolean) {
 @Composable
 private fun ChannelChatSkeleton(canHideChat: Boolean, isReplay: Boolean, isLive: Boolean) {
     val settings = LocalSettingsRepository.current
-    val fontSize by settings.get(SettingsKeys.CHAT_FONT_SIZE)
-        .collectAsStateWithLifecycle(initialValue = SettingsKeys.CHAT_FONT_SIZE.defaultValue)
-    val spacing by settings.get(SettingsKeys.CHAT_MESSAGE_SPACING)
-        .collectAsStateWithLifecycle(initialValue = SettingsKeys.CHAT_MESSAGE_SPACING.defaultValue)
+    val smallestWidth = LocalConfiguration.current.smallestScreenWidthDp
+    val fontSetting = SettingsKeys.chatFontSize(smallestWidth)
+    val spacingSetting = SettingsKeys.chatMessageSpacing(smallestWidth)
+    val fontSize by settings.get(fontSetting)
+        .collectAsStateWithLifecycle(initialValue = fontSetting.defaultValue)
+    val spacing by settings.get(spacingSetting)
+        .collectAsStateWithLifecycle(initialValue = spacingSetting.defaultValue)
     val timestamps by settings.get(SettingsKeys.CHAT_TIMESTAMPS)
         .collectAsStateWithLifecycle(initialValue = SettingsKeys.CHAT_TIMESTAMPS.defaultValue)
     val showTimestamps = ChatTimestampMode.fromValue(timestamps).shows(isReplay)
@@ -1285,6 +1286,7 @@ private fun ChannelTabsRow(
 private fun ChannelTabContent(
     tab: ChannelTab,
     channel: ChannelDetail,
+    listState: LazyListState,
     linksState: com.lechixy.kick.data.channel.model.ChannelSectionState<List<com.lechixy.kick.data.channel.model.KickChannelLinkDto>>,
     goalState: com.lechixy.kick.data.channel.model.ChannelSectionState<List<com.lechixy.kick.data.channel.model.KickGoalDto>>,
     onRetryAbout: () -> Unit,
@@ -1302,75 +1304,114 @@ private fun ChannelTabContent(
     onRetryHome: () -> Unit,
     onNavigateToTab: (ChannelTab) -> Unit
 ) {
-    when (tab) {
-        ChannelTab.CHAT -> {
-            // Managed in ChannelScreen main layout when selected
+    val sortedVideos = remember(videos, videoSort) {
+        if (videoSort == ChannelMediaSort.VIEWS) videos.sortedByDescending { it.views } else videos
+    }
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val columns = contentColumns(maxWidth - 32.dp)
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+            when (tab) {
+                ChannelTab.CHAT -> Unit
+                ChannelTab.HOME -> item(key = "home") {
+                    Column {
+                        if (videos.isNotEmpty()) CardSection(
+                            title = stringResource(R.string.recent_broadcasts), data = videos,
+                            modifier = Modifier.padding(16.dp), previewRows = 1,
+                            onMore = { onNavigateToTab(ChannelTab.VIDEOS) }) { video ->
+                            ChannelRecordingCard(video, onPlayRecording, onDownloadRecording)
+                        } else ContentState(stringResource(R.string.no_recent_broadcasts))
+
+                        Column(Modifier.padding(16.dp)) {
+                            com.lechixy.kick.components.SectionHeader(stringResource(R.string.channel_popular_clips),
+                                onMore = { onNavigateToTab(ChannelTab.CLIPS) }, compact = true)
+                            when {
+                                popularClips.failed -> ContentState(stringResource(R.string.channel_section_error), onRetryHome)
+                                popularClips.loaded && popularClips.value.orEmpty().isEmpty() -> ContentState(stringResource(R.string.media_no_clips))
+                                else -> CardSection(title = null, data = popularClips.value.orEmpty(), previewRows = 1,
+                                    loading = popularClips.loading) { clip -> ChannelClipCard(clip, onPlayRecording, onDownloadRecording) }
+                            }
+                        }
+                        ChannelCategoriesSection(recentCategories, onRetryHome, preview = true,
+                            onMore = { onNavigateToTab(ChannelTab.CATEGORIES) })
+                    }
+                }
+
+                ChannelTab.CATEGORIES -> item(key = "categories") { ChannelCategoriesSection(recentCategories, onRetryHome) }
+
+                ChannelTab.ABOUT -> item(key = "about") { ChannelAboutTabContent(channel, linksState, goalState, onRetryAbout) }
+
+                ChannelTab.VIDEOS -> {
+                    item(key = "filters") {
+                        Row(Modifier.padding(horizontal = 16.dp)) {
+                            ChannelMediaFilter(ChannelMediaSort.entries, videoSort, { it.label }, onVideoSort)
+                        }
+                    }
+                    if (videos.isEmpty()) {
+                        item(key = "empty") { ContentState(stringResource(R.string.media_no_videos)) }
+                    } else {
+                        channelMediaRows(sortedVideos, columns) { video ->
+                            ChannelRecordingCard(video, onPlayRecording, onDownloadRecording)
+                        }
+                    }
+                }
+                ChannelTab.CLIPS -> {
+                    val clips = clipState.clips
+                    item(key = "filters") {
+                        FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            ChannelMediaFilter(ChannelMediaSort.entries, clipState.clipSort, { it.label }) {
+                                onClipFilters(it, clipState.clipTime)
+                            }
+                            ChannelMediaFilter(ChannelClipTime.entries, clipState.clipTime, { it.label }) {
+                                onClipFilters(clipState.clipSort, it)
+                            }
+                        }
+                    }
+                    if (clips.isNotEmpty()) {
+                        channelMediaRows(clips, columns) { clip ->
+                            ChannelClipCard(clip, onPlayRecording, onDownloadRecording)
+                        }
+                    } else if (clipState.isClipsLoading) {
+                        channelMediaRows(List(columns * 2) { Unit }, columns) { com.lechixy.kick.components.VideoCardSkeleton() }
+                    }
+                    when {
+                        clipState.clipsError != null -> item(key = "error") {
+                            ContentState(stringResource(R.string.channel_clips_error), onRetryClips)
+                        }
+                        clipState.isClipsLoading && clips.isEmpty() -> Unit
+                        clips.isEmpty() -> item(key = "empty") { ContentState(stringResource(R.string.media_no_clips)) }
+                        clipState.clipCursor != null -> item(key = "load_more") {
+                            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                TextButton(onClick = onLoadMoreClips, enabled = !clipState.isClipsLoading) {
+                                    Text(stringResource(R.string.channel_clips_load_more))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
+    }
+}
 
-        ChannelTab.HOME -> Column {
-            if (videos.isNotEmpty()) CardSection(
-                title = stringResource(R.string.recent_broadcasts), data = videos,
-                modifier = Modifier.padding(16.dp), previewRows = 1,
-                onMore = { onNavigateToTab(ChannelTab.VIDEOS) }) { video ->
-                ChannelRecordingCard(video, onPlayRecording, onDownloadRecording)
-            } else ContentState(stringResource(R.string.no_recent_broadcasts))
-
-            Column(Modifier.padding(16.dp)) {
-                com.lechixy.kick.components.SectionHeader(stringResource(R.string.channel_popular_clips),
-                    onMore = { onNavigateToTab(ChannelTab.CLIPS) }, compact = true)
-                when {
-                    popularClips.failed -> ContentState(stringResource(R.string.channel_section_error), onRetryHome)
-                    popularClips.loaded && popularClips.value.orEmpty().isEmpty() -> ContentState(stringResource(R.string.media_no_clips))
-                    else -> CardSection(title = null, data = popularClips.value.orEmpty(), previewRows = 1,
-                        loading = popularClips.loading) { clip -> ChannelClipCard(clip, onPlayRecording, onDownloadRecording) }
+private fun <T> LazyListScope.channelMediaRows(
+    data: List<T>,
+    columns: Int,
+    card: @Composable (T) -> Unit,
+) {
+    val rows = (data.size + columns - 1) / columns
+    items(rows) { row ->
+        Row(
+            Modifier.fillMaxWidth().padding(
+                start = 16.dp, end = 16.dp,
+                top = if (row == 0) 16.dp else 12.dp,
+                bottom = if (row == rows - 1) 16.dp else 0.dp,
+            ),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            repeat(columns) { column ->
+                Box(Modifier.weight(1f)) {
+                    data.getOrNull(row * columns + column)?.let { card(it) }
                 }
-            }
-            ChannelCategoriesSection(recentCategories, onRetryHome, preview = true,
-                onMore = { onNavigateToTab(ChannelTab.CATEGORIES) })
-        }
-
-        ChannelTab.CATEGORIES -> ChannelCategoriesSection(recentCategories, onRetryHome)
-
-        ChannelTab.ABOUT -> ChannelAboutTabContent(channel, linksState, goalState, onRetryAbout)
-
-        ChannelTab.VIDEOS -> Column {
-            Row(Modifier.padding(horizontal = 16.dp)) {
-                ChannelMediaFilter(ChannelMediaSort.entries, videoSort, { it.label }, onVideoSort)
-            }
-            val sortedVideos = remember(videos, videoSort) {
-                if (videoSort == ChannelMediaSort.VIEWS) videos.sortedByDescending { it.views } else videos
-            }
-            if (videos.isEmpty()) ContentState(stringResource(R.string.media_no_videos))
-            else CardSection(title = null, data = sortedVideos, modifier = Modifier.padding(16.dp)) { video ->
-                ChannelRecordingCard(video, onPlayRecording, onDownloadRecording)
-            }
-        }
-        ChannelTab.CLIPS -> Column {
-            val clips = clipState.clips
-            FlowRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ChannelMediaFilter(ChannelMediaSort.entries, clipState.clipSort, { it.label }) {
-                    onClipFilters(it, clipState.clipTime)
-                }
-                ChannelMediaFilter(ChannelClipTime.entries, clipState.clipTime, { it.label }) {
-                    onClipFilters(clipState.clipSort, it)
-                }
-            }
-            if (clips.isNotEmpty() || clipState.isClipsLoading) {
-                CardSection(title = null, data = clips, modifier = Modifier.padding(16.dp),
-                    loading = clipState.isClipsLoading && clips.isEmpty(),
-                    skeleton = { com.lechixy.kick.components.VideoCardSkeleton() }) { clip ->
-                    ChannelClipCard(clip, onPlayRecording, onDownloadRecording)
-                }
-            }
-            when {
-                clipState.clipsError != null -> ContentState(stringResource(R.string.channel_clips_error), onRetryClips)
-                clipState.isClipsLoading && clips.isEmpty() -> Unit
-                clips.isEmpty() -> ContentState(stringResource(R.string.media_no_clips))
-                clipState.clipCursor != null -> TextButton(
-                    onClick = onLoadMoreClips,
-                    enabled = !clipState.isClipsLoading,
-                    modifier = Modifier.align(Alignment.CenterHorizontally)
-                ) { Text(stringResource(R.string.channel_clips_load_more)) }
             }
         }
     }

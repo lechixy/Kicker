@@ -57,6 +57,8 @@
     <string name="media_no_clips">No clips yet</string>
     <string name="go_to_live">Go to Live</string>
     <string name="player_skip_ten_seconds">10 seconds</string>
+    <string name="player_skip_back">Back 10 seconds</string>
+    <string name="player_skip_forward">Forward 10 seconds</string>
     <string name="player_dvr_unavailable">Rewind is unavailable. Returned to live.</string>
     <string name="viewers">viewers</string>
     <string name="chat">Chat</string>

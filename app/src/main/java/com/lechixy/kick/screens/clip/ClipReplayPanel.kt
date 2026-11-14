@@ -41,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalInspectionMode
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
@@ -48,6 +49,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
 import com.lechixy.kick.R
 import com.lechixy.kick.components.account.AccountFollowAction
@@ -55,6 +57,8 @@ import com.lechixy.kick.components.account.rememberAccountFollowAction
 import com.lechixy.kick.components.channel.chat.ChatMessageItem
 import com.lechixy.kick.components.rememberRecordingDownloadAction
 import com.lechixy.kick.data.channel.model.ClipDetail
+import com.lechixy.kick.data.settings.model.SettingsKeys
+import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 import com.lechixy.kick.util.buildOptimizedImageRequest
 
 private val clipActionShape = RoundedCornerShape(8.dp)
@@ -244,6 +248,14 @@ private fun ClipNavigationButton(label: Int, onClick: () -> Unit) {
 @Composable
 private fun ClipChatReplay(state: ClipPlayerUiState, positionMs: Long, onRetry: () -> Unit, modifier: Modifier) {
     val clip = state.clip ?: return
+    val smallestWidth = LocalConfiguration.current.smallestScreenWidthDp
+    val fontSetting = SettingsKeys.chatFontSize(smallestWidth)
+    val spacingSetting = SettingsKeys.chatMessageSpacing(smallestWidth)
+    val repository = if (LocalInspectionMode.current) null else LocalSettingsRepository.current
+    val fontSize = repository?.get(fontSetting)?.collectAsStateWithLifecycle(fontSetting.defaultValue)?.value
+        ?: fontSetting.defaultValue
+    val spacing = repository?.get(spacingSetting)?.collectAsStateWithLifecycle(spacingSetting.defaultValue)?.value
+        ?: spacingSetting.defaultValue
     val messages = state.chatMessages
     val visibleCount = messages.indexOfFirst { (it.recordingOffsetMs ?: 0) > positionMs }
         .takeIf { it >= 0 } ?: messages.size
@@ -269,11 +281,12 @@ private fun ClipChatReplay(state: ClipPlayerUiState, positionMs: Long, onRetry: 
                 reverseLayout = true,
                 state = list,
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 10.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp, Alignment.Bottom),
+                verticalArrangement = Arrangement.spacedBy(spacing.dp, Alignment.Bottom),
             ) {
                 items(visibleCount, key = { messages[visibleCount - it - 1].id }) { index ->
                     ChatMessageItem(
                         message = messages[visibleCount - index - 1],
+                        fontSizeSp = fontSize,
                         subscriberBadges = state.subscriberBadges,
                         streamerUsername = clip.channel.username,
                         streamerSlug = clip.channel.slug,

@@ -16,7 +16,12 @@ internal data class RecordingDownloadTask(
     val failed: Boolean = false,
 )
 
-internal data class RecordingDownloadProgress(val id: String, val percent: Int? = null, val saving: Boolean = false)
+internal data class RecordingDownloadProgress(
+    val id: String,
+    val percent: Int? = null,
+    val saving: Boolean = false,
+    val writtenBytes: Long = 0,
+)
 
 /** Accessed on the main thread by the foreground service and the downloads screen. */
 internal object RecordingDownloadQueue {
@@ -51,6 +56,11 @@ internal object RecordingDownloadQueue {
     fun remove(id: String) = update(tasks.value.filterNot { it.id == id })
 
     fun updateProgress(progress: RecordingDownloadProgress?) { mutableProgress.value = progress }
+
+    fun restore(entries: List<RecordingDownloadTask>) {
+        val valid = entries.filter { it.id.isNotBlank() && it.recording.id.isNotBlank() && it.recording.directUrl == null }
+        update((tasks.value + valid).distinctBy { it.id }.distinctBy { it.recording.progressId })
+    }
 
     private fun update(entries: List<RecordingDownloadTask>) {
         preferences.edit().putString("tasks", json.encodeToString(entries)).apply()

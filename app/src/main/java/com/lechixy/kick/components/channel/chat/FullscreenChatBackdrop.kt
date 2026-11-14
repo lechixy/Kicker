@@ -90,6 +90,7 @@ internal data class FullscreenChatBackdropRegion(
     val bounds: Rect,
     val edges: FullscreenChatEdges = FullscreenChatEdges(),
     val shape: FullscreenChatShape = FullscreenChatShape.Rounded,
+    val frostedControl: Boolean = false,
 )
 
 internal data class FullscreenChatDock(val viewport: Rect, val edges: FullscreenChatEdges) {
@@ -138,7 +139,7 @@ internal fun rememberLegacyFullscreenChatFrame(
         value = null
         return@produceState
     }
-    // Android 11 has no video-layer RenderEffect. Keep its readback small and reuse both buffers.
+    // Keep video readback small and reuse both buffers.
     val sampleLimit = 56
     val location = IntArray(2)
     var samples = emptyList<Bitmap>()
@@ -256,6 +257,7 @@ internal fun VideoBackdropBlur(
     if (Build.VERSION.SDK_INT < 31 || texture == null || regions.isEmpty()) return
     val radius = with(LocalDensity.current) { 15.dp.toPx() }
     val maxFeather = with(LocalDensity.current) { 28.dp.toPx() }
+    val controlFeather = with(LocalDensity.current) { 1.dp.toPx() }
     val roundedRadius = with(LocalDensity.current) { 8.dp.toPx() }
     val effects = remember(texture, regions.size) {
         List(regions.size) {
@@ -266,7 +268,7 @@ internal fun VideoBackdropBlur(
     val currentRegions by rememberUpdatedState(regions)
     val currentOpacity by rememberUpdatedState(opacity)
     val scope = rememberCoroutineScope()
-    DisposableEffect(texture, radius, maxFeather, roundedRadius, effects) {
+    DisposableEffect(texture, radius, maxFeather, controlFeather, roundedRadius, effects) {
         val location = IntArray(2)
         var lastRegions = emptyList<FullscreenChatBackdropRegion>()
         var lastOpacity = 0f
@@ -285,11 +287,13 @@ internal fun VideoBackdropBlur(
             lastOpacity = visibleOpacity
             lastTextureSize = textureSize
             var effect: RenderEffect? = null
-            if (visibleOpacity > 0f) localRegions.forEachIndexed { index, region ->
+            localRegions.forEachIndexed { index, region ->
                 val bounds = region.bounds
-                if (!bounds.isEmpty && bounds.overlaps(textureBounds)) {
+                val alpha = if (region.frostedControl) 1f else visibleOpacity
+                if (alpha > 0f && !bounds.isEmpty && bounds.overlaps(textureBounds)) {
                     val cornerRadius = region.shape.radius(bounds.width, bounds.height, roundedRadius)
-                    val next = effects[index](region, textureSize, radius, maxFeather, visibleOpacity, cornerRadius)
+                    val feather = if (region.frostedControl) controlFeather else maxFeather
+                    val next = effects[index](region, textureSize, radius, feather, alpha, cornerRadius)
                     effect = effect?.let { RenderEffect.createChainEffect(next, it) } ?: next
                 }
             }

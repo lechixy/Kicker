@@ -9,15 +9,17 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.provider.MediaStore.MediaColumns
 import android.util.AtomicFile
-import com.lechixy.kick.data.settings.local.SettingsBackupManager.Companion.FILE_NAME
+import com.lechixy.kick.BuildConfig
 import com.lechixy.kick.data.settings.local.SettingsBackupManager.Companion.MIME_TYPE
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
 
 internal class AutomaticSettingsBackupStorage(private val context: Context) {
+    val fileName = if (BuildConfig.DEBUG) "kicker_test_settings.json" else "kicker_settings.json"
+    val directory = "${Environment.DIRECTORY_DOWNLOADS}/${if (BuildConfig.DEBUG) "Kicker Test" else "Kicker"}/"
     // Android Auto Backup restores this copy before launch when a system backup is available.
-    val restoredCopy = AtomicFile(File(context.filesDir, FILE_NAME))
+    val restoredCopy = AtomicFile(File(context.filesDir, fileName))
     private val location = AtomicFile(File(context.noBackupFilesDir, "settings_backup_location"))
     private val restoreDecision = AtomicFile(File(context.noBackupFilesDir, "settings_restore_offered"))
     private val downloads = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
@@ -42,7 +44,7 @@ internal class AutomaticSettingsBackupStorage(private val context: Context) {
         arrayOf(MediaColumns._ID),
         "${MediaColumns.RELATIVE_PATH} = ? AND ${MediaColumns.OWNER_PACKAGE_NAME} = ? " +
             "AND (${MediaColumns.DISPLAY_NAME} = ? OR ${MediaColumns.DISPLAY_NAME} LIKE ?)",
-        arrayOf(DIRECTORY, context.packageName, FILE_NAME, "${FILE_NAME.substringBeforeLast('.')} (%).json"),
+        arrayOf(directory, context.packageName, fileName, "${fileName.substringBeforeLast('.')} (%).json"),
         "${MediaColumns._ID} DESC"
     )?.use { rows ->
         if (rows.moveToFirst()) ContentUris.withAppendedId(downloads, rows.getLong(0)) else null
@@ -56,9 +58,9 @@ internal class AutomaticSettingsBackupStorage(private val context: Context) {
         }
 
         val uri = resolver.insert(downloads, ContentValues().apply {
-            put(MediaColumns.DISPLAY_NAME, FILE_NAME)
+            put(MediaColumns.DISPLAY_NAME, fileName)
             put(MediaColumns.MIME_TYPE, MIME_TYPE)
-            put(MediaColumns.RELATIVE_PATH, DIRECTORY)
+            put(MediaColumns.RELATIVE_PATH, directory)
             put(MediaColumns.IS_PENDING, 1)
         }) ?: throw IOException("Cannot create automatic settings backup")
 
@@ -91,9 +93,6 @@ internal class AutomaticSettingsBackupStorage(private val context: Context) {
         null
     }
 
-    private companion object {
-        val DIRECTORY = "${Environment.DIRECTORY_DOWNLOADS}/Kicker/"
-    }
 }
 
 internal fun ContentResolver.writeBackup(uri: Uri, json: String) {

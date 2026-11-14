@@ -20,16 +20,18 @@ import kotlinx.coroutines.launch
 
 private const val CHANNEL_SLUG = "kick_usage_channel_slug"
 private const val CHANNEL_NAME = "kick_usage_channel_name"
+private const val CHANNEL_AVATAR = "kick_usage_channel_avatar"
 
-internal fun Bundle.setPlaybackUsageChannel(slug: String, name: String) {
+internal fun Bundle.setPlaybackUsageChannel(slug: String, name: String, avatar: String? = null) {
     putString(CHANNEL_SLUG, slug)
     putString(CHANNEL_NAME, name)
+    putString(CHANNEL_AVATAR, avatar)
 }
 
 internal fun MediaItem?.usageChannel(): PlaybackUsageChannel? {
     val extras = this?.mediaMetadata?.extras ?: return null
     val slug = extras.getString(CHANNEL_SLUG)?.takeIf(String::isNotBlank) ?: return null
-    return PlaybackUsageChannel(slug, extras.getString(CHANNEL_NAME).orEmpty().ifBlank { slug })
+    return PlaybackUsageChannel(slug, extras.getString(CHANNEL_NAME).orEmpty().ifBlank { slug }, extras.getString(CHANNEL_AVATAR))
 }
 
 @OptIn(UnstableApi::class)
@@ -82,7 +84,7 @@ internal class PlaybackUsageTracker(
 
     private fun sample() {
         val now = SystemClock.elapsedRealtime()
-        channel?.let { PlaybackUsageStore.add(it, transport, watchedMs = now - since) }
+        channel?.let { PlaybackUsageStore.addWatchInterval(it, transport, since, now) }
         channel = if (player.isPlaying) player.currentMediaItem.usageChannel() else null
         transport = currentTransport()
         since = now

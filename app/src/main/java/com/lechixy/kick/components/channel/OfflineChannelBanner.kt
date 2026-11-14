@@ -96,9 +96,7 @@ internal fun OfflineChannelBanner(
                 if (dismissGesture == true) dismissDrag?.invoke(amount) else drag(-amount)
             }
         }.background(Color.Black), contentAlignment = Alignment.Center) {
-        if (!bannerUrl.isNullOrBlank()) {
-            FittedBannerImage(bannerUrl)
-        } else Text(stringResource(R.string.channel_offline), color = Color.LightGray)
+        FittedBannerImage(bannerUrl)
 
         val compactBanner = remember(channel.bannerImage, bannerUrl, targetWidthPx) {
             channel.bannerImage?.let {
@@ -117,9 +115,8 @@ internal fun OfflineChannelBanner(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (!isWide) OfflineBadge()
                 Text(
-                    text = if (isWide) stringResource(R.string.offline_channel_name, username) else username,
+                    text = username,
                     color = Color.White,
                     style = if (isWide) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleSmall,
                     textAlign = TextAlign.Center,
@@ -138,9 +135,11 @@ internal fun OfflineChannelBanner(
 
 @Composable
 private fun FittedBannerImage(url: String?) {
-    // Preserve the entire image; a blurred copy fills the unused area on wide/tall displays.
+    if (url.isNullOrBlank()) return
+    // Keep the artwork's proportions and let the blurred copy fill the remaining space.
     AsyncImage(url, null,
         Modifier.fillMaxSize().blur(24.dp, BlurredEdgeTreatment.Unbounded).graphicsLayer { alpha = 0.75f },
         alignment = Alignment.Center, contentScale = ContentScale.Crop)
-    AsyncImage(url, null, Modifier.fillMaxSize(), alignment = Alignment.Center, contentScale = ContentScale.Fit)
+    AsyncImage(url, null, Modifier.fillMaxSize().graphicsLayer { scaleX = 1.1f; scaleY = 1.1f },
+        alignment = Alignment.Center, contentScale = ContentScale.Fit)
 }

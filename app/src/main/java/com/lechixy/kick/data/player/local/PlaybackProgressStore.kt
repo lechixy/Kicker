@@ -43,6 +43,16 @@ object PlaybackProgressStore {
         val updated = PlaybackProgress(position, knownDuration)
         if (mutableProgress.value[id] == updated) return
         val entries = mutableProgress.value + (id to updated)
+        persist(entries)
+    }
+
+    @Synchronized
+    internal fun restore(entries: Map<String, PlaybackProgress>) {
+        persist(entries.filter { (id, value) -> id.isNotBlank() && value.positionMs >= 0 && value.durationMs >= 0 } +
+            mutableProgress.value)
+    }
+
+    private fun persist(entries: Map<String, PlaybackProgress>) {
         mutableProgress.value = entries
         preferences?.edit()?.putString("progress", json.encodeToString(entries))?.apply()
     }

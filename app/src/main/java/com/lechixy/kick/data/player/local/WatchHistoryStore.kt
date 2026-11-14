@@ -68,6 +68,12 @@ object WatchHistoryStore {
         if (remaining.size != mutableEntries.value.size) persist(remaining)
     }
 
+    @Synchronized
+    internal fun restore(entries: List<WatchHistoryEntry>) {
+        persist((mutableEntries.value + entries).filter { it.key.isNotBlank() && it.channelSlug.isNotBlank() }
+            .sortedByDescending { it.watchedAt }.distinctBy { it.key }.take(20))
+    }
+
     private fun persist(entries: List<WatchHistoryEntry>) {
         mutableEntries.value = entries
         preferences?.edit()?.putString("entries", json.encodeToString(entries))?.apply()

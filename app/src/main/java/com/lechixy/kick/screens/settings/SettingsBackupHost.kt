@@ -1,8 +1,11 @@
 package com.lechixy.kick.screens.settings
 
+import android.content.Intent
+import android.provider.DocumentsContract
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Column
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -21,6 +24,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lechixy.kick.R
 import com.lechixy.kick.data.settings.local.SettingsBackupManager
+import com.lechixy.kick.data.settings.local.SettingsBackupManager.StartupBackup
 import com.lechixy.kick.util.LanguageUtils.getCurrentAppLanguage
 import com.lechixy.kick.util.LanguageUtils.updateAppLocale
 import com.lechixy.kick.util.findActivity
@@ -30,6 +34,7 @@ import kotlinx.coroutines.launch
 internal data class SettingsBackupActions(
     val enabled: Boolean,
     val customLocationSelected: Boolean,
+    val defaultPath: String,
     val importSettings: () -> Unit,
     val exportSettings: () -> Unit,
     val chooseAutomaticLocation: () -> Unit
@@ -44,12 +49,13 @@ internal fun SettingsBackupHost(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var offerRestore by remember { mutableStateOf<Boolean?>(null) }
+    var offerRestore by remember(backup) { mutableStateOf<StartupBackup?>(null) }
+    var choosingRestoreFile by rememberSaveable { mutableStateOf(false) }
     var choosingLocation by rememberSaveable { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     val customLocation by backup.customLocation.collectAsStateWithLifecycle()
 
-    LaunchedEffect(backup) { offerRestore = backup.shouldOfferRestore() }
+    LaunchedEffect(backup) { offerRestore = backup.startupRestoreOffer() }
 
     fun toast(message: Int) = Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
 
@@ -83,6 +89,29 @@ internal fun SettingsBackupHost(
             applyImportedLanguage(backup.importFrom(uri))
         }
     }
+    val restorePicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        choosingRestoreFile = false
+        result.data?.data?.let { uri ->
+            runBackupOperation(R.string.settings_backup_import_failed) {
+                val language = backup.restorePickedBackup(uri)
+                offerRestore = StartupBackup.None
+                applyImportedLanguage(language)
+            }
+        }
+    }
+    fun chooseRestoreFile() {
+        val directory = backup.defaultPath.substringBeforeLast('/')
+        val initialUri = DocumentsContract.buildDocumentUri(
+            "com.android.externalstorage.documents", "primary:$directory",
+        )
+        choosingRestoreFile = true
+        restorePicker.launch(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            putExtra(DocumentsContract.EXTRA_INITIAL_URI, initialUri)
+        })
+    }
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument(SettingsBackupManager.MIME_TYPE)
     ) { uri ->
@@ -102,33 +131,52 @@ internal fun SettingsBackupHost(
 
     CompositionLocalProvider(
         LocalSettingsBackupActions provides SettingsBackupActions(
-            enabled = !busy && offerRestore == false,
+            enabled = !busy && offerRestore == StartupBackup.None,
             customLocationSelected = customLocation != null,
+            defaultPath = backup.defaultPath,
             importSettings = { importLauncher.launch(arrayOf("*/*")) },
-            exportSettings = { exportLauncher.launch(SettingsBackupManager.FILE_NAME) },
+            exportSettings = { exportLauncher.launch(backup.fileName) },
             chooseAutomaticLocation = { choosingLocation = true }
         )
-    ) { content(offerRestore != false || choosingLocation) }
+    ) { content(offerRestore != StartupBackup.None || choosingLocation) }
 
-    if (offerRestore == true && !busy) {
+    val offer = offerRestore
+    if (offer != null && offer != StartupBackup.None && !busy && !choosingRestoreFile) {
         val skip = {
             runBackupOperation(R.string.settings_backup_restore_choice_failed) {
                 backup.finishStartupRestore(preserveBackup = true)
-                offerRestore = false
+                offerRestore = StartupBackup.None
             }
         }
         AlertDialog(
             onDismissRequest = skip,
             title = { Text(stringResource(R.string.settings_backup_restore_title)) },
-            text = { Text(stringResource(R.string.settings_backup_restore_message)) },
+            text = {
+                Column {
+                    Text(stringResource(
+                        if (offer is StartupBackup.Found) R.string.settings_backup_restore_message
+                        else R.string.settings_backup_find_message,
+                        backup.defaultPath,
+                    ))
+                    if (offer is StartupBackup.Found) {
+                        TextButton(onClick = ::chooseRestoreFile) {
+                            Text(stringResource(R.string.settings_backup_choose_file))
+                        }
+                    }
+                }
+            },
             confirmButton = {
                 TextButton(onClick = {
-                    runBackupOperation(R.string.settings_backup_import_failed) {
-                        val language = backup.restoreDefaultBackup()
-                        offerRestore = false
-                        applyImportedLanguage(language)
+                    if (offer is StartupBackup.Found) {
+                        runBackupOperation(R.string.settings_backup_import_failed) {
+                            val language = backup.restoreDefaultBackup()
+                            offerRestore = StartupBackup.None
+                            applyImportedLanguage(language)
+                        }
+                    } else {
+                        chooseRestoreFile()
                     }
-                }) { Text(stringResource(R.string.settings_backup_restore)) }
+                }) { Text(stringResource(if (offer is StartupBackup.Found) R.string.settings_backup_restore else R.string.settings_backup_choose_file)) }
             },
             dismissButton = {
                 TextButton(onClick = skip) { Text(stringResource(R.string.settings_backup_skip)) }
@@ -140,11 +188,11 @@ internal fun SettingsBackupHost(
         AlertDialog(
             onDismissRequest = { choosingLocation = false },
             title = { Text(stringResource(R.string.settings_backup_location)) },
-            text = { Text(stringResource(R.string.settings_backup_location_message)) },
+            text = { Text(stringResource(R.string.settings_backup_location_message, backup.fileName)) },
             confirmButton = {
                 TextButton(onClick = {
                     choosingLocation = false
-                    automaticLocationLauncher.launch(SettingsBackupManager.FILE_NAME)
+                    automaticLocationLauncher.launch(backup.fileName)
                 }) { Text(stringResource(R.string.settings_backup_location_choose)) }
             },
             dismissButton = {

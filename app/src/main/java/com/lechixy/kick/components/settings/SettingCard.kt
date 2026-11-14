@@ -32,26 +32,20 @@ fun SettingCard(
     image: Int? = null,
     enabled: Boolean = true,
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
-    borderColor: Color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+    borderColor: Color = settingsOutlineColor,
     titleColor: Color = MaterialTheme.colorScheme.onSurface,
     descriptionColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     iconTint: Color = MaterialTheme.colorScheme.primary,
     onClick: (() -> Unit)? = null,
     action: @Composable (() -> Unit)? = null
 ) {
-    val shape = RoundedCornerShape(8.dp)
     val resolvedContainerColor = if (enabled) containerColor else containerColor.copy(alpha = containerColor.alpha * 0.5f)
-    val resolvedBorder = BorderStroke(
-        width = 1.dp,
-        color = if (enabled) borderColor else borderColor.copy(alpha = borderColor.alpha * 0.38f)
-    )
+    val resolvedBorderColor = if (enabled) borderColor else borderColor.copy(alpha = borderColor.alpha * 0.38f)
 
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = shape,
-        color = resolvedContainerColor,
-        border = resolvedBorder,
-        tonalElevation = 0.dp
+    SettingsCardSurface(
+        modifier = modifier,
+        containerColor = resolvedContainerColor,
+        borderColor = resolvedBorderColor,
     ) {
         Row(
             modifier = Modifier
@@ -102,6 +96,26 @@ fun SettingCard(
             }
         }
     }
+}
+
+internal val settingsOutlineColor: Color
+    @Composable get() = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+
+@Composable
+internal fun SettingsCardSurface(
+    modifier: Modifier = Modifier,
+    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
+    borderColor: Color = settingsOutlineColor,
+    content: @Composable () -> Unit,
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        color = containerColor,
+        contentColor = MaterialTheme.colorScheme.onSurface,
+        border = BorderStroke(1.dp, borderColor),
+        content = content,
+    )
 }
 
 @Composable

@@ -46,6 +46,7 @@ internal fun matchesSettingsQuery(query: String, title: String, description: Str
 @Composable
 internal fun settingsCatalog(expandGroups: Boolean = false): List<SettingsEntry> {
     val context = LocalContext.current
+    val configuration = LocalConfiguration.current
     val general = SettingsDestinations.GENERAL
     val custom = SettingsDestinations.CUSTOMIZATION
     val playback = SettingsDestinations.PLAYBACK
@@ -69,14 +70,12 @@ internal fun settingsCatalog(expandGroups: Boolean = false): List<SettingsEntry>
                 description = stringResource(R.string.settings_recommended_language_description), placeholder = "tr",
                 icon = R.drawable.public_24dp_e3e3e3_fill0_wght400_grad0_opsz24)
         },
-        SettingsEntry("backup-location", R.string.settings_backup_location, R.string.settings_backup_location_message, general, R.string.settings_group_backup) {
+            SettingsEntry("backup-location", R.string.settings_backup_location, null, general, R.string.settings_group_backup) {
             SettingCard(
                 title = stringResource(R.string.settings_backup_location),
                 icon = R.drawable.settings_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
-                description = stringResource(
-                    if (backup?.customLocationSelected == true) R.string.settings_backup_location_custom_summary
-                    else R.string.settings_backup_location_default_summary
-                ),
+                description = if (backup?.customLocationSelected == true)
+                    stringResource(R.string.settings_backup_location_custom_summary) else backup?.defaultPath,
                 enabled = backup?.enabled == true,
                 onClick = backup?.chooseAutomaticLocation
             )
@@ -164,15 +163,15 @@ internal fun settingsCatalog(expandGroups: Boolean = false): List<SettingsEntry>
         },
         SettingsEntry("timestamps", R.string.chat_show_timestamps, null, chat, R.string.settings_group_appearance) { ChatTimestampSetting() },
         SettingsEntry("chat-spacing", R.string.settings_chat_spacing, null, chat, R.string.settings_group_appearance) {
-            SettingSlider(SettingsKeys.CHAT_MESSAGE_SPACING, stringResource(R.string.settings_chat_spacing), valueRange = 0f..25f, steps = 24,
+            SettingSlider(SettingsKeys.chatMessageSpacing(configuration.smallestScreenWidthDp), stringResource(R.string.settings_chat_spacing), valueRange = 0f..25f, steps = 24,
                 icon = R.drawable.tune_24dp_e3e3e3_fill0_wght400_grad0_opsz24, valueFormatter = { "$it dp" })
         },
         SettingsEntry("chat-width", R.string.settings_chat_width, null, chat, R.string.settings_group_appearance) {
-            SettingFloatSlider(SettingsKeys.CHAT_WIDTH_FRACTION, stringResource(R.string.settings_chat_width), valueRange = .18f.. .60f, steps = 41,
-                icon = R.drawable.chat_24dp_e3e3e3_fill0_wght400_grad0_opsz24, valueFormatter = { "${(it * 100).toInt()}%" })
+            SettingFloatSlider(SettingsKeys.chatWidth(configuration.screenWidthDp), stringResource(R.string.settings_chat_width), valueRange = .18f.. .60f, steps = 41,
+                icon = R.drawable.chat_24dp_e3e3e3_fill0_wght400_grad0_opsz24, valueFormatter = { "${kotlin.math.round(it * 100).toInt()}%" })
         },
         SettingsEntry("chat-font", R.string.player_chat_font, R.string.player_chat_font_description, chat, R.string.settings_group_appearance) {
-            SettingSlider(SettingsKeys.CHAT_FONT_SIZE, stringResource(R.string.player_chat_font), description = stringResource(R.string.player_chat_font_description), valueRange = 10f..24f, steps = 13,
+            SettingSlider(SettingsKeys.chatFontSize(configuration.smallestScreenWidthDp), stringResource(R.string.player_chat_font), description = stringResource(R.string.player_chat_font_description), valueRange = 10f..24f, steps = 13,
                 icon = R.drawable.edit_24dp_e3e3e3_fill0_wght400_grad0_opsz24, valueFormatter = { "${it}sp" })
         },
         SettingsEntry("fullscreen-chat", R.string.fullscreen_chat_title, R.string.settings_fullscreen_chat_enabled,

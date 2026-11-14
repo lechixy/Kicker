@@ -30,11 +30,11 @@
     <string name="settings_general">General</string>
     <string name="settings_general_description">Language, recommendations and settings backup</string>
     <string name="settings_backup_import">Import settings</string>
-    <string name="settings_backup_import_description">Restore your preferences from a backup file</string>
+    <string name="settings_backup_import_description">Restore settings and playback data from a backup file</string>
     <string name="settings_backup_export">Export settings</string>
     <string name="settings_backup_export_description">Save a separate copy of your current settings</string>
     <string name="settings_backup_location">Automatic backup location</string>
-    <string name="settings_backup_location_message">Kicker updates kicker_settings.json whenever your settings change. Choose where to keep this file</string>
+    <string name="settings_backup_location_message">Kicker updates %1$s when your settings or playback data change.</string>
     <string name="settings_backup_location_default_summary">Downloads/Kicker/kicker_settings.json</string>
     <string name="settings_backup_location_custom_summary">Custom location selected</string>
     <string name="settings_backup_location_choose">Choose location</string>
@@ -42,7 +42,7 @@
     <string name="settings_backup_location_saved">Automatic backup location saved</string>
     <string name="settings_backup_location_failed">Could not change the automatic backup location</string>
     <string name="settings_backup_restore_title">Restore your previous settings?</string>
-    <string name="settings_backup_restore_message">A previous Kicker settings backup was found, restore it to apply your saved preferences</string>
+    <string name="settings_backup_restore_message">Found the backup at %1$s. Restore it to recover your settings and backed-up playback data.</string>
     <string name="settings_backup_restore">Restore</string>
     <string name="settings_backup_skip">Skip</string>
     <string name="settings_backup_imported">Settings imported</string>
@@ -129,4 +129,10 @@
     <string name="settings_fullscreen_chat_enabled">Show chat overlay in fullscreen</string>
     <string name="settings_fullscreen_chat_layout">Fullscreen chat layout</string>
     <string name="settings_fullscreen_chat_appearance">Fullscreen chat appearance</string>
+    <string name="settings_backup_find_message">If you have a backup from a previous install, select %1$s.</string>
+    <string name="settings_backup_choose_file">Choose backup file</string>
+    <string name="you_download_link">Add existing videos</string>
+    <string name="you_download_link_failed">Some videos could not be added</string>
+    <string name="you_download_unlink">Remove from list</string>
+    <string name="you_download_unlink_message">Remove %1$s from the list? The video file stays on your device.</string>
 </resources>

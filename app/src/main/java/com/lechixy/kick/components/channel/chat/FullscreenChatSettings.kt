@@ -94,7 +94,7 @@ internal fun fullscreenChatOptions(
             key = SettingsKeys.FULLSCREEN_CHAT_POSITION_LOCKED,
             title = stringResource(R.string.fullscreen_chat_lock_position),
             description = stringResource(R.string.fullscreen_chat_lock_position_description),
-            icon = R.drawable.lock_24dp,
+            icon = R.drawable.lock_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
             enabled = enabled,
         )
     })
@@ -155,8 +155,13 @@ private fun rememberPercentFormat(): NumberFormat {
 }
 
 @Composable
-internal fun FullscreenChatSettings(horizontal: Boolean, onEditPosition: () -> Unit, onConnect: (() -> Unit)?) {
-    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+internal fun FullscreenChatSettings(
+    horizontal: Boolean,
+    onEditPosition: () -> Unit,
+    onConnect: (() -> Unit)?,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
         FullscreenChatSettingsExpander(horizontal, initiallyExpanded = true) { enabled ->
             SettingAction(stringResource(R.string.fullscreen_chat_edit_position), onClick = onEditPosition,
                 icon = R.drawable.open_with_24dp, enabled = enabled)
