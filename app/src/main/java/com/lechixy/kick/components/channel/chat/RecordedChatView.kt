@@ -112,7 +112,7 @@ private fun rememberRecordedChat(
             if (active) snapshotFlow { playerHost.recordingPositionMs }.collect { value = it }
         }
     }
-    val bucket = position / 5000
+    val bucket by remember(timeline) { derivedStateOf { position / 5000 } }
     var previousBucket by remember(timeline) { mutableStateOf<Long?>(null) }
     var version by remember(timeline) { mutableIntStateOf(0) }
     var loading by remember(timeline) { mutableStateOf(true) }
@@ -145,6 +145,6 @@ private fun rememberRecordedChat(
             }
         }
     }
-    val messages = remember(timeline, version, position) { timeline.visible(position) }
+    val messages by remember(timeline, version) { derivedStateOf { timeline.visible(position) } }
     return RecordedChatState(messages, loading, failed) { retry++ }
 }

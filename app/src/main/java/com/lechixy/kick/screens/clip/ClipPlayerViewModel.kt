@@ -54,7 +54,6 @@ internal class ClipPlayerViewModel(private val clipId: String) : ViewModel() {
                 _state.update {
                     it.copy(clip = clip, loading = false, chatLoading = timeline != null, chatAvailable = timeline != null)
                 }
-                updatePosition(0L)
                 loadSubscriberBadges(clip)
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -66,17 +65,31 @@ internal class ClipPlayerViewModel(private val clipId: String) : ViewModel() {
 
     fun updatePosition(positionMs: Long) {
         val clip = _state.value.clip ?: return
-        val start = timeline?.start ?: return
+        val timeline = timeline ?: return
+        val start = timeline.start
         // Kick returns the five-second UTC bucket containing the requested instant.
         val startOffset = Math.floorMod(start.toEpochMilli(), CHAT_PAGE_MS)
         val lastPage = (startOffset + clip.durationMs) / CHAT_PAGE_MS
         val page = (startOffset + positionMs.coerceIn(0, clip.durationMs)) / CHAT_PAGE_MS
-        if (page != requestedPage) loadChat(page, lastPage, startOffset)
+        if (page == requestedPage) return
+        val discardedThrough = timeline.discardedThroughMs
+        if (discardedThrough != null && positionMs <= discardedThrough) {
+            chatJob?.cancel()
+            timeline.clear()
+            loadedPages.clear()
+            _state.update { it.copy(chatMessages = emptyList(), chatComplete = false) }
+        }
+        loadChat(page, lastPage, startOffset)
     }
 
     fun retryChat(positionMs: Long) {
         requestedPage = null
         updatePosition(positionMs)
+    }
+
+    fun pauseChat() {
+        chatJob?.cancel()
+        requestedPage = null
     }
 
     private fun loadChat(page: Long, lastPage: Long, startOffset: Long) {

@@ -20,13 +20,23 @@ internal class RecordedChatTimeline(
     private val historyWindowMs = endMs ?: 120_000L
     private val end = endMs?.let(start::plusMillis)
     private val messages = linkedMapOf<String, ChatMessage>()
+    private var orderedMessages: List<ChatMessage>? = null
+    private var lastVisibleRange = IntRange.EMPTY
+    private var lastVisibleMessages = emptyList<ChatMessage>()
+    var discardedThroughMs: Long? = null
+        private set
 
     fun requestTime(positionMs: Long): String = DateTimeFormatterBuilder().appendInstant(3).toFormatter()
         .format(start.plusMillis(positionMs.coerceAtLeast(0)))
 
-    fun clear() = messages.clear()
+    fun clear() {
+        messages.clear()
+        discardedThroughMs = null
+        invalidateVisibleMessages()
+    }
 
     fun add(batch: List<ChatMessage>, positionMs: Long) {
+        invalidateVisibleMessages()
         batch.forEach { message ->
             val time = recordingStartInstant(message.createdAt) ?: return@forEach
             val offset = time.toEpochMilli() - start.toEpochMilli()
@@ -38,17 +48,51 @@ internal class RecordedChatTimeline(
             }
         }
         messages.entries.removeAll { (it.value.recordingOffsetMs ?: 0) < positionMs - historyWindowMs }
-        if (end == null && messages.size > 2000) {
-            val keep = messages.values.sortedBy { it.recordingOffsetMs }.takeLast(2000).mapTo(hashSetOf()) { it.id }
-            messages.keys.retainAll(keep)
+        if (messages.size > MAX_MESSAGES) {
+            val sorted = messages.values.sortedWith(messageOrder)
+            val removeCount = sorted.size - MAX_MESSAGES
+            discardedThroughMs = maxOf(discardedThroughMs ?: 0, sorted[removeCount - 1].recordingOffsetMs!!)
+            for (index in 0 until removeCount) messages.remove(sorted[index].id)
+            orderedMessages = sorted.subList(removeCount, sorted.size).toList()
         }
     }
 
     fun visible(positionMs: Long, limit: Int = 500): List<ChatMessage> {
+        require(limit >= 0)
         val position = endMs?.let(positionMs::coerceAtMost) ?: positionMs
-        return messages.values
-            .filter { it.recordingOffsetMs!! <= position && it.recordingOffsetMs >= position - historyWindowMs }
-            .sortedWith(compareBy<ChatMessage> { it.recordingOffsetMs }.thenBy { it.id })
-            .takeLast(limit)
+        // Position updates are much more frequent than page loads. Sort once per
+        // page and reuse the visible list until a message crosses either boundary.
+        val ordered = orderedMessages ?: messages.values.sortedWith(messageOrder)
+            .also { orderedMessages = it }
+        val endIndex = ordered.firstOffsetAtLeast(position, inclusive = false)
+        val startIndex = maxOf(ordered.firstOffsetAtLeast(position - historyWindowMs), endIndex - limit)
+        val range = startIndex until endIndex
+        if (range != lastVisibleRange) {
+            lastVisibleRange = range
+            lastVisibleMessages = ordered.subList(startIndex, endIndex).toList()
+        }
+        return lastVisibleMessages
+    }
+
+    private fun invalidateVisibleMessages() {
+        orderedMessages = null
+        lastVisibleRange = IntRange.EMPTY
+        lastVisibleMessages = emptyList()
+    }
+
+    private fun List<ChatMessage>.firstOffsetAtLeast(offsetMs: Long, inclusive: Boolean = true): Int {
+        var low = 0
+        var high = size
+        while (low < high) {
+            val mid = low + (high - low) / 2
+            val offset = this[mid].recordingOffsetMs!!
+            if (offset < offsetMs || (!inclusive && offset == offsetMs)) low = mid + 1 else high = mid
+        }
+        return low
+    }
+
+    private companion object {
+        const val MAX_MESSAGES = 2000
+        val messageOrder = compareBy<ChatMessage> { it.recordingOffsetMs }.thenBy { it.id }
     }
 }

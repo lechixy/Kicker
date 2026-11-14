@@ -52,6 +52,31 @@ class RecordedChatTimelineTest {
         assertEquals(listOf("start"), timeline.visible(0).map { it.id })
     }
 
+    @Test fun positionTicksReuseVisibleRowsUntilABoundaryOrNewPage() {
+        val timeline = RecordedChatTimeline(start)
+        timeline.add(listOf(message("first", 10), message("second", 11)), 10_000)
+        val first = timeline.visible(10_000)
+        assertSame(first, timeline.visible(10_250))
+        assertSame(first, timeline.visible(10_750))
+        assertEquals(listOf("first", "second"), timeline.visible(11_000).map { it.id })
+        timeline.add(listOf(message("first", 10).copy(content = "edited")), 11_000)
+        assertEquals("edited", timeline.visible(10_500).single().content)
+        timeline.clear()
+        assertTrue(timeline.visible(10_500).isEmpty())
+    }
+
+    @Test fun denseClipReplayBoundsStoredMessagesAndTracksDiscardedOffsets() {
+        val timeline = RecordedChatTimeline(start, endMs = 30_000)
+        val batch = List(3_000) { index -> message(index.toString(), 1).copy(createdAt = start.plusMillis(index.toLong()).toString()) }
+        timeline.add(batch, 0)
+        assertEquals(2_000, timeline.visible(30_000, limit = Int.MAX_VALUE).size)
+        assertEquals(999L, timeline.discardedThroughMs)
+        assertTrue(timeline.visible(999).isEmpty())
+        assertEquals("1000", timeline.visible(1_000).single().id)
+        timeline.clear()
+        assertNull(timeline.discardedThroughMs)
+    }
+
     @Test fun replayUsesExistingHistoryParserIncludingEncodedMetadataAndSelectedBadges() {
         val json = Json { ignoreUnknownKeys = true }
         val response = json.decodeFromString<ChatHistoryResponse>("""{"data":{"messages":[{"id":"sample","chat_id":27496659,"user_id":121013363,"content":"hello [emote:1:Hi]","type":"message","metadata":"{\"message_ref\":\"1793485064512\"}","sender":{"id":121013363,"slug":"ekiiny","username":"ekiiny","identity":{"color":"#FEA0CF","badges":[],"badges_v2":[{"name":"level","badge_type":"global","selected":true,"metadata":{"level":33},"sort_order":1},{"name":"hidden","selected":false,"sort_order":2}]}},"created_at":"2026-10-31T22:17:45Z","thread_parent_id":null}],"cursor":"1793485075782353","pinned_message":null},"message":"OK"}""")

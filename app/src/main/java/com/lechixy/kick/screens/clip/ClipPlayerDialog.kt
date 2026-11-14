@@ -42,12 +42,14 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.MediaItem
+import androidx.media3.common.C
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.upstream.DefaultAllocator
 import androidx.media3.session.MediaSession
 import com.lechixy.kick.components.PlayerVideoSurface
 import com.lechixy.kick.data.channel.model.ClipDetail
@@ -57,6 +59,7 @@ import com.lechixy.kick.service.playbackHttpDataSourceFactory
 import com.lechixy.kick.data.player.local.PlaybackUsageChannel
 import com.lechixy.kick.data.player.local.PlaybackUsageStore
 import com.lechixy.kick.service.player.PlaybackUsageTracker
+import com.lechixy.kick.service.player.PlaybackMemoryMonitor
 import com.lechixy.kick.service.player.setPlaybackUsageChannel
 import com.lechixy.kick.service.player.trackUsage
 import androidx.core.net.toUri
@@ -91,9 +94,13 @@ internal fun ClipPlayerDialog(
             }
         }
     }
-    val positionMs = playback?.state?.positionMs ?: 0L
-    LaunchedEffect(model, playback) {
-        if (playback != null) snapshotFlow { playback.state.positionMs }.collect(model::updatePosition)
+    val chatVisible = showChat && !fullscreen
+    LaunchedEffect(model, playback, chatVisible) {
+        if (playback != null && chatVisible) {
+            snapshotFlow { playback.state.positionMs }.collect(model::updatePosition)
+        } else {
+            model.pauseChat()
+        }
     }
 
     Dialog(
@@ -130,7 +137,7 @@ internal fun ClipPlayerDialog(
                         if (playback == null) model.load()
                         else playback.retry()
                     },
-                    onRetryChat = { model.retryChat(positionMs) },
+                    onRetryChat = { model.retryChat(playback?.state?.positionMs ?: 0L) },
                     onWatchLivestream = onWatchLivestream,
                     onWatchFullVideo = onWatchFullVideo,
                     video = video,
@@ -153,7 +160,7 @@ internal data class ClipPlaybackState(
 )
 
 @OptIn(UnstableApi::class)
-private class ClipPlayback(val player: ExoPlayer, private val durationMs: Long) : Player.Listener {
+private class ClipPlayback(val player: ExoPlayer, private val durationMs: Long, private val memoryMonitor: PlaybackMemoryMonitor) : Player.Listener {
     var state by mutableStateOf(ClipPlaybackState(durationMs = durationMs))
         private set
 
@@ -164,6 +171,7 @@ private class ClipPlayback(val player: ExoPlayer, private val durationMs: Long) 
     }
 
     fun refresh() {
+        if (player.currentMediaItem != null) memoryMonitor.sample("clip")
         val duration = player.duration.takeIf { it > 0 } ?: durationMs
         state = state.copy(
             positionMs = player.currentPosition.coerceIn(0, duration),
@@ -200,16 +208,18 @@ private fun rememberClipPlayback(clip: ClipDetail): ClipPlayback {
     val scope = rememberCoroutineScope()
     val playback = remember(context, clip.id, clip.playbackUrl) {
         val source = playbackHttpDataSourceFactory().trackUsage(PlaybackUsageChannel(clip.channel.slug, clip.channel.username))
+        val allocator = DefaultAllocator(true, C.DEFAULT_BUFFER_SEGMENT_SIZE)
         val player = ExoPlayer.Builder(context)
             .setMediaSourceFactory(DefaultMediaSourceFactory(source))
             .setLoadControl(DefaultLoadControl.Builder()
+                .setAllocator(allocator)
                 .setBufferDurationsMsForStreaming(2500, 10000, 600, 1200)
                 .setTargetBufferBytes(12 * 1024 * 1024)
                 .setPrioritizeTimeOverSizeThresholdsForStreaming(false)
                 .build())
             .setHandleAudioBecomingNoisy(true)
             .build()
-        ClipPlayback(player, clip.durationMs)
+        ClipPlayback(player, clip.durationMs, PlaybackMemoryMonitor(allocator))
     }
     DisposableEffect(playback, lifecycle) {
         val player = playback.player

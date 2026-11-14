@@ -83,6 +83,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
+import androidx.lifecycle.viewmodel.compose.rememberViewModelStoreOwner
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -590,7 +592,12 @@ fun KickApp(restorePending: Boolean = false) {
 
                         }
                         val activeSlug = playerHost.slug
-                        val activeChannelVm = if (activeSlug != null) viewModel<ChannelViewModel>(key = activeSlug) else null
+                        // Keep the same store in mini player and fullscreen. Clear the old
+                        // channel's ViewModels and socket when the playback session changes.
+                        val channelOwner = activeSlug?.let { slug ->
+                            key(slug) { rememberViewModelStoreOwner() }
+                        }
+                        val activeChannelVm = channelOwner?.let { viewModel<ChannelViewModel>(viewModelStoreOwner = it) }
                         if (activeSlug != null && activeChannelVm != null) {
                             val activeChannelState by activeChannelVm.uiState.collectAsStateWithLifecycle()
                             LaunchedEffect(activeSlug, activeChannelState.channel) {
@@ -617,13 +624,17 @@ fun KickApp(restorePending: Boolean = false) {
                             onClose = playerHost::close,
                             liveChatViewModel = activeChannelVm,
                             pageContent = { slug ->
-                                ChannelScreen(
-                                    channelSlug = slug,
-                                    playerHost = playerHost,
-                                    viewModel = viewModel(key = slug),
-                                    onChannelLoaded = { playerHost.onChannelLoaded(slug, it) },
-                                    onBackClick = playerHost::minimize,
-                                )
+                                if (channelOwner != null && activeChannelVm != null) {
+                                    CompositionLocalProvider(LocalViewModelStoreOwner provides channelOwner) {
+                                        ChannelScreen(
+                                            channelSlug = slug,
+                                            playerHost = playerHost,
+                                            viewModel = activeChannelVm,
+                                            onChannelLoaded = { playerHost.onChannelLoaded(slug, it) },
+                                            onBackClick = playerHost::minimize,
+                                        )
+                                    }
+                                }
                             }
                         )
 

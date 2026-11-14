@@ -1,7 +1,6 @@
 package com.lechixy.kick.service.player
 
 import android.os.SystemClock
-import android.os.Debug
 import android.util.Log
 import com.lechixy.kick.BuildConfig
 import androidx.media3.common.C
@@ -128,7 +127,7 @@ internal class PlaybackDiagnosticTracker(
     private val player: ExoPlayer,
     private val speedControl: DiagnosticLiveSpeedControl,
     scope: CoroutineScope,
-    private val allocator: Allocator,
+    allocator: Allocator,
     private val network: PlaybackNetworkCounter
 ) : AnalyticsListener, Player.Listener {
     private var bufferingStarted: Long? = null
@@ -145,7 +144,7 @@ internal class PlaybackDiagnosticTracker(
     private var networkBytesPerSecond = 0L
     private var chartSamples = emptyList<PlaybackChartSample>()
     private val job: Job
-    private var lastMemoryLogMs = 0L
+    private val memoryMonitor = PlaybackMemoryMonitor(allocator)
 
     init {
         player.addAnalyticsListener(this)
@@ -226,16 +225,6 @@ internal class PlaybackDiagnosticTracker(
             lastNetworkBytes = bytes
             lastNetworkSampleAt = now
         }
-        if (BuildConfig.DEBUG && now - lastMemoryLogMs >= 10_000L) {
-            lastMemoryLogMs = now
-            val runtime = Runtime.getRuntime()
-            // Measure without forcing GC or retaining historical samples. Buffer
-            // bytes distinguish player samples from growth elsewhere in the heap.
-            Log.d("KickMemory", "heapUsedKb=${(runtime.totalMemory() - runtime.freeMemory()) / 1024} " +
-                "heapMaxKb=${runtime.maxMemory() / 1024} " +
-                "nativeUsedKb=${Debug.getNativeHeapAllocatedSize() / 1024} " +
-                "playerBufferKb=${allocator.totalBytesAllocated / 1024}")
-        }
         val buffering = player.playWhenReady && player.playbackState == Player.STATE_BUFFERING
         if (buffering && bufferingStarted == null) bufferingStarted = now
         if (!buffering) bufferingStarted?.let { bufferingTotal += now - it; bufferingStarted = null }
@@ -244,6 +233,7 @@ internal class PlaybackDiagnosticTracker(
         val format = player.videoFormat
         val audio = player.audioFormat
         val active = player.currentMediaItem != null && player.playbackState != Player.STATE_IDLE
+        if (active) memoryMonitor.sample(if (player.isCurrentMediaItemLive) "live" else "recording", now)
         val bufferedMs = player.totalBufferedDuration
         if (sampleDue && active) {
             val sample = PlaybackChartSample(bandwidthBps, networkBytesPerSecond, bufferedMs)
