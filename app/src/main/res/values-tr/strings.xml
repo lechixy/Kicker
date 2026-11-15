@@ -74,4 +74,23 @@
     <string name="fullscreen_chat_shape_rounded">Yuvarlatılmış</string>
     <string name="fullscreen_chat_shape_pill">Kapsül</string>
     <string name="fullscreen_chat_badges_description">Yayıncı, moderatör ve doğrulanmış rozetleri her zaman görünür.</string>
+    <string name="player_ambient_mode">Ambiyans ışığı</string>
+    <string name="player_ambient_selection">Mod</string>
+    <string name="player_ambient_description">Videonun renklerini çevresine yansıt.</string>
+    <string name="player_ambient_off">Kapalı</string>
+    <string name="player_ambient_dynamic">Dinamik</string>
+    <string name="player_ambient_dynamic_description">Video kenarlarındaki renkler arasında yumuşak geçiş yapar.</string>
+    <string name="player_ambient_live">Canlı</string>
+    <string name="player_ambient_live_description">O anki video karesinin ışığını çevresine yansıtır.</string>
+    <string name="player_ambient_live_fps">Canlı mod kare hızı sınırı</string>
+    <string name="player_ambient_fps_format">%1$d fps</string>
+    <string name="player_ambient_percent">%%%1$d</string>
+    <string name="player_ambient_intensity">Işık yoğunluğu</string>
+    <string name="player_ambient_intensity_description">Videonun çevresindeki ışığın parlaklığını ayarla.</string>
+    <string name="player_ambient_spread">Işığın yayılımı</string>
+    <string name="player_ambient_spread_description">Işığın video kenarından ne kadar uzağa yayıldığını ayarla.</string>
+    <string name="player_ambient_fullscreen">Tam ekranda göster</string>
+    <string name="player_ambient_fullscreen_description">Tam ekranda videonun çevresindeki boşlukları aydınlat.</string>
+    <string name="settings_backup_account_title">Kick oturumunuz bu cihazda kalır</string>
+    <string name="settings_backup_account_description">Kick giriş bilgileriniz ve oturumunuz asla yedeklenmez. Çıkış yapınca, uygulama verilerini temizleyince veya uygulamayı kaldırınca kayıtlı oturum silinir. Yeniden kurduğunuzda, cihaz değiştirdiğinizde veya oturumunuzun süresi dolduğunda tekrar giriş yapın.</string>
 </resources>

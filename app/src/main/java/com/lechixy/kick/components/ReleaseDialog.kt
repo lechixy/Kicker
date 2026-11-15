@@ -22,7 +22,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
@@ -45,7 +44,6 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-val LocalReleasePreview = staticCompositionLocalOf<(ReleaseDialogMode) -> Unit> { {} }
 
 @Composable
 fun ReleaseDialog(request: ReleaseDialogRequest, onDismiss: () -> Unit) {

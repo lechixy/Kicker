@@ -391,7 +391,6 @@ fun KickApp(restorePending: Boolean = false) {
     ) {
         CompositionLocalProvider(
             com.lechixy.kick.components.channel.chat.LocalOpenChatClip provides openChatClip,
-            com.lechixy.kick.components.LocalReleasePreview provides releaseViewModel::preview,
             com.lechixy.kick.components.account.LocalOpenChallenges provides {
                 challengesOpen = true
             },

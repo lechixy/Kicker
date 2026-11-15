@@ -76,4 +76,23 @@
     <string name="fullscreen_chat_shape_rounded">Rounded</string>
     <string name="fullscreen_chat_shape_pill">Pill</string>
     <string name="fullscreen_chat_badges_description">Broadcaster, moderator, and verified badges are always shown.</string>
+    <string name="player_ambient_mode">Ambient light</string>
+    <string name="player_ambient_selection">Mode</string>
+    <string name="player_ambient_description">Cast light from the video onto its surroundings.</string>
+    <string name="player_ambient_off">Off</string>
+    <string name="player_ambient_dynamic">Dynamic</string>
+    <string name="player_ambient_dynamic_description">Slowly blends colors from the video edges.</string>
+    <string name="player_ambient_live">Live</string>
+    <string name="player_ambient_live_description">Projects light from the current video frame.</string>
+    <string name="player_ambient_live_fps">Live frame rate limit</string>
+    <string name="player_ambient_fps_format">%1$d fps</string>
+    <string name="player_ambient_percent">%1$d%%</string>
+    <string name="player_ambient_intensity">Light intensity</string>
+    <string name="player_ambient_intensity_description">Adjust how bright the ambient glow looks.</string>
+    <string name="player_ambient_spread">Light spread</string>
+    <string name="player_ambient_spread_description">Adjust how far the light reaches beyond the video.</string>
+    <string name="player_ambient_fullscreen">Show in full screen</string>
+    <string name="player_ambient_fullscreen_description">Light up the space around the video in full screen.</string>
+    <string name="settings_backup_account_title">Kick sign-in stays on this device</string>
+    <string name="settings_backup_account_description">Kick login details and sessions are never backed up. Signing out, clearing app data, or uninstalling removes the saved session. Sign in again after reinstalling, switching devices, or if your session expires.</string>
 </resources>

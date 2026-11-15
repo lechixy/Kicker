@@ -109,11 +109,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
@@ -153,7 +155,9 @@ import com.lechixy.kick.components.channel.chat.FullscreenChatVideoFrame
 import com.lechixy.kick.components.channel.chat.VideoBackdropBlur
 import com.lechixy.kick.components.channel.chat.rememberFullscreenChatPreferences
 import com.lechixy.kick.components.channel.chat.rememberLegacyFullscreenChatFrame
+import com.lechixy.kick.components.settings.AmbientModeSettings
 import com.lechixy.kick.components.settings.SettingSwitch
+import com.lechixy.kick.components.settings.titleResource
 import com.lechixy.kick.data.account.AccountGraph
 import com.lechixy.kick.data.channel.model.ChannelDetail
 import com.lechixy.kick.data.channel.model.getBannerUrl
@@ -162,6 +166,7 @@ import com.lechixy.kick.data.chat.remote.ChatConnectionState
 import com.lechixy.kick.data.player.local.PlaybackProgressStore
 import com.lechixy.kick.data.player.model.RecordedPlayback
 import com.lechixy.kick.data.player.remote.ViewerSession
+import com.lechixy.kick.data.settings.model.PlayerAmbientMode
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 import com.lechixy.kick.screens.channel.ChannelViewModel
@@ -265,6 +270,8 @@ fun KickPlayerView(
     }
 
     var hasRenderedFirstFrame by remember(stableId) { mutableStateOf(false) }
+    var ambientFirstFrame by remember(stableId) { mutableIntStateOf(0) }
+    var ambientSeek by remember(stableId) { mutableStateOf<AmbientSeek?>(null) }
     var isBuffering by remember { mutableStateOf(true) }
     var isPlayerReady by remember { mutableStateOf(false) }
     var loadedMediaId by remember { mutableStateOf<String?>(null) }
@@ -284,6 +291,10 @@ fun KickPlayerView(
     var showStats by rememberSaveable { mutableStateOf(false) }
     var viewport by remember { mutableStateOf(IntSize.Zero) }
     var playerTexture by remember { mutableStateOf<TextureView?>(null) }
+    var ambientCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val hostedAmbient = LocalPlayerAmbientState.current
+    val ambient = hostedAmbient ?: remember { PlayerAmbientState() }
+    val fullscreenProgress = LocalPlayerFullscreenProgress.current
     var chatBlurBounds by remember { mutableStateOf<FullscreenChatBackdropRegion?>(null) }
     val controlBlur = remember { FrostedPlayerRegions() }
     val updateChatBlurBounds: (FullscreenChatBackdropRegion?) -> Unit = remember { { chatBlurBounds = it } }
@@ -293,6 +304,23 @@ fun KickPlayerView(
     val remainingTimerSeconds = sleepTimer.remainingSeconds
 
     val settingsRepository = LocalSettingsRepository.current
+    val ambientModeValue by remember(settingsRepository) { settingsRepository.get(SettingsKeys.AMBIENT_MODE) }
+        .collectAsStateWithLifecycle(SettingsKeys.AMBIENT_MODE.defaultValue)
+    val ambientMode = PlayerAmbientMode.fromValue(ambientModeValue)
+    val ambientFpsValue by remember(settingsRepository) { settingsRepository.get(SettingsKeys.AMBIENT_LIVE_FPS) }
+        .collectAsStateWithLifecycle(SettingsKeys.AMBIENT_LIVE_FPS.defaultValue)
+    val ambientFps = if (ambientFpsValue == 60) 60 else 30
+    val ambientIntensity by remember(settingsRepository) { settingsRepository.get(SettingsKeys.AMBIENT_INTENSITY) }
+        .collectAsStateWithLifecycle(SettingsKeys.AMBIENT_INTENSITY.defaultValue)
+    val ambientSpread by remember(settingsRepository) { settingsRepository.get(SettingsKeys.AMBIENT_SPREAD) }
+        .collectAsStateWithLifecycle(SettingsKeys.AMBIENT_SPREAD.defaultValue)
+    val ambientFullscreen by remember(settingsRepository) { settingsRepository.get(SettingsKeys.AMBIENT_FULLSCREEN) }
+        .collectAsStateWithLifecycle(SettingsKeys.AMBIENT_FULLSCREEN.defaultValue)
+    androidx.compose.runtime.SideEffect {
+        ambient.intensity = ambientIntensity.coerceIn(25, 150) / 100f
+        ambient.spread = ambientSpread.coerceIn(50, 150) / 100f
+        ambient.fullscreenEnabled = ambientFullscreen
+    }
     val overlaySupported = playerHost != null && channel != null && if (recording == null) {
         liveChatViewModel != null
     } else {
@@ -555,6 +583,7 @@ fun KickPlayerView(
                 override fun onRenderedFirstFrame() {
                     if (p.currentMediaItem?.mediaId != stableId) return
                     hasRenderedFirstFrame = true
+                    ambientFirstFrame++
                     isPlayerReady = true
                     playbackError = null
                     loadedMediaId = p.currentMediaItem?.mediaId
@@ -568,6 +597,10 @@ fun KickPlayerView(
                     if (!latestIsLiveStream && p.currentMediaItem?.mediaId == stableId &&
                         (reason == Player.DISCONTINUITY_REASON_SEEK || reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT)
                     ) {
+                        ambientSeek = AmbientSeek(
+                            sequence = (ambientSeek?.sequence ?: 0) + 1,
+                            previousTimestamp = playerTexture?.surfaceTexture?.timestamp ?: 0L,
+                        )
                         positionMs = newPosition.positionMs.coerceAtLeast(0L)
                         seekCallback(positionMs)
                     }
@@ -751,10 +784,37 @@ fun KickPlayerView(
         transitionSpec = { tween(if (targetState) 200 else 160) },
         label = "playback controls opacity",
     ) { if (it) 1f else 0f }
+    val trackAmbient = ambientMode != PlayerAmbientMode.Off && !isMini && !isInPipMode
+    if (trackAmbient) {
+        TrackAmbientVideoLayout(ambient, playerTexture) { ambientCoordinates }
+    }
+    val fullscreenSettled by remember(isFullScreen, fullscreenProgress) {
+        derivedStateOf { isFullScreen && (fullscreenProgress?.invoke() ?: 1f) >= 1f }
+    }
+    val ambientVisible = trackAmbient && hasRenderedFirstFrame && loadedMediaId == stableId &&
+        playbackError == null && !clipModalOpen && (!fullscreenSettled || ambientFullscreen)
+    val useHostBackdrop = hostedAmbient != null && playerHost?.expansionSource == null
+    CapturePlayerAmbient(
+        state = ambient,
+        texture = playerTexture,
+        mode = ambientMode,
+        liveFps = ambientFps,
+        visible = ambientVisible,
+        playing = isPlaying,
+        mediaId = stableId,
+        mediaUrl = activePlaybackUrl,
+        firstFrame = ambientFirstFrame,
+        seek = ambientSeek,
+        keepFrameWhenHidden = hostedAmbient != null && isMini && !isInPipMode,
+    )
     Box(
         modifier = modifier
-            .background(Color.Black)
+            .drawBehind {
+                if (!useHostBackdrop || !ambientVisible || ambient.frame == null) drawRect(Color.Black)
+            }
             .onGloballyPositioned { coordinates ->
+                ambientCoordinates = coordinates
+                if (trackAmbient) ambient.updateBounds(playerTexture, coordinates)
                 val b = coordinates.boundsInWindow()
                 val rect = Rect(b.left.toInt(), b.top.toInt(), b.right.toInt(), b.bottom.toInt())
                 if (!isInPipMode && !rect.isEmpty && playerBounds != rect) {
@@ -778,6 +838,9 @@ fun KickPlayerView(
             },
         contentAlignment = Alignment.Center
     ) {
+        if (!useHostBackdrop && ambientVisible && ambient.bounds?.hasLetterboxSpace == true) {
+            PlayerAmbientBackdrop(ambient, modifier = Modifier.matchParentSize())
+        }
         PlayerVideoSurface(
             player, isPlaying, Modifier.fillMaxSize().onSizeChanged { viewport = it },
             onTextureChanged = { playerTexture = it },
@@ -991,6 +1054,10 @@ fun KickPlayerView(
                     isAdjustingVolume = false
                 },
                 onOpenSettings = { showSettingsDialog = true },
+                onOpenQuality = {
+                    settingsPage = PlayerSettingsPage.QUALITY
+                    showSettingsDialog = true
+                },
                 onOpenCastDialog = { showCastDialog = true },
                 onToggleTheater = onToggleTheater,
                 onCreateClip = if (clipVideoId != null || clipLiveSession != null) {
@@ -1151,6 +1218,7 @@ fun KickPlayerView(
                                             PlayerSettingsPage.SLEEP_TIMER -> stringResource(R.string.player_sleep_timer)
                                             PlayerSettingsPage.CHAT_OVERLAY -> stringResource(R.string.fullscreen_chat_title)
                                             PlayerSettingsPage.MORE -> stringResource(R.string.player_more)
+                                            PlayerSettingsPage.AMBIENT -> stringResource(R.string.player_ambient_mode)
                                             PlayerSettingsPage.MAIN -> stringResource(R.string.settings)
                                         },
                                         style = MaterialTheme.typography.titleLarge,
@@ -1178,6 +1246,12 @@ fun KickPlayerView(
                                             title = stringResource(R.string.player_sleep_timer),
                                             value = if (sleepTimerMinutes > 0) stringResource(R.string.player_minutes, (remainingTimerSeconds + 59) / 60) else stringResource(R.string.player_off),
                                             onClick = { settingsPage = PlayerSettingsPage.SLEEP_TIMER }
+                                        )
+                                        PlayerSettingsCategoryRow(
+                                            icon = R.drawable.fluorescent_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+                                            title = stringResource(R.string.player_ambient_mode),
+                                            value = stringResource(ambientMode.titleResource),
+                                            onClick = { settingsPage = PlayerSettingsPage.AMBIENT },
                                         )
                                         if (overlayPreferences != null) {
                                             PlayerSettingsCategoryRow(
@@ -1334,6 +1408,14 @@ fun KickPlayerView(
                                         )
                                     }
                                 }
+
+                                PlayerSettingsPage.AMBIENT -> Column(
+                                    Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                                        .verticalScroll(rememberScrollState()),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    AmbientModeSettings()
+                                }
                             }
                         }
                     }
@@ -1485,7 +1567,7 @@ private fun Tracks.toQualityOptions(): List<VideoQualityOption> =
 /**
  * Player ayarları dialogundaki sayfalar (YouTube tarzı kategoriler).
  */
-private enum class PlayerSettingsPage { MAIN, QUALITY, SLEEP_TIMER, CHAT_OVERLAY, MORE }
+private enum class PlayerSettingsPage { MAIN, QUALITY, SLEEP_TIMER, CHAT_OVERLAY, MORE, AMBIENT }
 
 @Composable
 private fun PlayerSettingsCategoryRow(
@@ -1605,6 +1687,7 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
     onVolumeChange: (Float) -> Unit,
     onVolumeChangeFinished: () -> Unit = {},
     onOpenSettings: () -> Unit,
+    onOpenQuality: () -> Unit,
     onOpenCastDialog: () -> Unit = {},
     onToggleTheater: () -> Unit = {},
     onCreateClip: (() -> Unit)? = null,
@@ -1695,7 +1778,12 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                         tint = Color.White,
                     )
                 }
-                Box(contentAlignment = Alignment.Center) {
+                if (!showMediaInfo) Box(
+                    modifier = if (isFullScreen) Modifier.clickable(
+                        onClickLabel = stringResource(R.string.player_quality), onClick = onOpenQuality,
+                    ) else Modifier,
+                    contentAlignment = Alignment.Center,
+                ) {
                     FrostedPlayerControl(controlFrame, controlBlur)
                     Text(
                         text = qualityLabel,
@@ -1710,7 +1798,10 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
 
             }
             if (showMediaInfo) {
-                FullscreenMediaInfo(mediaTitle, mediaTags, Modifier.weight(1f).padding(horizontal = 16.dp))
+                FullscreenMediaInfo(
+                    mediaTitle, mediaTags, qualityLabel, onOpenQuality,
+                    Modifier.weight(1f).padding(horizontal = 16.dp),
+                )
             }
             /**
              * Top End/Right
@@ -1974,6 +2065,7 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                                     count = liveViewerCount,
                                     style = labelStyle,
                                     animateEntrance = false,
+                                    color = Color.White,
                                 )
                             }
                         }
@@ -2066,7 +2158,13 @@ private fun Player.liveSeekWindow(): LiveSeekWindow? {
  * Miniplayer
  */
 @Composable
-private fun FullscreenMediaInfo(title: String, tags: List<String>, modifier: Modifier = Modifier) {
+private fun FullscreenMediaInfo(
+    title: String,
+    tags: List<String>,
+    quality: String,
+    onOpenQuality: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
             title,
@@ -2076,9 +2174,16 @@ private fun FullscreenMediaInfo(title: String, tags: List<String>, modifier: Mod
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), maxLines = 1) {
-            tags.filter { it.isNotBlank() }.distinct().forEach { tag ->
-                TagChip(tag, containerColor = Color.Black.copy(alpha = 0.42f), contentColor = Color.White)
+        val chipBackground = Color.Black.copy(alpha = 0.42f)
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            TagChip(
+                quality, icon = R.drawable.hd_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+                containerColor = chipBackground, contentColor = Color.White, onClick = onOpenQuality,
+            )
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), maxLines = 1) {
+                tags.filter { it.isNotBlank() }.distinct().forEach { tag ->
+                    TagChip(tag, containerColor = chipBackground, contentColor = Color.White)
+                }
             }
         }
     }

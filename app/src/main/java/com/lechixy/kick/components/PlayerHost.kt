@@ -40,6 +40,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -52,10 +53,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Rect
@@ -63,6 +66,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
 import androidx.compose.ui.input.pointer.util.VelocityTracker
@@ -112,6 +116,7 @@ import com.lechixy.kick.util.findActivity
 internal const val WIDE_BREAKPOINT_DP = 700
 internal const val CHAT_WIDTH_FRACTION = 0.32f
 internal val ChannelTabSpace = 144.dp
+internal val LocalPlayerFullscreenProgress = staticCompositionLocalOf<(() -> Float)?> { null }
 
 private const val MINI_MIN_WIDTH_DP = com.lechixy.kick.data.settings.model.MiniPlayerSize.MIN_WIDTH_DP
 private const val MINI_MAX_WIDTH_DP = com.lechixy.kick.data.settings.model.MiniPlayerSize.MAX_WIDTH_DP
@@ -157,6 +162,7 @@ fun PlayerHost(
     onVideoBoundsChanged: ((Rect?) -> Unit)? = null,
 ) {
     if (host.slug == null || host.mode == PlayerMode.Hidden) return
+    val ambient = remember(host.slug, host.recording?.id, host.channel?.livestream?.id) { PlayerAmbientState() }
 
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
@@ -192,6 +198,7 @@ fun PlayerHost(
     }
 
     val frameT = remember { Animatable(0f, visibilityThreshold = NORM_THRESHOLD) }
+    val fullscreenProgress = remember(frameT) { { frameT.value.coerceIn(0f, 1f) } }
     val theaterAnim = remember {
         Animatable(if (host.isTheaterMode) 1f else 0f, visibilityThreshold = NORM_THRESHOLD)
     }
@@ -367,8 +374,6 @@ fun PlayerHost(
                 enteredFullscreenFromPortrait = isPortraitNow
             }
             controller?.hide(WindowInsetsCompat.Type.systemBars())
-            dragScale = 1f
-            playerDy = 0f
             fsScale = 1f
             fsDy = 0f
         } else if (priorOrientation != null) {
@@ -378,9 +383,19 @@ fun PlayerHost(
         val rotates = if (enteringFullscreen) isPortraitNow else
             priorOrientation != null && enteredFullscreenFromPortrait && !isPortraitNow
         kotlinx.coroutines.coroutineScope {
+            if (enteringFullscreen && (dragScale != 1f || playerDy != 0f)) {
+                launch {
+                    val startScale = dragScale
+                    val startOffset = playerDy
+                    animate(0f, 1f, animationSpec = tween(300, easing = FastOutSlowInEasing)) { fraction, _ ->
+                        dragScale = startScale + (1f - startScale) * fraction
+                        playerDy = startOffset * (1f - fraction)
+                    }
+                }
+            }
             launch {
-                // Start moving the video before Android takes its rotation snapshot on phones.
-                if (isPhone && rotates && allowLandscapeRequest && ValueAnimator.areAnimatorsEnabled() &&
+                // Start moving the video before Android takes its rotation snapshot.
+                if (rotates && allowLandscapeRequest && ValueAnimator.areAnimatorsEnabled() &&
                     frameT.value != targetT) delay(120)
                 if (activity != null && !activity.isInPictureInPictureMode &&
                     !activity.isFinishing && !activity.isDestroyed) {
@@ -398,9 +413,7 @@ fun PlayerHost(
                     enteredFullscreenFromPortrait = false
                 }
             }
-            if (rotates && !isPhone) {
-                frameT.snapTo(targetT)
-            } else if (v != 0f) {
+            if (v != 0f) {
                 frameT.animateTo(targetT, spring(
                     dampingRatio = Spring.DampingRatioNoBouncy,
                     stiffness = Spring.StiffnessMediumLow,
@@ -510,16 +523,17 @@ fun PlayerHost(
 
     fun currentT() = frameT.value
 
-    fun fullRect(cw: Int, ch: Int, fsSafeArea: IntRect): IntRect {
+    fun fullRect(cw: Int, ch: Int, fsSafeArea: IntRect, followGesture: Boolean = true): IntRect {
         val chatOpen = host.chatOpenProgress.value.coerceIn(0f, 1f)
         val chatW = host.sideChatWidthPx(fsSafeArea.width, hasSideChat = true)
         val availableRight = cw + (fsSafeArea.right - cw) * chatOpen - chatW
         val availableLeft = fsSafeArea.left * chatOpen
         val availableW = (availableRight - availableLeft).coerceAtLeast(1f)
-        val w = availableW * fsScale
-        val h = ch * fsScale
+        val scale = if (followGesture) fsScale else 1f
+        val w = availableW * scale
+        val h = ch * scale
         val l = availableLeft + (availableW - w) / 2f
-        val t = (ch - h) / 2f + fsDy
+        val t = (ch - h) / 2f + if (followGesture) fsDy else 0f
         val leftPx = l.roundToInt()
         val topPx = t.roundToInt()
         return IntRect(leftPx, topPx, leftPx + w.roundToInt(), topPx + h.roundToInt())
@@ -569,6 +583,9 @@ fun PlayerHost(
         }
     }
 
+    val pageColor = MaterialTheme.colorScheme.background
+    val backdropColor = { lerp(pageColor, Color.Black, fullscreenProgress()) }
+    val restingAreas = remember { mutableStateOf(IntRect.Zero to IntRect.Zero) }
     FullscreenRecordedChatBox(
         host = host,
         overlayEnabled = fullscreenChatOverlayEnabled,
@@ -580,7 +597,9 @@ fun PlayerHost(
             .layout { measurable, constraints ->
                 val cw = constraints.maxWidth
                 val ch = constraints.maxHeight
-                metrics.update(cw, ch, resolveSafeArea(cw, ch))
+                val inlineArea = resolveSafeArea(cw, ch)
+                metrics.update(cw, ch, inlineArea)
+                restingAreas.value = inlineArea to resolveFullscreenSafeArea(cw, ch)
                 val placeable = measurable.measure(constraints)
                 layout(placeable.width, placeable.height) {
                     placeable.place(0, 0)
@@ -593,6 +612,26 @@ fun PlayerHost(
                 alpha = if (pipVideoOnly) 1f else exitAlpha.value
             }
     ) {
+        if (!pipVideoOnly && !isExpanding) {
+            PlayerAmbientBackdrop(
+                state = ambient,
+                modifier = Modifier.matchParentSize(),
+                videoBounds = {
+                    val (inlineArea, fullscreenArea) = restingAreas.value
+                    val slot = lerpRect(
+                        inlineRect(inlineArea),
+                        fullRect(metrics.containerW, metrics.containerH, fullscreenArea, followGesture = false),
+                        fullscreenProgress(),
+                    )
+                    fitAmbientVideo(slot, ambient.videoAspectRatio)
+                },
+                backdropColor = backdropColor,
+                opacity = {
+                    val fullscreenAlpha = if (ambient.fullscreenEnabled) 1f else 1f - fullscreenProgress()
+                    fullscreenAlpha * (1f + currentT().coerceIn(-1f, 0f))
+                },
+            )
+        }
         if (showPage) {
             Box(
                 Modifier
@@ -624,7 +663,11 @@ fun PlayerHost(
                             clip = false
                         }
                     }
-                    .background(MaterialTheme.colorScheme.background)
+                    .drawBehind {
+                        if (isExpanding || ambient.frame == null ||
+                            (!ambient.fullscreenEnabled && fullscreenProgress() >= 1f)
+                        ) drawRect(pageColor)
+                    }
                     .pointerInput(Unit) {
                         detectTapGestures { }
                     }
@@ -644,7 +687,14 @@ fun PlayerHost(
                             }
                         }
                 ) {
-                    host.pageSlug?.let { s -> key(s) { pageContent(s) } }
+                    host.pageSlug?.let { slug ->
+                        key(slug) {
+                            CompositionLocalProvider(
+                                LocalPlayerAmbientState provides ambient,
+                                LocalPlayerFullscreenProgress provides fullscreenProgress,
+                            ) { pageContent(slug) }
+                        }
+                    }
                 }
             }
         }
@@ -798,8 +848,12 @@ fun PlayerHost(
                 Modifier
                     .drawWithContent {
                         // The swipe preview grows inside the video slot, below surrounding UI.
-                        if (!pipVideoOnly && mode == PlayerMode.Expanded && dragScale > 1f) {
-                            val bounds = inlineRect(metrics.safeArea)
+                        if (!pipVideoOnly && mode != PlayerMode.Mini && dragScale > 1f) {
+                            val bounds = lerpRect(
+                                inlineRect(metrics.safeArea),
+                                IntRect(0, 0, size.width.roundToInt(), size.height.roundToInt()),
+                                fullscreenProgress(),
+                            )
                             clipRect(
                                 bounds.left.toFloat(), bounds.top.toFloat(),
                                 bounds.right.toFloat(), bounds.bottom.toFloat()
@@ -1025,15 +1079,8 @@ fun PlayerHost(
                                 val vy = tracker.calculateVelocity().y
                                 val tVel = -vy / metrics.containerH.coerceAtLeast(1)
                                 when {
-                                    mode == PlayerMode.Expanded && (total < -commitPx || (total < -commitPx * 0.5f && vy < -1800f)) -> scope.launch {
+                                    mode == PlayerMode.Expanded && (total < -commitPx || (total < -commitPx * 0.5f && vy < -1800f)) -> {
                                         releaseVelocity = tVel.coerceAtLeast(0.5f)
-                                        launch {
-                                            animate(
-                                                dragScale,
-                                                1f,
-                                                animationSpec = backNorm
-                                            ) { v, _ -> dragScale = v }
-                                        }
                                         host.setFullscreen(true)
                                     }
 
@@ -1184,22 +1231,27 @@ fun PlayerHost(
                         )
                     }
             ) {
-                PlayerSurface(
-                    host = host,
-                    mode = mode,
-                    previewThumbnailUrl = previewThumbnailUrl,
-                    isInPipMode = pipVideoOnly,
-                    liveChatViewModel = liveChatViewModel,
-                    fullscreenChatOverlayEnabled = fullscreenChatOverlayEnabled,
-                    onToggleFullscreenChatOverlay = {
-                        val enabled = host.toggleFullscreenChatOverlay(fullscreenChatOverlayEnabled)
-                        if (enabled != fullscreenChatOverlayEnabled) {
-                            scope.launch { settingsRepository.set(SettingsKeys.FULLSCREEN_CHAT_ENABLED, enabled) }
-                        }
-                    },
-                    onMinimize = onMinimize,
-                    onClose = onClose
-                )
+                CompositionLocalProvider(
+                    LocalPlayerAmbientState provides ambient,
+                    LocalPlayerFullscreenProgress provides fullscreenProgress,
+                ) {
+                    PlayerSurface(
+                        host = host,
+                        mode = mode,
+                        previewThumbnailUrl = previewThumbnailUrl,
+                        isInPipMode = pipVideoOnly,
+                        liveChatViewModel = liveChatViewModel,
+                        fullscreenChatOverlayEnabled = fullscreenChatOverlayEnabled,
+                        onToggleFullscreenChatOverlay = {
+                            val enabled = host.toggleFullscreenChatOverlay(fullscreenChatOverlayEnabled)
+                            if (enabled != fullscreenChatOverlayEnabled) {
+                                scope.launch { settingsRepository.set(SettingsKeys.FULLSCREEN_CHAT_ENABLED, enabled) }
+                            }
+                        },
+                        onMinimize = onMinimize,
+                        onClose = onClose
+                    )
+                }
             }
         }
     }
@@ -1251,13 +1303,15 @@ private fun PlayerSurface(
     }
     val playbackUrl = if (recording != null) resolvedUrl else channel?.playbackUrl
     val announcementId = host.activeLiveAnnouncementId
+    val hasVideo = channel != null && (isLive || recording != null) && !playbackUrl.isNullOrBlank()
 
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.Black), contentAlignment = Alignment.Center
+            .then(if (hasVideo) Modifier else Modifier.background(Color.Black)),
+        contentAlignment = Alignment.Center,
     ) {
-        if (channel != null && (isLive || recording != null) && !playbackUrl.isNullOrBlank()) {
+        if (hasVideo) {
             // PiP parametreleri (sourceRectHint, autoEnter) KickPlayerView içinde yönetiliyor.
             KickPlayerView(
                 playbackUrl = playbackUrl,

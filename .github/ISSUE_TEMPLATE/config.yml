@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/lechixy/Kicker/security/policy
+    about: Follow the security policy to report a suspected vulnerability privately.

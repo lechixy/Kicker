@@ -30,11 +30,11 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -53,14 +53,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.AbsoluteAlignment
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAbsoluteAlignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
@@ -73,11 +73,11 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -86,9 +86,9 @@ import com.lechixy.kick.R
 import com.lechixy.kick.components.PlayerHostState
 import com.lechixy.kick.data.channel.model.ChannelDetail
 import com.lechixy.kick.data.channel.model.SubscriberBadge
+import com.lechixy.kick.data.chat.model.ChatIdentity
 import com.lechixy.kick.data.chat.model.ChatMessage
 import com.lechixy.kick.data.chat.model.ChatMessageType
-import com.lechixy.kick.data.chat.model.ChatIdentity
 import com.lechixy.kick.data.chat.remote.ChatConnectionState
 import com.lechixy.kick.data.settings.model.FullscreenChatPosition
 import com.lechixy.kick.data.settings.model.FullscreenChatShape
@@ -96,9 +96,9 @@ import com.lechixy.kick.data.settings.model.SettingKey
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 import com.lechixy.kick.screens.channel.ChannelViewModel
-import java.util.Locale
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.util.Locale
 import kotlin.math.roundToInt
 
 internal data class FullscreenChatPreferences(
@@ -129,7 +129,7 @@ internal fun rememberFullscreenChatPreferences(): FullscreenChatPreferences {
     val scale by fullscreenChatSetting(SettingsKeys.FULLSCREEN_CHAT_SCALE)
     val shape by fullscreenChatSetting(SettingsKeys.FULLSCREEN_CHAT_SHAPE)
     return FullscreenChatPreferences(
-        horizontal, opacity.coerceIn(0.35f, 0.85f),
+        horizontal, opacity.coerceIn(SettingsKeys.FULLSCREEN_CHAT_OPACITY_RANGE),
         FullscreenChatPosition.decode(verticalPosition) ?: FullscreenChatPosition.VerticalDefault,
         FullscreenChatPosition.decode(horizontalPosition) ?: FullscreenChatPosition.HorizontalDefault,
         blur, badges, positionLocked, lanes.coerceIn(1, 4), scale.coerceIn(70, 150), FullscreenChatShape.fromValue(shape),
@@ -433,7 +433,7 @@ internal fun FullscreenChatOverlay(
                         Modifier.padding(6.dp).semantics(mergeDescendants = true) {},
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Icon(painterResource(R.drawable.format_size_24dp), fontLabel, Modifier.size(18.dp))
+                        Icon(painterResource(R.drawable.format_size_24dp_e3e3e3_fill1_wght400_grad0_opsz24), fontLabel, Modifier.size(18.dp))
                         Text("$fontSize sp", style = MaterialTheme.typography.labelSmall)
                     }
                     IconButton(enabled = fontSize > 10, onClick = { changeFontSize(-1) }) {

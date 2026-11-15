@@ -81,17 +81,6 @@ fun DeveloperToolsScreen(onBackClick: () -> Unit, onTriggerLive: () -> Unit, can
 
 @Composable
 private fun DeveloperToolsContent(onTriggerLive: () -> Unit, canTriggerLive: Boolean) {
-    val previewRelease = com.lechixy.kick.components.LocalReleasePreview.current
-    Text(stringResource(R.string.developer_notification_previews), style = MaterialTheme.typography.titleMedium)
-    Button(onClick = { com.lechixy.kick.data.account.AccountGraph.notifications.preview(com.lechixy.kick.data.notifications.NotificationKind.WatchTimeGoal) }) {
-        Text(stringResource(R.string.developer_reward_notification))
-    }
-    Button(onClick = { com.lechixy.kick.data.account.AccountGraph.notifications.preview(com.lechixy.kick.data.notifications.NotificationKind.StreamStarted) }) {
-        Text(stringResource(R.string.developer_live_notification))
-    }
-    TextButton(onClick = { previewRelease(com.lechixy.kick.data.releases.ReleaseDialogMode.WhatsNew) }) { Text(stringResource(R.string.release_whats_new)) }
-    TextButton(onClick = { previewRelease(com.lechixy.kick.data.releases.ReleaseDialogMode.UpdateAvailable) }) { Text(stringResource(R.string.release_update_available)) }
-    HorizontalDivider()
     PlayerDiagnosticsContent()
     HorizontalDivider()
     val state by ViewerTrackingDiagnostics.state.collectAsStateWithLifecycle()

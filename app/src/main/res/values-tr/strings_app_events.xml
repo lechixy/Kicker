@@ -8,9 +8,6 @@
     <string name="notification_live_title">%1$s yayına başladı</string>
     <string name="notification_live_description">Yayına katılmak için dokun</string>
     <string name="notification_dismiss">Bildirimi kapat</string>
-    <string name="developer_notification_previews">Bildirim ve sürüm önizlemeleri</string>
-    <string name="developer_reward_notification">Ödül bildirimini dene</string>
-    <string name="developer_live_notification">Canlı yayın bildirimini dene</string>
     <string name="release_whats_new">Yenilikler</string>
     <string name="release_update_available">Güncelleme mevcut</string>
 

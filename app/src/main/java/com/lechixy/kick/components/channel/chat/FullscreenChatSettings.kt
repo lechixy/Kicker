@@ -37,8 +37,8 @@ import com.lechixy.kick.components.settings.SettingsExpander
 import com.lechixy.kick.data.settings.model.FullscreenChatShape
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
-import java.text.NumberFormat
 import kotlinx.coroutines.launch
+import java.text.NumberFormat
 
 internal data class FullscreenChatOption(
     @StringRes val title: Int,
@@ -102,7 +102,7 @@ internal fun fullscreenChatOptions(
         SettingSlider(
             key = rememberFullscreenChatFontSizeSetting(),
             title = stringResource(R.string.fullscreen_chat_font_size),
-            icon = R.drawable.format_size_24dp,
+            icon = R.drawable.format_size_24dp_e3e3e3_fill1_wght400_grad0_opsz24,
             enabled = enabled,
             valueRange = 10f..24f,
             steps = 13,
@@ -113,7 +113,7 @@ internal fun fullscreenChatOptions(
         SettingDropdown(
             key = SettingsKeys.FULLSCREEN_CHAT_SHAPE,
             title = stringResource(R.string.fullscreen_chat_shape),
-            icon = R.drawable.category_24dp,
+            icon = R.drawable.category_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
             enabled = enabled,
             options = listOf(
                 FullscreenChatShape.Square.value to stringResource(R.string.fullscreen_chat_shape_square),
@@ -127,15 +127,15 @@ internal fun fullscreenChatOptions(
         SettingFloatSlider(
             key = SettingsKeys.FULLSCREEN_CHAT_OPACITY,
             title = stringResource(R.string.fullscreen_chat_opacity),
-            icon = R.drawable.opacity_24dp,
+            icon = R.drawable.opacity_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
             enabled = enabled,
-            valueRange = 0.35f..0.85f,
+            valueRange = SettingsKeys.FULLSCREEN_CHAT_OPACITY_RANGE,
             valueFormatter = { percent.format(it.toDouble()) },
         )
     })
     add(FullscreenChatOption(R.string.fullscreen_chat_blur, appearance) { enabled ->
         SettingSwitch(SettingsKeys.FULLSCREEN_CHAT_BLUR, stringResource(R.string.fullscreen_chat_blur),
-            icon = R.drawable.blur_on_24dp, enabled = enabled)
+            icon = R.drawable.blur_on_24dp_e3e3e3_fill0_wght400_grad0_opsz24, enabled = enabled)
     })
     add(FullscreenChatOption(R.string.fullscreen_chat_badges, appearance, R.string.fullscreen_chat_badges_description) { enabled ->
         SettingSwitch(

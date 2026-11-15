@@ -65,7 +65,15 @@ class SettingsBackupDataTest {
         val favorite = "backup-test-${System.nanoTime()}"
         val fixture = File(directory, "fixture.json").apply {
             writeText("""
-                {"version":1,"settings":{"chat_font_size":19},"playback":{
+                {"version":1,"settings":{
+                  "chat_font_size":19,
+                  "fullscreen_chat_opacity":0.0,
+                  "player_ambient_mode":"live",
+                  "player_ambient_live_fps":60,
+                  "player_ambient_intensity":125,
+                  "player_ambient_spread":80,
+                  "player_ambient_fullscreen":false
+                },"playback":{
                   "favorites":[{"username":"$favorite"}]
                 }}
             """.trimIndent())
@@ -73,11 +81,23 @@ class SettingsBackupDataTest {
         try {
             manager.importFrom(Uri.fromFile(fixture))
             assertEquals(19, repository.get(SettingsKeys.chatFontSize(1024)).first())
+            assertEquals("live", repository.get(SettingsKeys.AMBIENT_MODE).first())
+            assertEquals(60, repository.get(SettingsKeys.AMBIENT_LIVE_FPS).first())
+            assertEquals(125, repository.get(SettingsKeys.AMBIENT_INTENSITY).first())
+            assertEquals(80, repository.get(SettingsKeys.AMBIENT_SPREAD).first())
+            assertFalse(repository.get(SettingsKeys.AMBIENT_FULLSCREEN).first())
+            assertEquals(0f, repository.get(SettingsKeys.FULLSCREEN_CHAT_OPACITY).first())
             assertTrue(FavoriteUsersStore.favorites.value.contains(null, favorite))
             val export = File(directory, manager.fileName).apply { createNewFile() }
             manager.exportTo(Uri.fromFile(export))
             val backup = Json.parseToJsonElement(export.readText()).jsonObject
             assertFalse("chat_width_fraction" in backup.getValue("settings").jsonObject)
+            assertEquals("\"live\"", backup.getValue("settings").jsonObject.getValue("player_ambient_mode").toString())
+            assertEquals("60", backup.getValue("settings").jsonObject.getValue("player_ambient_live_fps").toString())
+            assertEquals("125", backup.getValue("settings").jsonObject.getValue("player_ambient_intensity").toString())
+            assertEquals("80", backup.getValue("settings").jsonObject.getValue("player_ambient_spread").toString())
+            assertEquals("false", backup.getValue("settings").jsonObject.getValue("player_ambient_fullscreen").toString())
+            assertEquals("0.0", backup.getValue("settings").jsonObject.getValue("fullscreen_chat_opacity").toString())
             assertTrue(backup.getValue("playback").jsonObject.getValue("favorites").toString().contains(favorite))
         } finally {
             if (FavoriteUsersStore.favorites.value.contains(null, favorite)) FavoriteUsersStore.toggle(null, favorite)

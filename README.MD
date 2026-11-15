@@ -154,12 +154,10 @@ Review the implementation in [SecureSessionStore.kt](app/src/main/java/com/lechi
 
 Bug reports, translations, accessibility improvements, documentation, and code contributions are welcome.
 
-1. Check [existing issues](https://github.com/lechixy/Kicker/issues) and the [roadmap](https://app.notion.com/p/lechixy/3f79ce1d06e580d99d7ac8f36ea9b953?v=2689ce1d06e58207971c0840ab5893c6&source=copy_link) before starting larger changes.
-2. For a bug, include the app version and installation source, Android version, device model, steps to reproduce, and expected/actual behavior. Remove cookies, tokens, personal information, and private chat content from logs or screenshots.
-3. Fork the repository, make a focused change, and open a [pull request](https://github.com/lechixy/Kicker/pulls) explaining the change and how you verified it.
-4. For code changes, run relevant tests (`./gradlew testDebugUnitTest`) and check affected UI on a phone and tablet when applicable. Instrumented tests require a connected device or emulator (`./gradlew connectedDebugAndroidTest`).
-
-Keep both README translations in sync when changing shared documentation.
+- Read the [contribution guide](.github/CONTRIBUTING.md) before submitting a pull request.
+- Use the [issue templates](https://github.com/lechixy/Kicker/issues/new/choose) to report a bug or suggest a feature.
+- Follow the [Code of Conduct](.github/CODE_OF_CONDUCT.md) when participating in the project.
+- Follow the [Security Policy](.github/SECURITY.md) to report a suspected vulnerability privately.
 
 ## Language support
 

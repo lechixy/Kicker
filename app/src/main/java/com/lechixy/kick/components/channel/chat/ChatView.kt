@@ -357,7 +357,7 @@ fun ChatView(
                             key = fontSetting,
                             title = stringResource(R.string.chat_font_size_title),
                             description = stringResource(R.string.chat_font_size_description),
-                            icon = R.drawable.format_size_24dp,
+                            icon = R.drawable.format_size_24dp_e3e3e3_fill1_wght400_grad0_opsz24,
                             valueRange = 10f..24f,
                             steps = 13,
                             valueFormatter = { "${it}sp" }

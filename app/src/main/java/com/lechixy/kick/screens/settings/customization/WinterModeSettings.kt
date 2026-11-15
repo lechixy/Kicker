@@ -24,7 +24,7 @@ internal fun WinterModeSettings(initiallyExpanded: Boolean) {
     SettingsExpander(
         title = stringResource(R.string.settings_winter_snow),
         description = stringResource(R.string.settings_winter_snow_description),
-        icon = R.drawable.ac_unit_24dp,
+        icon = R.drawable.snowflake_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
         toggleKey = SettingsKeys.WINTER_SNOW,
         initiallyExpanded = initiallyExpanded,
     ) { enabled ->
@@ -34,7 +34,7 @@ internal fun WinterModeSettings(initiallyExpanded: Boolean) {
         SettingDropdown(
             key = SettingsKeys.WINTER_SNOW_STYLE,
             title = stringResource(R.string.settings_snow_style),
-            icon = R.drawable.category_24dp,
+            icon = R.drawable.category_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
             enabled = enabled,
             options = listOf(
                 SnowParticleStyle.Dots.name to stringResource(R.string.settings_snow_dots),
@@ -45,7 +45,7 @@ internal fun WinterModeSettings(initiallyExpanded: Boolean) {
             valueRange = 50f..150f, steps = 9, icon = R.drawable.bubble_chart_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
             enabled = enabled, valueFormatter = format)
         SettingSlider(SettingsKeys.WINTER_SNOW_SPEED, stringResource(R.string.settings_snow_speed),
-            valueRange = 50f..200f, steps = 14, icon = R.drawable.speed_24dp,
+            valueRange = 50f..200f, steps = 14, icon = R.drawable.speed_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
             enabled = enabled, valueFormatter = format)
         SettingSlider(SettingsKeys.WINTER_SNOW_SIZE, stringResource(R.string.settings_snow_size),
             valueRange = 75f..150f, steps = 14, icon = R.drawable.fullscreen_24dp_e3e3e3_fill0_wght400_grad0_opsz24,

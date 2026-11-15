@@ -111,6 +111,8 @@ import com.lechixy.kick.components.LiveBadge
 import com.lechixy.kick.components.LocalContentNavigation
 import com.lechixy.kick.components.PlayerHostState
 import com.lechixy.kick.components.PlayerMode
+import com.lechixy.kick.components.LocalPlayerAmbientState
+import com.lechixy.kick.components.LocalPlayerFullscreenProgress
 import com.lechixy.kick.components.SkeletonBlock
 import com.lechixy.kick.components.SkeletonLoadingScope
 import com.lechixy.kick.components.VerifiedBadge
@@ -242,7 +244,11 @@ fun ChannelScreen(
     }
 
     val isFullScreen = playerHost?.mode == PlayerMode.Fullscreen
-    val inlineInsets = (if (isFullScreen) WindowInsets.systemBars else WindowInsets.systemBarsIgnoringVisibility)
+    val fullscreenProgress = LocalPlayerFullscreenProgress.current
+    val fullscreenLayout by remember(isFullScreen, fullscreenProgress) {
+        derivedStateOf { isFullScreen && (fullscreenProgress?.invoke() ?: 1f) >= 1f }
+    }
+    val inlineInsets = (if (fullscreenLayout) WindowInsets.systemBars else WindowInsets.systemBarsIgnoringVisibility)
         .union(WindowInsets.displayCutout)
     val density = LocalDensity.current
 
@@ -299,10 +305,12 @@ fun ChannelScreen(
         (selectedTab == ChannelTab.CLIPS && state.isClipsLoading && state.clips.isEmpty()) ||
         (selectedTab == ChannelTab.ABOUT && (state.links.loading || state.goals.loading ||
             (!state.links.loaded && !state.links.failed)))) {
+        val hostDrawsBackground = LocalPlayerAmbientState.current != null
+        val pageBackground = MaterialTheme.colorScheme.background
         Box(
             modifier = modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background)
+                .then(if (hostDrawsBackground) Modifier else Modifier.background(pageBackground))
                 .pointerInput(Unit) {
                     detectTapGestures { }
                 }
@@ -315,7 +323,7 @@ fun ChannelScreen(
                 val screenWidthDp = maxWidth
                 val screenHeightDp = maxHeight
                 val isWide = screenWidthDp >= WIDE_BREAKPOINT_DP.dp
-                val scrollWideHeader = isWide && !isFullScreen && !isTheaterMode &&
+                val scrollWideHeader = isWide && !fullscreenLayout && !isTheaterMode &&
                     (channel?.livestream != null || playerHost?.recording != null)
                 var headerOffsetPx by remember(channelSlug, scrollWideHeader) { mutableFloatStateOf(0f) }
                 var headerHeightPx by remember(channelSlug, scrollWideHeader) { mutableFloatStateOf(0f) }
@@ -695,9 +703,8 @@ fun ChannelScreen(
                     val targetChatW = (totalW * chatWidthFraction).roundToInt().coerceAtLeast(1)
                     val currentChatW = if (hasSideChat) (targetChatW * openProgress).roundToInt() else 0
 
-                    // Tam ekranda sol sütun player'ın altında kaldığı için sabit genişlikte tutulur ->
-                    // tam ekranda chat kaydırılırken arkadaki sayfa yeniden ölçülmez.
-                    val mainColW = if (!hasSideChat || isFullScreen) {
+                    // Keep the channel column in its inline layout while it crossfades.
+                    val mainColW = if (!hasSideChat || fullscreenLayout) {
                         totalW
                     } else {
                         (totalW - currentChatW).coerceAtLeast(0)
@@ -717,9 +724,10 @@ fun ChannelScreen(
                     )
 
                     layout(totalW, totalH) {
-                        // Keep inline measurements for the return transition, but never draw
-                        // channel details behind the fullscreen player or fading side chat.
-                        if (!isFullScreen) mainPlaceable?.place(0, 0)
+                        val progress = fullscreenProgress?.invoke() ?: if (isFullScreen) 1f else 0f
+                        if (progress < 1f) {
+                            mainPlaceable?.placeWithLayer(0, 0) { alpha = 1f - progress }
+                        }
                         if (sideChatPlaceable != null && currentChatW > 0) {
                             sideChatPlaceable.place(totalW - currentChatW, 0)
                         }

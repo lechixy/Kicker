@@ -5,9 +5,13 @@ import com.lechixy.kick.data.channel.model.ChannelLivestream
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.UriHandler
@@ -35,6 +39,9 @@ import kotlin.coroutines.intrinsics.COROUTINE_SUSPENDED
 import kotlin.coroutines.resume
 
 import com.lechixy.kick.components.ExpansionSource
+import com.lechixy.kick.components.AmbientFrame
+import com.lechixy.kick.components.LocalPlayerAmbientState
+import com.lechixy.kick.components.LocalPlayerFullscreenProgress
 import com.lechixy.kick.components.PlayerHost
 import com.lechixy.kick.components.PlayerHostState
 import com.lechixy.kick.components.PlayerMode
@@ -99,9 +106,13 @@ class ChannelTransitionUiTest {
         } as KickApi
         runBlocking { settings.set(SettingsKeys.AUTO_CONNECT_CHAT, false) }
         val host = PlayerHostState().apply { open("cold-channel") }
+        var fullscreenProgress by mutableFloatStateOf(0f)
         lateinit var model: ChannelViewModel
         compose.setContent {
-            CompositionLocalProvider(LocalSettingsRepository provides settings) {
+            CompositionLocalProvider(
+                LocalSettingsRepository provides settings,
+                LocalPlayerFullscreenProgress provides { fullscreenProgress },
+            ) {
                 MaterialTheme {
                     model = viewModel { ChannelViewModel(KickRepository(api)) }
                     ChannelScreen(
@@ -115,7 +126,7 @@ class ChannelTransitionUiTest {
             }
         }
         val tab = compose.onNode(
-            hasText(compose.activity.getString(ChannelTab.CHAT.label)) and
+            hasContentDescription(compose.activity.getString(ChannelTab.CHAT.label)) and
                 SemanticsMatcher.keyIsDefined(SemanticsProperties.Selected)
         )
         val skeletonTop = tab.fetchSemanticsNode().boundsInRoot.top
@@ -127,6 +138,19 @@ class ChannelTransitionUiTest {
         videosReply.complete(emptyList())
         compose.waitUntil(5_000) { !model.uiState.value.isLoading }
         assertEquals(skeletonTop, tab.fetchSemanticsNode().boundsInRoot.top, 1f)
+
+        compose.runOnIdle {
+            host.setFullscreen(true)
+            fullscreenProgress = 0.35f
+        }
+        tab.assertIsDisplayed()
+        compose.runOnIdle { fullscreenProgress = 1f }
+        tab.assertIsNotDisplayed()
+        compose.runOnIdle {
+            host.setFullscreen(false)
+            fullscreenProgress = 0.65f
+        }
+        tab.assertIsDisplayed()
     }
 
     @Test fun connectedOpeningKeepsPageSizeAndCompositionStable() {
@@ -231,6 +255,76 @@ class ChannelTransitionUiTest {
             assertEquals(0, disposals)
             assertEquals(PlayerMode.Expanded, host.mode)
         }
+    }
+
+    @Test fun fullscreenProgressAnimatesInBothDirections() {
+        val host = PlayerHostState().apply {
+            open("test")
+            onChannelLoaded("test", ChannelDetail(1, slug = "test", livestream = ChannelLivestream(1)))
+        }
+        lateinit var progress: () -> Float
+        compose.setContent {
+            CompositionLocalProvider(LocalSettingsRepository provides settings) {
+                MaterialTheme {
+                    PlayerHost(host, false, host::minimize, host::expand, host::close, pageContent = {
+                        progress = checkNotNull(LocalPlayerFullscreenProgress.current)
+                    })
+                }
+            }
+        }
+        compose.mainClock.autoAdvance = false
+        try {
+            compose.runOnUiThread { host.setFullscreen(true) }
+            compose.mainClock.advanceTimeBy(80)
+            compose.runOnUiThread { assertTrue("Fullscreen entry should be in progress", progress() in 0.01f..0.99f) }
+            compose.mainClock.advanceTimeBy(400)
+            compose.runOnUiThread { assertEquals(1f, progress(), 0.001f) }
+
+            compose.runOnUiThread { host.setFullscreen(false) }
+            compose.mainClock.advanceTimeBy(80)
+            compose.runOnUiThread { assertTrue("Fullscreen exit should be in progress", progress() in 0.01f..0.99f) }
+            compose.mainClock.advanceTimeBy(400)
+            compose.runOnUiThread { assertEquals(0f, progress(), 0.001f) }
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+    }
+
+    @Test fun fullscreenDownwardDragRevealsAmbientInTheSameScreenPosition() {
+        val host = PlayerHostState().apply {
+            open("test")
+            onChannelLoaded("test", ChannelDetail(1, slug = "test", livestream = ChannelLivestream(1)))
+            setFullscreen(true)
+        }
+        compose.setContent {
+            CompositionLocalProvider(LocalSettingsRepository provides settings) {
+                MaterialTheme(colorScheme = darkColorScheme()) {
+                    PlayerHost(host, false, host::minimize, host::expand, host::close, pageContent = {
+                        val ambient = checkNotNull(LocalPlayerAmbientState.current)
+                        val palette = remember { AmbientFrame.Palette(List(8) { Color.Red }) }
+                        SideEffect { ambient.frame = palette }
+                    })
+                }
+            }
+        }
+        val root = compose.onRoot()
+        compose.waitForIdle()
+        root.performTouchInput { down(center); moveBy(Offset(0f, 56.dp.toPx())) }
+        try {
+            val first = root.captureToImage().toPixelMap()
+            root.performTouchInput { moveBy(Offset(0f, 40.dp.toPx())) }
+            val second = root.captureToImage().toPixelMap()
+            for (x in listOf(first.width / 6, first.width * 5 / 6)) {
+                val before = first[x, 8]
+                val after = second[x, 8]
+                assertTrue("The exposed canvas should be lit", before.red > 0.1f)
+                assertEquals(before.red, after.red, 0.02f)
+                assertEquals(before.green, after.green, 0.02f)
+            }
+        } finally {
+            root.performTouchInput { cancel() }
+        }
+        compose.runOnIdle { assertEquals(PlayerMode.Fullscreen, host.mode) }
     }
 
     @Test fun normalAndPinnedLinksOpenOnTouch() {

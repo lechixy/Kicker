@@ -47,11 +47,6 @@ class ReleaseViewModel @Inject constructor(private val settings: SettingsReposit
         }
     }
     fun dismiss() { pending.update { it.drop(1) } }
-    fun preview(mode: ReleaseDialogMode) {
-        val sample = GitHubRelease(tagName = if (mode == ReleaseDialogMode.WhatsNew) BuildConfig.VERSION_NAME else "99.0.0",
-            name = null, body = "# Kick\n\n- **Chat** & playback improvements\n- In-app notifications\n\n### Preview\n*Markdown* with `inline code`.\n\n```kotlin\nval version = \"99.0.0\"\n```", publishedAt = "2026-11-01T12:00:00Z")
-        pending.update { it + ReleaseDialogRequest(mode, sample) }
-    }
 }
 
 data class ReleaseHistoryState(val releases: List<GitHubRelease> = emptyList(), val loading: Boolean = false,

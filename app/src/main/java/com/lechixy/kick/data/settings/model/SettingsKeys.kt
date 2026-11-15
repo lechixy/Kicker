@@ -96,6 +96,23 @@ object SettingsKeys {
         defaultValue = false,
         type = SettingType.BooleanType
     )
+    val AMBIENT_MODE = SettingKey(
+        key = stringPreferencesKey("player_ambient_mode"),
+        defaultValue = PlayerAmbientMode.Off.value,
+        type = SettingType.StringType,
+        validator = { value -> PlayerAmbientMode.entries.any { it.value == value } }
+    )
+    val AMBIENT_LIVE_FPS = SettingKey(
+        key = intPreferencesKey("player_ambient_live_fps"),
+        defaultValue = 30,
+        type = SettingType.IntType,
+        validator = { it == 30 || it == 60 }
+    )
+    val AMBIENT_INTENSITY = SettingKey(intPreferencesKey("player_ambient_intensity"), 100, SettingType.IntType,
+        validator = { it in 25..150 })
+    val AMBIENT_SPREAD = SettingKey(intPreferencesKey("player_ambient_spread"), 100, SettingType.IntType,
+        validator = { it in 50..150 })
+    val AMBIENT_FULLSCREEN = SettingKey(booleanPreferencesKey("player_ambient_fullscreen"), true, SettingType.BooleanType)
     val VIDEO_QUALITY = SettingKey(
         key = intPreferencesKey("video_quality"),
         defaultValue = 720,
@@ -162,9 +179,10 @@ object SettingsKeys {
         stringPreferencesKey("fullscreen_chat_shape"), FullscreenChatShape.Rounded.value, SettingType.StringType,
         validator = { value -> FullscreenChatShape.entries.any { it.value == value } }
     )
+    val FULLSCREEN_CHAT_OPACITY_RANGE = 0f..0.85f
     val FULLSCREEN_CHAT_OPACITY = SettingKey(
         floatPreferencesKey("fullscreen_chat_opacity"), 0.60f, SettingType.FloatType,
-        validator = { it in 0.35f..0.85f }
+        validator = { it in FULLSCREEN_CHAT_OPACITY_RANGE }
     )
     val FULLSCREEN_CHAT_BLUR = SettingKey(
         booleanPreferencesKey("fullscreen_chat_blur"), false, SettingType.BooleanType
@@ -227,6 +245,11 @@ object SettingsKeys {
             SYNC_PLAYER_VOLUME_WITH_DEVICE,
             LOW_LATENCY,
             AUTO_FULLSCREEN_LIVE,
+            AMBIENT_MODE,
+            AMBIENT_LIVE_FPS,
+            AMBIENT_INTENSITY,
+            AMBIENT_SPREAD,
+            AMBIENT_FULLSCREEN,
             VIDEO_QUALITY,
             RECOMMENDED_LIVESTREAM_LANGUAGE,
             CHAT_TIMESTAMPS,
