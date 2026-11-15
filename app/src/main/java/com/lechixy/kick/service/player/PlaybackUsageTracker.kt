@@ -43,7 +43,7 @@ internal fun DataSource.Factory.trackUsage(channel: PlaybackUsageChannel?): Data
         override fun onTransferEnd(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean) = Unit
 
         override fun onBytesTransferred(source: DataSource, dataSpec: DataSpec, isNetwork: Boolean, bytesTransferred: Int) {
-            if (isNetwork) PlaybackUsageStore.add(channel, NetworkMonitor.transport.value, bytes = bytesTransferred.toLong())
+            if (isNetwork) PlaybackUsageStore.addBytes(channel, NetworkMonitor.transport.value, bytesTransferred.toLong())
         }
     }
     return DataSource.Factory { createDataSource().apply { addTransferListener(listener) } }

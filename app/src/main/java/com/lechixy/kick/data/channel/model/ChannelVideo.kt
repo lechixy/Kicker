@@ -23,7 +23,8 @@ data class ChannelVideo(
     @SerialName("viewer_count") val viewerCount: Int = 0,
     val views: Long = 0L,
     val thumbnail: VideoThumbnail? = null,
-    val categories: List<Category> = emptyList()
+    val categories: List<Category> = emptyList(),
+    val tags: List<String> = emptyList(),
 )
 
 @Serializable

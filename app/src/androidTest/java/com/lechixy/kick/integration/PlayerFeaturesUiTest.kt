@@ -20,6 +20,7 @@ import androidx.compose.ui.test.click
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -40,6 +41,7 @@ import com.lechixy.kick.KickNavScaffold
 import com.lechixy.kick.R
 import com.lechixy.kick.components.ConnectionNoticeBar
 import com.lechixy.kick.components.PlayerSleepTimerSettings
+import com.lechixy.kick.components.detectRecordingTaps
 import com.lechixy.kick.components.channel.ExpandableProfilePhoto
 import com.lechixy.kick.data.common.remote.ConnectionNotice
 import com.lechixy.kick.service.player.SleepTimerState
@@ -48,6 +50,24 @@ import com.lechixy.kick.service.player.SleepTimerState
 class PlayerFeaturesUiTest {
     @get:Rule val compose = createComposeRule()
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
+
+    @Test fun recordingSkipContinuesForEveryTapAfterTheSecond() {
+        val skips = mutableListOf<Pair<Boolean, Boolean>>()
+        compose.setContent {
+            Box(Modifier.fillMaxSize().testTag("recording").pointerInput(Unit) {
+                detectRecordingTaps(onTap = { error("Tap sequence toggled controls") }) { forward, continued ->
+                    skips += forward to continued
+                }
+            })
+        }
+        compose.onNodeWithTag("recording").performTouchInput {
+            repeat(4) {
+                click(Offset(width * 0.75f, center.y))
+                advanceEventTime(70)
+            }
+        }
+        compose.runOnIdle { assertEquals(listOf(true to false, true to true, true to true), skips) }
+    }
 
     @Test fun sleepTimerOffersStopAndUpdatesOnlyWhenTheNewDurationIsApplied() {
         var timer by mutableStateOf(SleepTimerState())

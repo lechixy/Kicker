@@ -16,6 +16,7 @@
     <string name="sleep_timer_minute">%1$d minute</string>
     <string name="sleep_timer_minutes">%1$d minutes</string>
     <string name="app_name" translatable="false">Kicker</string>
+    <string name="app_name_debug" translatable="false">Kicker Debug</string>
     <string name="live_badge">LIVE</string>
     <string name="home">Home</string>
     <string name="following">Following</string>
@@ -46,8 +47,9 @@
     <string name="fullscreen_chat_vertical">Vertical chat</string>
     <string name="fullscreen_chat_horizontal">Horizontal ticker</string>
     <string name="fullscreen_chat_opacity">Background darkness</string>
-    <string name="fullscreen_chat_edit_position">Edit position</string>
-    <string name="fullscreen_chat_reset_position">Reset position</string>
+    <string name="fullscreen_chat_edit_position">Edit position and size</string>
+    <string name="fullscreen_chat_reset_position">Reset</string>
+    <string name="fullscreen_chat_size_percent">%1$d%% wide · %2$d%% tall</string>
     <string name="fullscreen_chat_cancel">Cancel</string>
     <string name="fullscreen_chat_done">Done</string>
     <string name="fullscreen_chat_loading">Loading chat…</string>
@@ -58,15 +60,17 @@
     <string name="fullscreen_chat_blur">Blur video behind chat</string>
     <string name="fullscreen_chat_badges">Show other badges</string>
     <string name="fullscreen_chat_lock_position">Lock position</string>
-    <string name="fullscreen_chat_lock_position_description">Use Edit position to move the chat while locked.</string>
+    <string name="fullscreen_chat_lock_position_description">Use Edit position and size to move or resize the chat while locked.</string>
     <string name="fullscreen_chat_lane_count">Horizontal lanes</string>
     <string name="fullscreen_chat_layout">Layout</string>
     <string name="fullscreen_chat_appearance">Appearance</string>
     <string name="fullscreen_chat_connection">Connection</string>
     <string name="fullscreen_chat_mode">Display mode</string>
     <string name="fullscreen_chat_scale">Overlay size</string>
-    <string name="fullscreen_chat_scale_description">Adjust the size of the vertical box or the height of the horizontal strip.</string>
+    <string name="fullscreen_chat_scale_description">Sets the default size. Drag the handles in Edit position and size to set a custom width or height.</string>
     <string name="fullscreen_chat_font_size">Overlay font size</string>
+    <string name="fullscreen_chat_decrease_font_size">Decrease overlay font size</string>
+    <string name="fullscreen_chat_increase_font_size">Increase overlay font size</string>
     <string name="fullscreen_chat_shape">Background shape</string>
     <string name="fullscreen_chat_shape_square">Square</string>
     <string name="fullscreen_chat_shape_rounded">Rounded</string>

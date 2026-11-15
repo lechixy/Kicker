@@ -168,7 +168,8 @@ internal fun FullscreenChatSettings(
         }
         if (onConnect != null) {
             SettingSection(stringResource(R.string.fullscreen_chat_connection)) {
-                SettingAction(stringResource(R.string.chat_connect_action), onClick = onConnect)
+                SettingAction(stringResource(R.string.chat_connect_action), onClick = onConnect,
+                    icon = R.drawable.wifi_24dp_e3e3e3_fill0_wght400_grad0_opsz24)
             }
         }
     }

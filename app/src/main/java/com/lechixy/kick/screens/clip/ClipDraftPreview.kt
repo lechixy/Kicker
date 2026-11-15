@@ -1,6 +1,7 @@
 package com.lechixy.kick.screens.clip
 
 import androidx.annotation.OptIn
+import androidx.core.net.toUri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -35,12 +36,15 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
-import androidx.media3.common.MimeTypes
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.common.util.Util
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.lechixy.kick.R
 import com.lechixy.kick.components.PlayerVideoSurface
 import com.lechixy.kick.service.ClipAudioHandoff
@@ -69,13 +73,17 @@ internal fun ClipDraftPreview(
     onTogglePlayback: () -> Unit,
     onToggleMute: () -> Unit,
     onPause: () -> Unit,
+    onPreviewDuration: (Long) -> Unit,
 ) {
     val context = LocalContext.current.applicationContext
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val currentOnPause by rememberUpdatedState(onPause)
+    val reportDuration by rememberUpdatedState(onPreviewDuration)
+    val mediaItem = remember(previewUrl) { MediaItem.fromUri(previewUrl.toUri()) }
+    val preferHls = remember(mediaItem) { Util.inferContentType(previewUrl.toUri()) == C.CONTENT_TYPE_HLS }
+    val sourceFactory = remember { playbackHttpDataSourceFactory() }
     val player = remember(context, previewUrl) {
         ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(playbackHttpDataSourceFactory()))
             .setHandleAudioBecomingNoisy(true)
             .build()
     }
@@ -83,15 +91,50 @@ internal fun ClipDraftPreview(
     var isForeground by remember(lifecycle) { mutableStateOf(lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) }
     var failed by remember(player) { mutableStateOf(false) }
     var buffering by remember(player) { mutableStateOf(true) }
+    var prepared by remember(player) { mutableStateOf(false) }
+    var triedAlternateFormat by remember(player) { mutableStateOf(false) }
+    var segmentRetryCount by remember(player) { mutableStateOf(0) }
+    var retryCount by remember(player) { mutableStateOf(0) }
+    val currentTrim by rememberUpdatedState(trim)
     val sliderRange = trim.start.toFloat()..trim.end.toFloat()
     val sliderState = remember(trim) { SliderState(value = trim.start.toFloat(), trackRange = sliderRange) }
     sliderState.value = position.coerceIn(sliderRange)
 
     DisposableEffect(player, lifecycle) {
         val listener = object : Player.Listener {
-            override fun onEvents(player: Player, events: Player.Events) {
-                failed = player.playerError != null
-                buffering = player.playbackState == Player.STATE_BUFFERING
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                if (playbackState == Player.STATE_READY && !prepared) {
+                    reportDuration(player.duration)
+                    prepared = true
+                }
+                buffering = playbackState == Player.STATE_BUFFERING
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                val useHls = preferHls != triedAlternateFormat
+                if (useHls && error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED) {
+                    if (segmentRetryCount < 2) {
+                        prepared = false
+                        segmentRetryCount++
+                        return
+                    }
+                    failed = true
+                    return
+                }
+                when (error.errorCode) {
+                    PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+                    PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
+                    PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED,
+                    PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED -> {
+                        if (!triedAlternateFormat) {
+                            prepared = false
+                            segmentRetryCount = 0
+                            triedAlternateFormat = true
+                            return
+                        }
+                    }
+                }
+                failed = true
             }
 
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
@@ -118,11 +161,6 @@ internal fun ClipDraftPreview(
             }
         }
         player.addListener(listener)
-        player.setMediaItem(
-            MediaItem.Builder().setUri(previewUrl).setMimeType(MimeTypes.APPLICATION_M3U8).build(),
-            trim.start * 1000L,
-        )
-        player.prepare()
         lifecycle.addObserver(observer)
         onDispose {
             lifecycle.removeObserver(observer)
@@ -131,13 +169,29 @@ internal fun ClipDraftPreview(
             if (isForeground) ClipAudioHandoff.update(false)
         }
     }
-    LaunchedEffect(player, trim) {
-        position = trim.start.toFloat()
-        player.seekTo(trim.start * 1000L)
+    LaunchedEffect(player, triedAlternateFormat, segmentRetryCount, retryCount) {
+        failed = false
+        buffering = true
+        prepared = false
+        player.playWhenReady = false
+        if (segmentRetryCount > 0) delay(500L * segmentRetryCount)
+        val source = if (preferHls != triedAlternateFormat) HlsMediaSource.Factory(sourceFactory).createMediaSource(mediaItem)
+        else ProgressiveMediaSource.Factory(sourceFactory).createMediaSource(mediaItem)
+        // A draft may advertise a longer range than the segments available in its playlist.
+        player.setMediaSource(source, 0L)
+        player.prepare()
+    }
+    LaunchedEffect(player, trim, prepared) {
+        if (!prepared) return@LaunchedEffect
+        val duration = player.duration.takeIf { it > 0 }
+        val playable = duration?.let { currentTrim.fitToSource((it / 1000).coerceIn(1L, Int.MAX_VALUE.toLong()).toInt()) }
+            ?: currentTrim
+        position = playable.start.toFloat()
+        player.seekTo(playable.start * 1000L)
     }
     LaunchedEffect(player, isMuted) { player.volume = if (isMuted) 0f else 1f }
-    LaunchedEffect(player, isPlaying, isForeground, failed, trim) {
-        val shouldPlay = isPlaying && isForeground && !failed
+    LaunchedEffect(player, isPlaying, isForeground, failed, prepared, trim) {
+        val shouldPlay = isPlaying && isForeground && !failed && prepared
         player.playWhenReady = shouldPlay
         if (!shouldPlay) return@LaunchedEffect
         val startMs = trim.start * 1000L
@@ -159,11 +213,12 @@ internal fun ClipDraftPreview(
         if (failed) {
             TextButton(
                 onClick = {
-                    player.seekTo(trim.start * 1000L)
-                    player.prepare()
+                    triedAlternateFormat = false
+                    segmentRetryCount = 0
+                    retryCount++
                 },
             ) { Text(stringResource(R.string.clip_preview_retry)) }
-        } else if (buffering) {
+        } else if (!prepared || buffering) {
             CircularProgressIndicator()
         }
         if (!failed) {
@@ -182,6 +237,7 @@ internal fun ClipDraftPreview(
                     )
                     Slider(
                         state = sliderState,
+                        enabled = prepared,
                         onValueChange = {
                             position = it
                             player.seekTo((it * 1000).roundToLong().coerceAtMost(trim.end * 1000L - 1))

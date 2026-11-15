@@ -151,6 +151,7 @@ internal fun CreateClipModal(
                                 onTogglePlayPause = model::togglePlayback,
                                 onToggleMute = model::toggleMute,
                                 onPausePreview = model::pausePreview,
+                                onPreviewDuration = model::updatePreviewDuration,
                                 onRetry = model::retry,
                                 onSignIn = { auth.beginLogin(context) },
                             )
@@ -200,6 +201,7 @@ private fun CreateClipContent(
     onTogglePlayPause: () -> Unit,
     onToggleMute: () -> Unit,
     onPausePreview: () -> Unit,
+    onPreviewDuration: (Long) -> Unit,
     onRetry: () -> Unit,
     onSignIn: () -> Unit,
 ) {
@@ -216,6 +218,7 @@ private fun CreateClipContent(
                     onTogglePlayback = onTogglePlayPause,
                     onToggleMute = onToggleMute,
                     onPause = onPausePreview,
+                    onPreviewDuration = onPreviewDuration,
                 )
             } else {
                 ClipPreviewFrame { if (uiState.isInitializing) CircularProgressIndicator() }
@@ -233,7 +236,7 @@ private fun CreateClipContent(
             if (uiState.draft != null) {
                 ClipTitleInput(uiState, onTitleChange)
                 val trim = uiState.trim
-                val sourceDuration = uiState.draft.sourceDurationSeconds
+                val sourceDuration = uiState.sourceDurationSeconds
                 val range = remember(trim.start, trim.end) {
                     val start = formatDuration(trim.start * 1000L).removePrefix("0")
                     val end = formatDuration(trim.end * 1000L).removePrefix("0")
@@ -466,7 +469,7 @@ private fun CreateClipContentPreview() {
                     draft = ClipDraft("clip_preview", "", 180),
                 ),
                 useColumns = false, onTitleChange = {}, onTrimChange = {}, onTogglePlayPause = {},
-                onToggleMute = {}, onPausePreview = {}, onRetry = {}, onSignIn = {},
+                onToggleMute = {}, onPausePreview = {}, onPreviewDuration = {}, onRetry = {}, onSignIn = {},
             )
         }
     }

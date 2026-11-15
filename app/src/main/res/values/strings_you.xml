@@ -53,4 +53,21 @@
     <string name="you_data_usage_open_channel">Open channel</string>
     <string name="you_data_usage_watch_time">Watch time</string>
     <string name="you_data_usage_transferred">Data transferred</string>
+    <string name="you_usage_activity">Playback activity</string>
+    <string name="you_usage_week">Last 7 days</string>
+    <string name="you_usage_last_24_hours">Last 24 hours</string>
+    <string name="you_usage_custom">Custom range</string>
+    <string name="you_usage_apply_range">Apply</string>
+    <string name="you_usage_range_value">%1$s – %2$s</string>
+    <string name="you_usage_month">Last 30 days</string>
+    <string name="you_usage_all">All time</string>
+    <string name="you_usage_period_empty">No activity in this period.</string>
+    <string name="you_usage_top_channel">Top channel</string>
+    <string name="you_usage_active_days">Active days</string>
+    <string name="you_usage_channel_count">Channels watched</string>
+    <string name="you_usage_active_day_average">Avg. per active day</string>
+    <string name="you_usage_daily">Daily activity</string>
+    <string name="you_usage_date_value">%1$s · %2$s</string>
+    <string name="you_usage_undated">The total includes older activity recorded without dates.</string>
+    <string name="you_channel_handle">@%1$s</string>
 </resources>

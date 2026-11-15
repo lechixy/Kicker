@@ -68,4 +68,12 @@ class ClipCreationTest {
         assertEquals(ClipTrim(150, 160), trim.resizeEnd(-100, 180))
         assertEquals(ClipTrim(0, 7), ClipTrim.initial(7).resizeEnd(-5, 7))
     }
+
+    @Test
+    fun fitsTrimWhenPreviewContainsLessMediaThanTheDraftAdvertised() {
+        val trim = ClipTrim.initial(180)
+        assertEquals(ClipTrim(50, 80), trim.fitToSource(80))
+        assertEquals(ClipTrim(0, 7), trim.fitToSource(7))
+        assertEquals(ClipTrim(20, 45), ClipTrim(20, 45).fitToSource(80))
+    }
 }

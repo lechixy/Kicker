@@ -57,6 +57,7 @@ data class RecordedPlayback(
     val channelName: String? = null,
     val channelSlug: String? = null,
     val channelAvatar: String? = null,
+    val tags: List<String> = emptyList(),
 )
 fun ChannelVideo.toRecording(): RecordedPlayback? = playbackId?.let { id ->
     RecordedPlayback(
@@ -66,6 +67,7 @@ fun ChannelVideo.toRecording(): RecordedPlayback? = playbackId?.let { id ->
         videoUuid = if (vodId.isNullOrBlank()) id else null,
         progressId = video?.uuid ?: uuid ?: id,
         vodId = vodId?.takeIf(String::isNotBlank),
+        tags = tags,
     )
 }
 

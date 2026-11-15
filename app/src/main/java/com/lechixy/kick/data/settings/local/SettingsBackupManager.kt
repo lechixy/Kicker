@@ -277,7 +277,8 @@ class SettingsBackupManager @Inject constructor(
         const val MIME_TYPE = "application/json"
         private const val TAG = "SettingsBackup"
         private const val FORMAT_VERSION = 1
-        private const val MAX_BACKUP_CHARS = 2 * 1024 * 1024
+        // Daily channel usage can span years of playback in an exported settings file.
+        private const val MAX_BACKUP_CHARS = 16 * 1024 * 1024
         private val edition = if (BuildConfig.DEBUG) "test" else "stable"
         private val adaptiveDefaults = setOf(
             SettingsKeys.MINI_PLAYER_WIDTH_DP.key, SettingsKeys.CHAT_WIDTH_FRACTION.key,

@@ -52,4 +52,21 @@
     <string name="you_data_usage_open_channel">Kanalı aç</string>
     <string name="you_data_usage_watch_time">İzleme süresi</string>
     <string name="you_data_usage_transferred">Aktarılan veri</string>
+    <string name="you_usage_activity">Oynatma etkinliği</string>
+    <string name="you_usage_week">Son 7 gün</string>
+    <string name="you_usage_last_24_hours">Son 24 saat</string>
+    <string name="you_usage_custom">Özel aralık</string>
+    <string name="you_usage_apply_range">Uygula</string>
+    <string name="you_usage_range_value">%1$s – %2$s</string>
+    <string name="you_usage_month">Son 30 gün</string>
+    <string name="you_usage_all">Tüm zamanlar</string>
+    <string name="you_usage_period_empty">Bu dönemde etkinlik yok.</string>
+    <string name="you_usage_top_channel">En çok izlenen kanal</string>
+    <string name="you_usage_active_days">Aktif gün</string>
+    <string name="you_usage_channel_count">İzlenen kanal</string>
+    <string name="you_usage_active_day_average">Aktif gün ortalaması</string>
+    <string name="you_usage_daily">Günlük etkinlik</string>
+    <string name="you_usage_date_value">%1$s · %2$s</string>
+    <string name="you_usage_undated">Toplama, tarih bilgisi olmadan kaydedilen eski etkinlikler de dahil.</string>
+    <string name="you_channel_handle">@%1$s</string>
 </resources>

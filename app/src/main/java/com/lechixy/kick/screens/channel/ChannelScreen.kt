@@ -1,8 +1,6 @@
 package com.lechixy.kick.screens.channel
 
-import android.app.Activity
 import android.content.Context
-import android.content.ContextWrapper
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -19,9 +17,9 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.rememberScrollableState
 import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.Arrangement
@@ -63,14 +61,15 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryScrollableTabRow
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.movableContentOf
@@ -104,15 +103,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
-
 import com.lechixy.kick.R
-import com.lechixy.kick.components.channel.chat.LocalChatContentActive
-import com.lechixy.kick.components.channel.chat.collectAsChatState
 import com.lechixy.kick.components.CardSection
-import com.lechixy.kick.components.contentColumns
 import com.lechixy.kick.components.ChannelTabSpace
 import com.lechixy.kick.components.ContentState
 import com.lechixy.kick.components.LiveBadge
@@ -126,7 +118,7 @@ import com.lechixy.kick.components.VideoCard
 import com.lechixy.kick.components.VideoSkeletonGrid
 import com.lechixy.kick.components.WIDE_BREAKPOINT_DP
 import com.lechixy.kick.components.account.rememberAccountFollowAction
-import com.lechixy.kick.components.rememberRecordingDownloadAction
+import com.lechixy.kick.components.account.accountActionMotion
 import com.lechixy.kick.components.channel.AnimatedCounterText
 import com.lechixy.kick.components.channel.ChannelAboutTabContent
 import com.lechixy.kick.components.channel.ChannelHeaderScrollConnection
@@ -134,11 +126,15 @@ import com.lechixy.kick.components.channel.ChannelTabPager
 import com.lechixy.kick.components.channel.OfflineBannerState
 import com.lechixy.kick.components.channel.OfflineChannelBanner
 import com.lechixy.kick.components.channel.TagChip
-import com.lechixy.kick.components.channel.chat.ChatView
 import com.lechixy.kick.components.channel.chat.ChatRestoreButton
+import com.lechixy.kick.components.channel.chat.ChatView
+import com.lechixy.kick.components.channel.chat.LocalChatContentActive
+import com.lechixy.kick.components.channel.chat.collectAsChatState
 import com.lechixy.kick.components.channel.offlineBannerCompactHeight
 import com.lechixy.kick.components.channel.resolveEventChipColors
 import com.lechixy.kick.components.channel.resolveLanguageChipColors
+import com.lechixy.kick.components.contentColumns
+import com.lechixy.kick.components.rememberRecordingDownloadAction
 import com.lechixy.kick.data.channel.model.ChannelClip
 import com.lechixy.kick.data.channel.model.ChannelDetail
 import com.lechixy.kick.data.channel.model.ChannelEvent
@@ -151,6 +147,9 @@ import com.lechixy.kick.data.player.model.toRecording
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 import com.lechixy.kick.util.FormatUtils
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 enum class ChannelTab(
     @StringRes val label: Int,
@@ -535,7 +534,8 @@ fun ChannelScreen(
                                                 ChannelChatSkeleton(
                                                     canHideChat = playerHost != null,
                                                     isReplay = playerHost?.recording != null,
-                                                    isLive = hasPlayback
+                                                    isLive = hasPlayback,
+                                                    modifier = Modifier.padding(top = channelTabTopPadding),
                                                 )
                                             } else if (pageTab != ChannelTab.CHAT && (channel == null || state.isLoading)) {
                                                 ChannelTabSkeleton(pageTab) { target ->
@@ -546,7 +546,7 @@ fun ChannelScreen(
                                                 val chatScroll = if (offline) {
                                                     Modifier.scrollable(rememberScrollableState { 0f }, Orientation.Vertical)
                                                 } else Modifier
-                                                Box(Modifier.fillMaxSize().then(chatScroll)) {
+                                                Box(Modifier.fillMaxSize().padding(top = channelTabTopPadding).then(chatScroll)) {
                                                     if (isChatVisible && channel != null) {
                                                         sharedChat(channel, playerHost?.let { host ->
                                                             { host.updateChatVisibility(visible = false) }
@@ -556,7 +556,7 @@ fun ChannelScreen(
                                                         visible = !isChatVisible,
                                                         enter = slideInHorizontally(tween(250)) { it } + fadeIn(tween(200)),
                                                         exit = slideOutHorizontally(tween(180)) { it } + fadeOut(tween(150)),
-                                                        modifier = Modifier.align(Alignment.TopEnd).padding(top = 6.dp, end = 10.dp)
+                                                        modifier = Modifier.align(Alignment.TopEnd).padding(end = 10.dp)
                                                     ) {
                                                         ChatRestoreButton(
                                                             R.drawable.chat_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
@@ -608,7 +608,9 @@ fun ChannelScreen(
                             }
                         },
                         {
-                            if (hasSideChat && (channel != null || state.error == null)) {
+                            if (hasSideChat && (isChatActuallyVisible || sideChatActive) &&
+                                (channel != null || state.error == null)
+                            ) {
                                 Box(
                                     Modifier
                                         .fillMaxSize()
@@ -760,7 +762,12 @@ private fun ChannelHeaderSkeleton(hasPlayback: Boolean) {
 }
 
 @Composable
-private fun ChannelChatSkeleton(canHideChat: Boolean, isReplay: Boolean, isLive: Boolean) {
+private fun ChannelChatSkeleton(
+    canHideChat: Boolean,
+    isReplay: Boolean,
+    isLive: Boolean,
+    modifier: Modifier = Modifier,
+) {
     val settings = LocalSettingsRepository.current
     val smallestWidth = LocalConfiguration.current.smallestScreenWidthDp
     val fontSetting = SettingsKeys.chatFontSize(smallestWidth)
@@ -775,7 +782,7 @@ private fun ChannelChatSkeleton(canHideChat: Boolean, isReplay: Boolean, isLive:
     val lineHeight = with(LocalDensity.current) { (fontSize + 5).sp.toDp() }
     val barHeight = with(LocalDensity.current) { (fontSize - 4).sp.toDp() }
 
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+    Column(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         Row(
             Modifier.fillMaxWidth().height(44.dp).padding(horizontal = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -858,13 +865,17 @@ private fun ChatMessageSkeleton(
     }
 }
 
+private val channelTabTopPadding = 16.dp
+private val channelTabContentPadding = PaddingValues(top = channelTabTopPadding)
+
 @Composable
 private fun ChannelTabSkeleton(tab: ChannelTab, onNavigate: (ChannelTab) -> Unit) {
     when (tab) {
         ChannelTab.CHAT -> Unit
-        ChannelTab.HOME -> LazyColumn(Modifier.fillMaxSize()) {
+        ChannelTab.HOME -> LazyColumn(Modifier.fillMaxSize(), contentPadding = channelTabContentPadding) {
             item {
-                CardSection<Unit>(stringResource(R.string.recent_broadcasts), emptyList(), Modifier.padding(16.dp),
+                CardSection<Unit>(stringResource(R.string.recent_broadcasts), emptyList(),
+                    Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
                     previewRows = 1, onMore = { onNavigate(ChannelTab.VIDEOS) }, loading = true) { }
             }
             item {
@@ -875,7 +886,7 @@ private fun ChannelTabSkeleton(tab: ChannelTab, onNavigate: (ChannelTab) -> Unit
                 }
             }
         }
-        ChannelTab.VIDEOS, ChannelTab.CLIPS -> LazyColumn(Modifier.fillMaxSize()) {
+        ChannelTab.VIDEOS, ChannelTab.CLIPS -> LazyColumn(Modifier.fillMaxSize(), contentPadding = channelTabContentPadding) {
             item {
                 Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     SkeletonBlock(Modifier.width(104.dp).height(32.dp), RoundedCornerShape(8.dp))
@@ -884,7 +895,9 @@ private fun ChannelTabSkeleton(tab: ChannelTab, onNavigate: (ChannelTab) -> Unit
             }
             item { VideoSkeletonGrid(Modifier.padding(16.dp)) }
         }
-        ChannelTab.CATEGORIES, ChannelTab.ABOUT -> Column(Modifier.fillMaxSize().padding(16.dp)) {
+        ChannelTab.CATEGORIES, ChannelTab.ABOUT -> Column(
+            Modifier.fillMaxSize().padding(horizontal = 16.dp).padding(top = channelTabTopPadding)
+        ) {
             SkeletonBlock(Modifier.fillMaxWidth().height(96.dp), RoundedCornerShape(8.dp))
         }
     }
@@ -1120,8 +1133,7 @@ private fun ChannelHeaderInfo(
                                 AnimatedCounterText(
                                     count = viewerCount,
                                     style = MaterialTheme.typography.bodySmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
                             Text(
@@ -1215,9 +1227,12 @@ private fun ChannelHeaderInfo(
                 channel.userId ?: channel.user?.id, channel.user?.username ?: channel.slug, channel.slug,
                 matchButtonSize = true)
 
+            val followInteractions = remember { MutableInteractionSource() }
             Button(
                 onClick = onFollowClick,
                 enabled = followEnabled,
+                interactionSource = followInteractions,
+                modifier = Modifier.accountActionMotion(isFollowing, followInteractions),
                 shape = RoundedCornerShape(8.dp),
                 colors = if (isFollowing) {
                     ButtonDefaults.buttonColors(
@@ -1309,14 +1324,15 @@ private fun ChannelTabContent(
     }
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val columns = contentColumns(maxWidth - 32.dp)
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize(), contentPadding = channelTabContentPadding) {
             when (tab) {
                 ChannelTab.CHAT -> Unit
                 ChannelTab.HOME -> item(key = "home") {
                     Column {
                         if (videos.isNotEmpty()) CardSection(
                             title = stringResource(R.string.recent_broadcasts), data = videos,
-                            modifier = Modifier.padding(16.dp), previewRows = 1,
+                            modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                            previewRows = 1,
                             onMore = { onNavigateToTab(ChannelTab.VIDEOS) }) { video ->
                             ChannelRecordingCard(video, onPlayRecording, onDownloadRecording)
                         } else ContentState(stringResource(R.string.no_recent_broadcasts))
@@ -1475,7 +1491,7 @@ private fun ChannelCategoriesSection(
     onRetry: () -> Unit, preview: Boolean = false, onMore: (() -> Unit)? = null
 ) {
     val navigation = LocalContentNavigation.current
-    Column(Modifier.padding(16.dp)) {
+    Column(Modifier.padding(start = 16.dp, end = 16.dp, top = if (preview) 16.dp else 0.dp, bottom = 16.dp)) {
         if (preview) com.lechixy.kick.components.SectionHeader(
             stringResource(R.string.channel_recent_categories), onMore, compact = true)
         when {

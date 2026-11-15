@@ -252,6 +252,7 @@ internal fun BoxScope.FullscreenChatBackdrop(
 internal fun VideoBackdropBlur(
     texture: TextureView?,
     regions: List<FullscreenChatBackdropRegion>,
+    controlOpacity: () -> Float = { 1f },
     opacity: () -> Float = { 1f },
 ) {
     if (Build.VERSION.SDK_INT < 31 || texture == null || regions.isEmpty()) return
@@ -266,12 +267,14 @@ internal fun VideoBackdropBlur(
         }
     }
     val currentRegions by rememberUpdatedState(regions)
+    val currentControlOpacity by rememberUpdatedState(controlOpacity)
     val currentOpacity by rememberUpdatedState(opacity)
     val scope = rememberCoroutineScope()
     DisposableEffect(texture, radius, maxFeather, controlFeather, roundedRadius, effects) {
         val location = IntArray(2)
         var lastRegions = emptyList<FullscreenChatBackdropRegion>()
         var lastOpacity = 0f
+        var lastControlOpacity = 0f
         var lastTextureSize = IntSize.Zero
         fun updateEffect() {
             texture.getLocationInWindow(location)
@@ -282,14 +285,17 @@ internal fun VideoBackdropBlur(
                 it.copy(bounds = it.bounds.translate(-location[0].toFloat(), -location[1].toFloat()))
             }
             val visibleOpacity = if (!textureBounds.isEmpty) alpha else 0f
-            if (localRegions == lastRegions && visibleOpacity == lastOpacity && textureSize == lastTextureSize) return
+            val visibleControlOpacity = currentControlOpacity().coerceIn(0f, 1f)
+            if (localRegions == lastRegions && visibleOpacity == lastOpacity &&
+                visibleControlOpacity == lastControlOpacity && textureSize == lastTextureSize) return
             lastRegions = localRegions
             lastOpacity = visibleOpacity
+            lastControlOpacity = visibleControlOpacity
             lastTextureSize = textureSize
             var effect: RenderEffect? = null
             localRegions.forEachIndexed { index, region ->
                 val bounds = region.bounds
-                val alpha = if (region.frostedControl) 1f else visibleOpacity
+                val alpha = if (region.frostedControl) visibleControlOpacity else visibleOpacity
                 if (alpha > 0f && !bounds.isEmpty && bounds.overlaps(textureBounds)) {
                     val cornerRadius = region.shape.radius(bounds.width, bounds.height, roundedRadius)
                     val feather = if (region.frostedControl) controlFeather else maxFeather
@@ -303,7 +309,7 @@ internal fun VideoBackdropBlur(
         texture.addOnLayoutChangeListener(listener)
         updateEffect()
         val updates = scope.launch {
-            snapshotFlow { currentRegions to currentOpacity() }.collect { updateEffect() }
+            snapshotFlow { Triple(currentRegions, currentOpacity(), currentControlOpacity()) }.collect { updateEffect() }
         }
         onDispose {
             updates.cancel()

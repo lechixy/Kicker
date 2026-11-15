@@ -76,17 +76,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.layer.drawLayer
-import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
-import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -202,8 +197,6 @@ fun ChatView(
     )
     val isUserDragging by listState.interactionSource.collectIsDraggedAsState()
     val scope = rememberCoroutineScope()
-    val chatBackdrop = rememberGraphicsLayer()
-    var chatBackdropPosition by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
 
     val favorites by com.lechixy.kick.data.favorites.local.FavoriteUsersStore.favorites.collectAsStateWithLifecycle()
     val accountSession by com.lechixy.kick.data.account.AccountGraph.auth.session.collectAsStateWithLifecycle()
@@ -247,7 +240,7 @@ fun ChatView(
     LaunchedEffect(lastMessageId) {
         if (lastMessageId != null && visibleMessages.isNotEmpty()) {
             if (autoScrollEnabled && !isUserDragging) {
-                listState.scrollToItem(visibleMessages.lastIndex)
+                listState.requestScrollToItem(visibleMessages.lastIndex)
                 unreadCount = 0
             } else {
                 val previousIndex = visibleMessages.indexOfLast { it.id == previousMessageId }
@@ -335,13 +328,16 @@ fun ChatView(
                             SettingSwitch(
                                 key = SettingsKeys.AUTO_CONNECT_CHAT,
                                 title = stringResource(R.string.chat_auto_connect_title),
-                                description = stringResource(R.string.chat_auto_connect_description)
+                                description = stringResource(R.string.chat_auto_connect_description),
+                                icon = R.drawable.wifi_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
                             )
 
                             val isDisconnected = connectionState == ChatConnectionState.DISCONNECTED
                             SettingCard(
                                 title = stringResource(R.string.chat_disconnect_title),
                                 description = stringResource(if (isDisconnected) R.string.chat_disconnected_description else R.string.chat_disconnect_description),
+                                icon = R.drawable.close_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+                                iconTint = MaterialTheme.colorScheme.error,
                                 enabled = !isDisconnected,
                                 containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f),
                                 borderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.5f),
@@ -361,6 +357,7 @@ fun ChatView(
                             key = fontSetting,
                             title = stringResource(R.string.chat_font_size_title),
                             description = stringResource(R.string.chat_font_size_description),
+                            icon = R.drawable.format_size_24dp,
                             valueRange = 10f..24f,
                             steps = 13,
                             valueFormatter = { "${it}sp" }
@@ -370,6 +367,7 @@ fun ChatView(
                             key = spacingSetting,
                             title = stringResource(R.string.chat_spacing_title),
                             description = stringResource(R.string.chat_spacing_description),
+                            icon = R.drawable.tune_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
                             valueRange = 0f..25f,
                             steps = 24,
                             valueFormatter = { "${it}dp" }
@@ -449,14 +447,7 @@ fun ChatView(
             } else {
                 LazyColumn(
                     state = listState,
-                    modifier = Modifier.fillMaxSize()
-                        .onGloballyPositioned { chatBackdropPosition = it.positionInRoot() }
-                        .drawWithContent {
-                            if (!isAtBottom) {
-                                chatBackdrop.record { this@drawWithContent.drawContent() }
-                                drawLayer(chatBackdrop)
-                            } else drawContent()
-                        },
+                    modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.spacedBy(messageSpacing.dp),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp)
                 ) {
@@ -657,7 +648,7 @@ fun ChatView(
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 12.dp)
             ) {
-                FrostedChatScrollButton(unreadCount, chatBackdrop, chatBackdropPosition) {
+                ChatScrollButton(unreadCount) {
                     replyNavigationJob?.cancel()
                     highlightedReply = null
                     autoScrollEnabled = true

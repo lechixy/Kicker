@@ -21,6 +21,25 @@ class FullscreenChatPresentationTest {
         assertEquals(outside, outside.snapToEdges(200f, 200f, 10f))
     }
 
+    @Test fun resizedPositionRoundTripsWithoutChangingLegacyPositions() {
+        val legacy = FullscreenChatPosition.decode("0.25,1.0")!!
+        assertEquals(FullscreenChatPosition(0.25f, 1f), legacy)
+        val resized = legacy.resize(320f, 160f, 96f, 40f, fromStart = false, horizontalAxis = true)
+        assertEquals(0.625f, resized.widthFraction!!, 0.001f)
+        assertEquals(40f, (320f - 200f) * resized.x, 0.001f)
+        assertEquals(resized, FullscreenChatPosition.decode(resized.encode()))
+    }
+
+    @Test fun cornerResizeAnchorsOppositeEdgesAndClampsToBounds() {
+        val resized = FullscreenChatPosition(0.5f, 0.5f)
+            .resize(400f, 200f, 96f, -200f, fromStart = true, horizontalAxis = true)
+            .resize(300f, 150f, 48f, 200f, fromStart = false, horizontalAxis = false)
+        assertEquals(0f, resized.x, 0.001f)
+        assertEquals(0.75f, resized.widthFraction!!, 0.001f)
+        assertEquals(1f, resized.y, 0.001f)
+        assertEquals(0.75f, resized.heightFraction!!, 0.001f)
+    }
+
     @Test fun essentialBadgesAreRetainedByLegacyTypeAndV2Identity() {
         val identity = ChatIdentity(
             badges = listOf(ChatSenderBadge("moderator"), ChatSenderBadge("subscriber"), ChatSenderBadge("verified")),

@@ -79,6 +79,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -358,15 +359,30 @@ class FullscreenChatOverlayUiTest {
         }
         val chat = compose.onNodeWithText(context.getString(R.string.recorded_chat_unavailable))
         val gear = compose.onNodeWithContentDescription(context.getString(R.string.fullscreen_chat_open_settings))
+        val resizePanel = compose.onNodeWithContentDescription(context.getString(R.string.fullscreen_chat_edit_position))
+        resizePanel.assertDoesNotExist()
         chat.performTouchInput { click(center) }
+        val originalPanel = resizePanel.fetchSemanticsNode().boundsInRoot
+        resizePanel.performTouchInput {
+            val inset = minOf(width, height) * 0.05f
+            val corner = Offset(width - inset, inset)
+            swipe(corner, corner + Offset(width * 0.25f, -height * 0.25f))
+        }
+        val resizedPanel = resizePanel.fetchSemanticsNode().boundsInRoot
+        assertTrue(resizedPanel.width > originalPanel.width)
+        assertTrue(resizedPanel.height > originalPanel.height)
+        compose.runOnIdle { assertTrue(position.widthFraction != null && position.heightFraction != null) }
         val originalGearBounds = gear.fetchSemanticsNode().boundsInRoot
         val originalChatHeight = chat.fetchSemanticsNode().boundsInRoot.height
         gear.performTouchInput { down(center) }
+        compose.mainClock.advanceTimeBy(4_500)
+        gear.assertExists()
         runBlocking { settings.set(SettingsKeys.CHAT_FONT_SIZE, 24) }
         compose.waitUntil(5_000) { chat.fetchSemanticsNode().boundsInRoot.height > originalChatHeight }
         assertEquals(originalGearBounds, gear.fetchSemanticsNode().boundsInRoot)
         gear.performTouchInput { up() }
         compose.runOnIdle { assertEquals(1, settingsOpened) }
+        resizePanel.assertDoesNotExist()
         chat.performTouchInput { swipe(center, center + Offset(width * 0.2f, -height * 2f)) }
         val moved = compose.runOnIdle {
             assertTrue(position.x > 0f && position.y < 1f)
@@ -378,6 +394,19 @@ class FullscreenChatOverlayUiTest {
         chat.performTouchInput { click(center) }
         gear.performClick()
         compose.runOnIdle { assertEquals(2, settingsOpened) }
+
+        val fontSetting = SettingsKeys.FULLSCREEN_CHAT_FONT_SIZE
+        runBlocking { settings.set(fontSetting, 16) }
+        chat.performTouchInput { click(center) }
+        val increase = compose.onNodeWithContentDescription(context.getString(R.string.fullscreen_chat_increase_font_size))
+        increase.performClick()
+        compose.waitUntil(5_000) { runBlocking { settings.get(fontSetting).first() == 17 } }
+        compose.mainClock.advanceTimeBy(4_500)
+        resizePanel.assertDoesNotExist()
+        gear.assertDoesNotExist()
+        increase.assertDoesNotExist()
+        chat.performTouchInput { click(center) }
+        compose.onNodeWithText("17 sp").fetchSemanticsNode()
     }
 
     @Test fun draggingSavesTheAxesForEachModeAndSupportsResetAndCancel() {
@@ -414,17 +443,28 @@ class FullscreenChatOverlayUiTest {
 
             val panel = compose.onNodeWithContentDescription(context.getString(R.string.fullscreen_chat_edit_position))
             val done = compose.onNodeWithText(context.getString(R.string.fullscreen_chat_done))
+            val originalBounds = panel.fetchSemanticsNode().boundsInRoot
+            panel.performTouchInput {
+                val inset = minOf(width, height) * 0.05f
+                val corner = Offset(width - inset, inset)
+                swipe(corner, corner + Offset(width * 0.25f, -height * 0.25f))
+            }
+            val resizedBounds = panel.fetchSemanticsNode().boundsInRoot
+            assertTrue(resizedBounds.width > originalBounds.width)
+            assertTrue(resizedBounds.height > originalBounds.height)
             panel.performTouchInput { swipe(center, center + Offset(width * 0.25f, -height * 0.3f)) }
             done.performClick()
             val movedVertical = compose.runOnIdle {
                 assertTrue(verticalPosition.x > 0f)
                 assertTrue(verticalPosition.y < 1f)
+                assertTrue(verticalPosition.widthFraction != null)
+                assertTrue(verticalPosition.heightFraction != null)
                 horizontal = true
                 editing = true
                 verticalPosition
             }
 
-            panel.performTouchInput { swipe(center, center + Offset(width * 0.25f, height * 0.6f)) }
+            panel.performTouchInput { swipe(center, center + Offset(width * 0.15f, height * 2f)) }
             done.performClick()
             val movedHorizontal = compose.runOnIdle {
                 assertEquals(0f, horizontalPosition.x, 0f)
@@ -446,7 +486,12 @@ class FullscreenChatOverlayUiTest {
             compose.runOnIdle {
                 assertEquals(FullscreenChatPosition.HorizontalDefault, horizontalPosition)
                 assertEquals(movedVertical, verticalPosition)
+                editing = true
             }
+            panel.performTouchInput { swipe(center, center + Offset(0f, height * 2f)) }
+            compose.mainClock.advanceTimeBy(4_500)
+            panel.assertDoesNotExist()
+            compose.runOnIdle { assertTrue(horizontalPosition.y > 0f) }
         } finally {
             scope.cancel()
             file.delete()

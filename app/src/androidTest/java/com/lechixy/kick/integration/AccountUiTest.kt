@@ -1,22 +1,23 @@
 package com.lechixy.kick.integration
 
 import android.content.ContentValues
-import android.os.Environment
 import android.provider.MediaStore
+import androidx.compose.material3.DatePickerDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.test.core.app.ActivityScenario
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasScrollToIndexAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import kotlinx.coroutines.runBlocking
@@ -26,6 +27,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.time.LocalDate
+import java.time.ZoneOffset
 
 import com.lechixy.kick.KickWebLoginActivity
 import com.lechixy.kick.R
@@ -35,9 +38,10 @@ import com.lechixy.kick.data.account.local.SecureSessionStore
 import com.lechixy.kick.data.account.model.SessionStatus
 import com.lechixy.kick.data.channel.model.ChannelDetail
 import com.lechixy.kick.data.chat.remote.ChatConnectionState
+import com.lechixy.kick.data.player.local.RECORDING_DOWNLOAD_DIRECTORY
+import com.lechixy.kick.data.player.local.RECORDING_DOWNLOAD_MIME_TYPE
 import com.lechixy.kick.screens.following.FollowingScreen
-import com.lechixy.kick.screens.you.YouScreen
-import com.lechixy.kick.screens.you.DownloadsScreen
+import com.lechixy.kick.screens.you.YouHost
 
 @RunWith(AndroidJUnit4::class)
 class AccountUiTest {
@@ -60,9 +64,72 @@ class AccountUiTest {
 
     @Test fun guestYouScreenShowsAccountAndSignIn() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        compose.setContent { MaterialTheme { YouScreen(onChannelClick = {}) } }
+        compose.setContent { MaterialTheme { YouHost(onExit = {}, onChannelClick = {}) } }
         compose.onNodeWithText(context.getString(R.string.account_title)).assertIsDisplayed()
         compose.onNodeWithText(context.getString(R.string.account_login)).assertIsDisplayed()
+    }
+
+    @Test fun youWatchTimeAndDataUsageShareSelectedPeriod() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val month = context.getString(R.string.you_usage_month)
+        val allTime = context.getString(R.string.you_usage_all)
+        val watchTime = context.getString(R.string.you_data_usage_watch_time)
+        val dataUsage = context.getString(R.string.you_data_usage)
+        compose.setContent { MaterialTheme { YouHost(onExit = {}, onChannelClick = {}) } }
+
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(month))
+        compose.onNodeWithText(month).performClick()
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(watchTime))
+        compose.onNode(hasText(watchTime) and hasClickAction()).performClick()
+        compose.onNodeWithText(month).assertIsSelected()
+        val account = compose.onNodeWithText(context.getString(R.string.account_title))
+        if (context.resources.configuration.screenWidthDp >= 640) account.assertIsDisplayed()
+        else account.assertDoesNotExist()
+        compose.onNodeWithText(allTime).performClick()
+        compose.onNodeWithContentDescription(context.getString(R.string.navigation_back)).performClick()
+
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(dataUsage))
+        compose.onNode(hasText(dataUsage) and hasClickAction()).performClick()
+        compose.onNodeWithText(allTime).assertIsSelected()
+    }
+
+    @OptIn(ExperimentalMaterial3Api::class)
+    @Test fun youAppliesCustomDaysAndKeepsThemAvailableAfterChangingPeriods() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val custom = context.getString(R.string.you_usage_custom)
+        val apply = context.getString(R.string.you_usage_apply_range)
+        val recent = context.getString(R.string.you_usage_last_24_hours)
+        val dataUsage = context.getString(R.string.you_data_usage)
+        val month = context.getString(R.string.you_usage_month)
+        val dateFormatter = DatePickerDefaults.dateFormatter()
+        val today = LocalDate.now()
+        val locale = context.resources.configuration.locales[0]
+        fun selectDay(day: Int) {
+            val utcDate = today.withDayOfMonth(day).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
+            val description = requireNotNull(dateFormatter.formatDate(utcDate, locale, forContentDescription = true))
+            compose.onNode(hasText(description, substring = true) and hasClickAction()).performClick()
+        }
+        compose.setContent { MaterialTheme { YouHost(onExit = {}, onChannelClick = {}) } }
+
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(custom))
+        compose.onNodeWithText(custom).performClick()
+        compose.onNodeWithText(apply).assertIsNotEnabled()
+        selectDay(10)
+        selectDay(12)
+        compose.onNodeWithText(apply).performClick()
+        compose.onNodeWithText(custom).assertIsSelected()
+
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(dataUsage))
+        compose.onNode(hasText(dataUsage) and hasClickAction()).performClick()
+        compose.onNodeWithText(custom).assertIsSelected()
+        compose.onNodeWithText(recent).performClick().assertIsSelected()
+        compose.onNodeWithText(custom).performClick()
+        compose.onNodeWithText(context.getString(android.R.string.cancel)).performClick()
+        compose.onNodeWithText(recent).assertIsSelected()
+        compose.onNodeWithText(custom).performClick()
+        compose.onNodeWithText(apply).performClick()
+        compose.onNodeWithText(custom).assertIsSelected()
+        compose.onNodeWithText(month).performClick().assertIsSelected()
     }
 
     @Test fun youScreenListsPublishedDownloadsAndDeletesFromLibrary() {
@@ -71,20 +138,16 @@ class AccountUiTest {
         val title = "You screen test ${System.nanoTime()}"
         val uri = requireNotNull(resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, ContentValues().apply {
             put(MediaStore.Downloads.DISPLAY_NAME, "$title.mp4")
-            put(MediaStore.Downloads.MIME_TYPE, "video/mp4")
-            put(MediaStore.Downloads.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/Kicker")
+            put(MediaStore.Downloads.MIME_TYPE, RECORDING_DOWNLOAD_MIME_TYPE)
+            put(MediaStore.Downloads.RELATIVE_PATH, RECORDING_DOWNLOAD_DIRECTORY)
             put(MediaStore.Downloads.IS_PENDING, 1)
         }))
         try {
             // MediaStore creates the file when the download writes its output.
             requireNotNull(resolver.openOutputStream(uri)).use { it.write(0) }
-            compose.setContent {
-                MaterialTheme {
-                    var showDownloads by remember { mutableStateOf(false) }
-                    if (showDownloads) DownloadsScreen(onBack = { showDownloads = false })
-                    else YouScreen(onChannelClick = {}, onDownloads = { showDownloads = true })
-                }
-            }
+            compose.setContent { MaterialTheme { YouHost(onExit = {}, onChannelClick = {}) } }
+            val downloads = context.getString(R.string.you_downloads)
+            compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(downloads))
             val loading = context.getString(R.string.you_downloads_loading)
             compose.waitUntil(10_000) { compose.onAllNodesWithText(loading).fetchSemanticsNodes().isEmpty() }
             compose.onNodeWithText(title).assertDoesNotExist()
@@ -92,8 +155,10 @@ class AccountUiTest {
                 put(MediaStore.Downloads.IS_PENDING, 0)
             }, null, null))
             compose.waitUntil(10_000) { compose.onAllNodesWithText(title).fetchSemanticsNodes().isNotEmpty() }
+            compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(title))
             compose.onNodeWithText(title).assertIsDisplayed()
-            compose.onNodeWithText(context.getString(R.string.you_downloads)).performClick()
+            compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(downloads))
+            compose.onNodeWithText(downloads).performClick()
             compose.waitUntil(10_000) { compose.onAllNodesWithText(title).fetchSemanticsNodes().isNotEmpty() }
             val delete = context.getString(R.string.you_download_delete)
             compose.onNodeWithContentDescription(delete).performClick()

@@ -10,6 +10,7 @@ import android.graphics.Rect
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.util.Rational
 import android.view.TextureView
@@ -21,10 +22,15 @@ import androidx.annotation.RequiresApi
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedVisibilityScope
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
@@ -33,7 +39,6 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -42,6 +47,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -98,11 +104,12 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.AbsoluteAlignment
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -116,8 +123,6 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.hideFromAccessibility
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
@@ -136,15 +141,16 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import coil3.compose.AsyncImage
 import com.lechixy.kick.R
+import com.lechixy.kick.components.channel.AnimatedCounterText
+import com.lechixy.kick.components.channel.TagChip
 import com.lechixy.kick.components.channel.chat.FullscreenChatBackdrop
-import com.lechixy.kick.components.channel.chat.FullscreenChatBlur
-import com.lechixy.kick.components.channel.chat.FullscreenChatVideoFrame
 import com.lechixy.kick.components.channel.chat.FullscreenChatBackdropRegion
+import com.lechixy.kick.components.channel.chat.FullscreenChatBlur
 import com.lechixy.kick.components.channel.chat.FullscreenChatEdges
 import com.lechixy.kick.components.channel.chat.FullscreenChatOverlay
 import com.lechixy.kick.components.channel.chat.FullscreenChatSettings
+import com.lechixy.kick.components.channel.chat.FullscreenChatVideoFrame
 import com.lechixy.kick.components.channel.chat.VideoBackdropBlur
-import com.lechixy.kick.components.channel.chat.LocalChatContentActive
 import com.lechixy.kick.components.channel.chat.rememberFullscreenChatPreferences
 import com.lechixy.kick.components.channel.chat.rememberLegacyFullscreenChatFrame
 import com.lechixy.kick.components.settings.SettingSwitch
@@ -160,14 +166,14 @@ import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 import com.lechixy.kick.screens.channel.ChannelViewModel
 import com.lechixy.kick.screens.clip.CreateClipModal
-import com.lechixy.kick.service.EXTRA_LOW_LATENCY
 import com.lechixy.kick.service.EXTRA_LIVE_DVR
+import com.lechixy.kick.service.EXTRA_LOW_LATENCY
 import com.lechixy.kick.service.PlaybackService
 import com.lechixy.kick.service.buildPlaybackMediaItem
-import com.lechixy.kick.service.player.setPlaybackUsageChannel
 import com.lechixy.kick.service.player.broadcastPositionMs
 import com.lechixy.kick.service.player.distanceBehindLiveTargetMs
 import com.lechixy.kick.service.player.isNearLiveTarget
+import com.lechixy.kick.service.player.setPlaybackUsageChannel
 import com.lechixy.kick.util.FormatUtils
 import com.lechixy.kick.util.FormatUtils.formatDuration
 import com.lechixy.kick.util.FormatUtils.formatLiveOffset
@@ -442,25 +448,23 @@ fun KickPlayerView(
     var liveSeekWindow by remember(stableId) { mutableStateOf<LiveSeekWindow?>(null) }
     val positionCallback by rememberUpdatedState(onPlaybackPositionChanged)
     val seekCallback by rememberUpdatedState(onPlaybackSeek)
-    val seekRecordingBy: (Boolean) -> Boolean = { forward ->
+    val skipRecording: (Boolean, Boolean) -> Unit = { forward, continueSequence ->
         val active = player?.takeIf {
             it.currentMediaItem?.mediaId == stableId && it.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM) &&
                 it.isCurrentMediaItemSeekable && it.duration > 0L
         }
-        if (active == null) false else {
+        if (active != null) {
             val delta = if (forward) 10_000L else -10_000L
             active.seekTo((active.currentPosition + delta).coerceIn(0L, active.duration))
-            true
+            val now = SystemClock.uptimeMillis()
+            val previous = skipFeedback?.takeIf {
+                continueSequence && it.forward == forward && now - it.atMillis <= RECORDING_SKIP_SEQUENCE_TIMEOUT_MS
+            }
+            skipFeedback = RecordingSkipFeedback(forward, (previous?.seconds ?: 0) + 10, now)
         }
     }
-    val onVideoDoubleTap by rememberUpdatedState<(Offset, Int) -> Unit> { tap, width ->
-        if (recording == null) {
-            toggleFullScreen()
-        } else {
-            val forward = tap.x >= width / 2f
-            if (seekRecordingBy(forward)) skipFeedback = RecordingSkipFeedback(forward)
-        }
-    }
+    val onRecordingTap by rememberUpdatedState(skipRecording)
+    val onLiveDoubleTap by rememberUpdatedState(toggleFullScreen)
     LaunchedEffect(player, stableId, isLiveStream) {
         if (isLiveStream) return@LaunchedEffect
         while (isActive) {
@@ -741,6 +745,12 @@ fun KickPlayerView(
         }
     }
 
+    val showPlaybackControls = !isInPipMode && showControls && playbackError == null && !isMini && !editingChatPosition
+    val controlsTransition = updateTransition(showPlaybackControls, label = "playback controls")
+    val controlsOpacity = controlsTransition.animateFloat(
+        transitionSpec = { tween(if (targetState) 200 else 160) },
+        label = "playback controls opacity",
+    ) { if (it) 1f else 0f }
     Box(
         modifier = modifier
             .background(Color.Black)
@@ -752,12 +762,18 @@ fun KickPlayerView(
                     onPlayerCoordinatesChanged(rect)
                 }
             }
-            .pointerInput(isInPipMode, isMini, editingChatPosition) {
+            .pointerInput(isInPipMode, isMini, editingChatPosition, stableId, recording != null) {
                 if (!isInPipMode && !isMini && !editingChatPosition) {
-                    detectTapGestures(
-                        onDoubleTap = { onVideoDoubleTap(it, size.width) },
-                        onTap = { showControls = !showControls }
-                    )
+                    if (recording != null) {
+                        detectRecordingTaps(onTap = { showControls = !showControls }) { forward, continued ->
+                            onRecordingTap(forward, continued)
+                        }
+                    } else {
+                        detectTapGestures(
+                            onDoubleTap = { onLiveDoubleTap() },
+                            onTap = { showControls = !showControls },
+                        )
+                    }
                 }
             },
         contentAlignment = Alignment.Center
@@ -802,52 +818,52 @@ fun KickPlayerView(
             val chatRegion = chatBlurBounds.takeIf {
                 overlayPreferences?.blur == true && (fullscreenChatOverlayEnabled || editingChatPosition)
             }
-            VideoBackdropBlur(playerTexture, listOfNotNull(chatRegion) + controlBlur.regions.values) {
-                if (editingChatPosition) 1f else playerHost?.fullscreenChatOverlayAlpha ?: 0f
-            }
+            VideoBackdropBlur(
+                playerTexture,
+                listOfNotNull(chatRegion) + controlBlur.regions.values,
+                controlOpacity = { controlsOpacity.value },
+                opacity = { if (editingChatPosition) 1f else playerHost?.fullscreenChatOverlayAlpha ?: 0f },
+            )
         }
         if (overlayPreferences != null && playerHost != null && channel != null &&
-            (fullscreenChatOverlayEnabled || editingChatPosition)
+            ((fullscreenChatOverlayEnabled && overlayHasOpacity) || editingChatPosition)
         ) {
-            val overlayActive = overlayHasOpacity || editingChatPosition
             val blur = if (overlayPreferences.blur) {
-                val legacyFrame = if (Build.VERSION.SDK_INT < 31 && hasRenderedFirstFrame && overlayActive) {
+                val legacyFrame = if (Build.VERSION.SDK_INT < 31 && hasRenderedFirstFrame) {
                     rememberLegacyFullscreenChatFrame(playerTexture, isPlaying)
                 } else null
                 FullscreenChatBlur(updateChatBlurBounds, legacyFrame)
             } else null
-            CompositionLocalProvider(LocalChatContentActive provides overlayActive) {
-                FullscreenChatOverlay(
-                    host = playerHost,
-                    channel = channel,
-                    liveChatViewModel = liveChatViewModel,
-                    preferences = overlayPreferences,
-                    playing = overlayActive && loadedMediaId == stableId && isPlaying,
-                    editing = editingChatPosition,
-                    onSavePosition = { horizontal, position ->
-                        val key = if (horizontal) SettingsKeys.FULLSCREEN_CHAT_HORIZONTAL_POSITION
-                        else SettingsKeys.FULLSCREEN_CHAT_VERTICAL_POSITION
-                        coroutineScope.launch {
-                            settingsRepository.set(key, position.encode())
-                            playerHost.editFullscreenChatPosition(false)
-                        }
-                    },
-                    onCancelEditing = { playerHost.editFullscreenChatPosition(false) },
-                    onOpenSettings = {
-                        settingsPage = PlayerSettingsPage.CHAT_OVERLAY
-                        showSettingsDialog = true
-                        showControls = false
-                    },
-                    blur = blur,
-                    viewport = playerBounds?.takeUnless { it.isEmpty }?.let {
-                        ComposeRect(it.left.toFloat(), it.top.toFloat(), it.right.toFloat(), it.bottom.toFloat())
-                    },
-                    modifier = Modifier.graphicsLayer {
-                        alpha = if (editingChatPosition) 1f else playerHost.fullscreenChatOverlayAlpha
-                    }.semantics { if (!overlayActive) hideFromAccessibility() },
-                    interactive = overlayActive && !playerHost.isDirectChatDrag && !playerHost.isSideChatOpen(isWide = true),
-                )
-            }
+            FullscreenChatOverlay(
+                host = playerHost,
+                channel = channel,
+                liveChatViewModel = liveChatViewModel,
+                preferences = overlayPreferences,
+                playing = loadedMediaId == stableId && isPlaying,
+                editing = editingChatPosition,
+                onSavePosition = { horizontal, position ->
+                    val key = if (horizontal) SettingsKeys.FULLSCREEN_CHAT_HORIZONTAL_POSITION
+                    else SettingsKeys.FULLSCREEN_CHAT_VERTICAL_POSITION
+                    coroutineScope.launch {
+                        settingsRepository.set(key, position.encode())
+                        playerHost.editFullscreenChatPosition(false)
+                    }
+                },
+                onCancelEditing = { playerHost.editFullscreenChatPosition(false) },
+                onOpenSettings = {
+                    settingsPage = PlayerSettingsPage.CHAT_OVERLAY
+                    showSettingsDialog = true
+                    showControls = false
+                },
+                blur = blur,
+                viewport = playerBounds?.takeUnless { it.isEmpty }?.let {
+                    ComposeRect(it.left.toFloat(), it.top.toFloat(), it.right.toFloat(), it.bottom.toFloat())
+                },
+                modifier = Modifier.graphicsLayer {
+                    alpha = if (editingChatPosition) 1f else playerHost.fullscreenChatOverlayAlpha
+                },
+                interactive = !playerHost.isDirectChatDrag && !playerHost.isSideChatOpen(isWide = true),
+            )
         }
 
         val autoQualityLabel = stringResource(R.string.player_auto)
@@ -857,14 +873,6 @@ fun KickPlayerView(
                 currentVideoHeight > 0 -> "${currentVideoHeight}p ($autoQualityLabel)"
                 else -> autoQualityLabel
             }
-        }
-
-        val viewersText = remember(channel?.livestream?.viewerCount, viewersLocale, resources) {
-            "${FormatUtils.formatViewersCount(channel?.livestream?.viewerCount, viewersLocale)} ${
-                resources.getString(
-                    R.string.viewers
-                )
-            }"
         }
 
         val handleTogglePlay = {
@@ -893,17 +901,26 @@ fun KickPlayerView(
             }
         }
 
-        if (!isInPipMode) AnimatedVisibility(
-            visible = showControls && playbackError == null && !isMini && !editingChatPosition,
-            enter = fadeIn(),
-            exit = fadeOut(),
-            modifier = Modifier.fillMaxSize()
+        if (!isInPipMode) controlsTransition.AnimatedVisibility(
+            visible = { it },
+            enter = EnterTransition.None,
+            exit = ExitTransition.None,
+            modifier = Modifier.fillMaxSize().graphicsLayer { alpha = controlsOpacity.value },
         ) {
+            val hostStream = channel?.livestream
+            val updatedStream = liveChatViewModel?.uiState?.collectAsStateWithLifecycle()?.value?.channel?.livestream
+            val liveStream = updatedStream?.takeIf { it.id == hostStream?.id } ?: hostStream
             val controlFrame = if (Build.VERSION.SDK_INT < 31 && hasRenderedFirstFrame && playerTexture != null) {
                 rememberLegacyFullscreenChatFrame(playerTexture, isPlaying)
             } else null
             PlayerControlsOverlay(
                 isFullScreen = isFullScreen,
+                mediaTitle = if (recording == null) liveStream?.sessionTitle ?: streamTitle else streamTitle,
+                mediaTags = if (recording == null) {
+                    liveStream?.categories.orEmpty().map { it.name } + liveStream?.tags.orEmpty()
+                } else {
+                    recording.categories.map { it.name } + recording.tags
+                },
                 isTheaterMode = isTheaterMode,
                 isChatVisible = if (fullscreenChatAvailable) {
                     fullscreenChatOverlayEnabled && !playerHost.isSideChatOpen(isWide = true)
@@ -955,9 +972,10 @@ fun KickPlayerView(
                     }
                 },
                 onSeekingChanged = { isSeeking = it },
-                onSeekBack = { seekRecordingBy(false) },
-                onSeekForward = { seekRecordingBy(true) },
+                onSeekBack = { skipRecording(false, true) },
+                onSeekForward = { skipRecording(true, true) },
                 isLive = isLiveStream,
+                liveViewerCount = liveStream?.viewerCount ?: hostStream?.viewerCount,
                 isAtLiveEdge = isAtLiveEdge,
                 behindLiveText = if (liveOffsetMs == C.TIME_UNSET) "" else formatLiveOffset(liveOffsetMs),
                 onGoToLive = handleGoToLive,
@@ -1554,6 +1572,8 @@ private fun PlayerSettingsOptionRow(
 @Composable
 internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
     isFullScreen: Boolean,
+    mediaTitle: String = "",
+    mediaTags: List<String> = emptyList(),
     isTheaterMode: Boolean = false,
     isChatVisible: Boolean = true,
     isClipModalVisible: Boolean = false,
@@ -1576,6 +1596,7 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
     onSeekBack: () -> Unit = {},
     onSeekForward: () -> Unit = {},
     isLive: Boolean = false,
+    liveViewerCount: Int? = null,
     isAtLiveEdge: Boolean = true,
     behindLiveText: String = "",
     onGoToLive: () -> Unit = {},
@@ -1596,7 +1617,20 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
     BoxWithConstraints(
         modifier = modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.36f))
+            .drawWithCache {
+                val height = size.height.coerceAtLeast(1f)
+                val top = minOf(0.30f, 152.dp.toPx() / height)
+                val bottom = minOf(0.36f, 196.dp.toPx() / height)
+                val scrim = Brush.verticalGradient(
+                    0f to Color.Black.copy(alpha = 0.68f),
+                    top * 0.45f to Color.Black.copy(alpha = 0.38f),
+                    top to Color.Transparent,
+                    1f - bottom to Color.Transparent,
+                    1f - bottom * 0.45f to Color.Black.copy(alpha = 0.45f),
+                    1f to Color.Black.copy(alpha = 0.76f),
+                )
+                onDrawBehind { drawRect(scrim) }
+            }
             .let {
                 if (isFullScreen) it.windowInsetsPadding(WindowInsets.displayCutout.only(WindowInsetsSides.Horizontal))
                 else it
@@ -1620,6 +1654,8 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
         }
         val chromeIconModifier = if (largeControls) Modifier.size(28.dp) else Modifier
         val showChatButton = isFullScreen || isTheaterMode || isWide
+        val showMediaInfo = isFullScreen && configuration.smallestScreenWidthDp >= 600 &&
+            maxWidth >= 560.dp && maxHeight >= 320.dp && mediaTitle.isNotBlank()
 
         /**
          * Top
@@ -1672,6 +1708,9 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                     )
                 }
 
+            }
+            if (showMediaInfo) {
+                FullscreenMediaInfo(mediaTitle, mediaTags, Modifier.weight(1f).padding(horizontal = 16.dp))
             }
             /**
              * Top End/Right
@@ -1919,6 +1958,25 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                                 }
                             }
                         }
+                        if (isFullScreen && largeControls && liveViewerCount != null) {
+                            Separator()
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    painterResource(R.drawable.group_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
+                                    contentDescription = stringResource(R.string.viewers),
+                                    modifier = Modifier.size(16.dp),
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                                AnimatedCounterText(
+                                    count = liveViewerCount,
+                                    style = labelStyle,
+                                    animateEntrance = false,
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -1943,7 +2001,7 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                             )
                         }
                     }
-                    Spacer(modifier = Modifier.width(if (isCompact) 2.dp else 8.dp))
+                    Separator()
                     if (showChatButton) IconButton(
                         onClick = onToggleChat,
                         modifier = chromeButtonModifier
@@ -2007,6 +2065,25 @@ private fun Player.liveSeekWindow(): LiveSeekWindow? {
 /**
  * Miniplayer
  */
+@Composable
+private fun FullscreenMediaInfo(title: String, tags: List<String>, modifier: Modifier = Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(
+            title,
+            color = Color.White,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), maxLines = 1) {
+            tags.filter { it.isNotBlank() }.distinct().forEach { tag ->
+                TagChip(tag, containerColor = Color.Black.copy(alpha = 0.42f), contentColor = Color.White)
+            }
+        }
+    }
+}
+
 @Composable
 private fun MiniControlsOverlay(
     isPlaying: Boolean,

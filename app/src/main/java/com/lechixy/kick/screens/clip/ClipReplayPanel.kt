@@ -31,6 +31,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,6 +55,7 @@ import coil3.compose.AsyncImage
 import com.lechixy.kick.R
 import com.lechixy.kick.components.account.AccountFollowAction
 import com.lechixy.kick.components.account.rememberAccountFollowAction
+import com.lechixy.kick.components.account.accountActionMotion
 import com.lechixy.kick.components.channel.chat.ChatMessageItem
 import com.lechixy.kick.components.rememberRecordingDownloadAction
 import com.lechixy.kick.data.channel.model.ClipDetail
@@ -184,10 +186,12 @@ private fun ClipChannelDetails(
             }
         }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            val followInteractions = remember { MutableInteractionSource() }
             FilledTonalButton(
                 onClick = follow.onClick,
                 enabled = follow.enabled,
-                modifier = Modifier.weight(1f),
+                interactionSource = followInteractions,
+                modifier = Modifier.weight(1f).accountActionMotion(follow.following, followInteractions),
                 shape = clipActionShape,
                 colors = ButtonDefaults.filledTonalButtonColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
                 contentPadding = ButtonDefaults.ButtonWithIconContentPadding,

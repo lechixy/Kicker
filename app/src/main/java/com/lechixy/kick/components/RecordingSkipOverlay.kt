@@ -1,9 +1,13 @@
 package com.lechixy.kick.components
 
+import android.os.SystemClock
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,16 +26,67 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.lechixy.kick.R
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
-internal class RecordingSkipFeedback(val forward: Boolean)
+internal const val RECORDING_SKIP_SEQUENCE_TIMEOUT_MS = 420L
+
+internal class RecordingSkipFeedback(
+    val forward: Boolean,
+    val seconds: Int = 10,
+    val atMillis: Long = SystemClock.uptimeMillis(),
+)
+
+internal suspend fun PointerInputScope.detectRecordingTaps(
+    onTap: () -> Unit,
+    onSkip: (forward: Boolean, continued: Boolean) -> Unit,
+) = coroutineScope {
+    var singleTap: Job? = null
+    var lastForward = false
+    var lastUpMillis = 0L
+    var skipping = false
+    awaitEachGesture {
+        val down = awaitFirstDown()
+        down.consume()
+        val up = waitForUpOrCancellation() ?: return@awaitEachGesture
+        up.consume()
+
+        val forward = up.position.x >= size.width / 2f
+        val elapsed = down.uptimeMillis - lastUpMillis
+        val startsSkipping = singleTap?.isActive == true && elapsed <= viewConfiguration.doubleTapTimeoutMillis
+        val continuesSkipping = skipping && elapsed <= RECORDING_SKIP_SEQUENCE_TIMEOUT_MS
+        if (forward == lastForward && (startsSkipping || continuesSkipping)) {
+            singleTap?.cancel()
+            singleTap = null
+            skipping = true
+            onSkip(forward, continuesSkipping)
+        } else {
+            if (singleTap?.isActive == true) {
+                singleTap?.cancel()
+                onTap()
+            }
+            skipping = false
+            val timeout = viewConfiguration.doubleTapTimeoutMillis
+            singleTap = launch {
+                delay(timeout)
+                onTap()
+            }
+        }
+        lastForward = forward
+        lastUpMillis = up.uptimeMillis
+    }
+}
 
 @Composable
 internal fun RecordingSkipOverlay(feedback: RecordingSkipFeedback, modifier: Modifier, onFinished: () -> Unit) {
-    val progress = remember(feedback) { Animatable(0f) }
+    val progress = remember(feedback) { Animatable(if (feedback.seconds > 10) 0.15f else 0f) }
     LaunchedEffect(feedback) {
         progress.animateTo(1f, tween(durationMillis = 620, easing = LinearEasing))
         onFinished()
@@ -58,7 +113,7 @@ internal fun RecordingSkipOverlay(feedback: RecordingSkipFeedback, modifier: Mod
                 tint = Color.White,
             )
             Text(
-                stringResource(R.string.player_skip_ten_seconds),
+                (if (feedback.forward) "+" else "−") + stringResource(R.string.player_skip_seconds, feedback.seconds),
                 color = Color.White,
                 style = MaterialTheme.typography.labelLarge.copy(shadow = Shadow(Color.Black, blurRadius = 4f)),
             )

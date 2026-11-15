@@ -25,34 +25,35 @@ import androidx.media3.exoplayer.hls.playlist.HlsPlaylist
 import androidx.media3.exoplayer.hls.playlist.HlsPlaylistParserFactory
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
-import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import androidx.media3.exoplayer.upstream.DefaultAllocator
+import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import androidx.media3.exoplayer.upstream.ParsingLoadable
+import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
-import dagger.hilt.android.AndroidEntryPoint
-import java.io.ByteArrayInputStream
-import java.io.InputStream
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
-
 import com.lechixy.kick.BuildConfig
+import com.lechixy.kick.R
 import com.lechixy.kick.service.player.DiagnosticLiveSpeedControl
 import com.lechixy.kick.service.player.LiveResumeListener
 import com.lechixy.kick.service.player.PlaybackDiagnosticTracker
 import com.lechixy.kick.service.player.PlaybackNetworkCounter
 import com.lechixy.kick.service.player.PlaybackProgressTracker
 import com.lechixy.kick.service.player.PlaybackUsageTracker
-import com.lechixy.kick.service.player.trackUsage
-import com.lechixy.kick.service.player.usageChannel
 import com.lechixy.kick.service.player.SleepTimer
 import com.lechixy.kick.service.player.distanceBehindLiveTargetMs
+import com.lechixy.kick.service.player.trackUsage
 import com.lechixy.kick.service.player.transformKickLivePlaylist
+import com.lechixy.kick.service.player.usageChannel
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import java.io.ByteArrayInputStream
+import java.io.InputStream
 
 @OptIn(UnstableApi::class)
 @AndroidEntryPoint
@@ -73,6 +74,10 @@ class PlaybackService : MediaSessionService() {
     @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
+        val notificationProvider = DefaultMediaNotificationProvider.Builder(this).build()
+        notificationProvider.setSmallIcon(R.drawable.ic_stat_name)
+        setMediaNotificationProvider(notificationProvider)
+
         serviceScope.launch(Dispatchers.Main.immediate) {
             com.lechixy.kick.data.account.AccountGraph.auth.session.map { it.generation }
                 .distinctUntilChanged().collect { viewerTracking.refreshAuthentication() }

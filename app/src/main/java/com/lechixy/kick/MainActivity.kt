@@ -38,6 +38,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -112,9 +114,8 @@ import com.lechixy.kick.screens.home.HomeViewModel
 import com.lechixy.kick.screens.settings.SettingsBackupHost
 import com.lechixy.kick.screens.settings.SettingsDestinations
 import com.lechixy.kick.screens.settings.SettingsHost
-import com.lechixy.kick.screens.you.YouScreen
-import com.lechixy.kick.screens.you.DownloadsScreen
-import com.lechixy.kick.screens.you.DataUsageScreen
+import com.lechixy.kick.screens.you.YouHost
+import com.lechixy.kick.screens.you.YouPage
 import com.lechixy.kick.service.RecordingDownloadService
 import com.lechixy.kick.theme.KickTheme
 import com.lechixy.kick.theme.Theme
@@ -564,17 +565,16 @@ fun KickApp(restorePending: Boolean = false) {
                                 }
 
                                 composable("you") {
-                                    YouScreen(
+                                    YouHost(
+                                        onExit = { navController.popBackStack() },
                                         onChannelClick = { openChannel(it, null) },
-                                        onDownloads = { navController.navigate("you/downloads") { launchSingleTop = true } },
-                                        onDataUsage = { navController.navigate("you/data-usage") { launchSingleTop = true } },
                                     )
                                 }
                                 composable("you/downloads") {
-                                    DownloadsScreen(onBack = { navController.popBackStack() })
+                                    YouHost({ navController.popBackStack() }, { openChannel(it, null) }, YouPage.DOWNLOADS)
                                 }
                                 composable("you/data-usage") {
-                                    DataUsageScreen(onBack = { navController.popBackStack() }, onChannelClick = { openChannel(it, null) })
+                                    YouHost({ navController.popBackStack() }, { openChannel(it, null) }, YouPage.DATA_USAGE)
                                 }
 
                                 composable("settings") { settingsContent(null) }
@@ -895,12 +895,12 @@ internal fun KickNavScaffold(
                             animationSpec = tween(220),
                             label = "rail toggle"
                         )
-                        Box(Modifier.fillMaxWidth().height(64.dp)) {
-                            com.lechixy.kick.components.FadingAppBrand(
+                        Box(Modifier.fillMaxWidth().height(64.dp).clipToBounds()) {
+                            com.lechixy.kick.components.SlidingAppBrand(
                                 visible = railExpanded && !hidden,
-                                modifier = Modifier.align(Alignment.CenterStart).padding(start = 20.dp, end = 56.dp),
-                                enter = androidx.compose.animation.fadeIn(tween(180, delayMillis = 120)),
-                                exit = androidx.compose.animation.fadeOut(tween(120))
+                                modifier = Modifier.align(Alignment.CenterStart).padding(start = 20.dp)
+                                    .wrapContentSize(Alignment.CenterStart, unbounded = true).widthIn(max = 164.dp),
+                                offscreenInset = 20.dp,
                             )
                             val toggleBias by androidx.compose.animation.core.animateFloatAsState(
                                 if (railExpanded) 1f else 0f,

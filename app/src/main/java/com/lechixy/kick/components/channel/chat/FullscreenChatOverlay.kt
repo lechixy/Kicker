@@ -5,16 +5,20 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.absoluteOffset
@@ -27,6 +31,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -44,6 +49,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -57,6 +63,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.onSizeChanged
@@ -91,6 +98,7 @@ import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 import com.lechixy.kick.screens.channel.ChannelViewModel
 import java.util.Locale
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 internal data class FullscreenChatPreferences(
@@ -105,6 +113,8 @@ internal data class FullscreenChatPreferences(
     val scale: Int = 100,
     val shape: FullscreenChatShape = FullscreenChatShape.Rounded,
 )
+
+internal const val FULLSCREEN_CHAT_EDIT_IDLE_MS = 4_000L
 
 @Composable
 internal fun rememberFullscreenChatPreferences(): FullscreenChatPreferences {
@@ -162,102 +172,161 @@ internal fun FullscreenChatOverlay(
     val savedPosition = if (horizontal) preferences.horizontalPosition else preferences.verticalPosition
     var draft by remember(editing, horizontal, savedPosition) { mutableStateOf(savedPosition) }
     var dragging by remember(editing, horizontal) { mutableStateOf(false) }
-    var settingsAnchor by remember(editing, horizontal) { mutableStateOf<Alignment?>(null) }
-    val settingsInteraction = remember { MutableInteractionSource() }
-    val settingsPressed by settingsInteraction.collectIsPressedAsState()
-    var contentSize by remember(editing, horizontal) { mutableStateOf(IntSize.Zero) }
-    val savePosition by rememberUpdatedState(onSavePosition)
-    val fontSize by fullscreenChatSetting(rememberFullscreenChatFontSizeSetting())
-    val settingsLabel = stringResource(R.string.fullscreen_chat_open_settings)
-    BackHandler(enabled = editing, onBack = onCancelEditing)
-    LaunchedEffect(settingsAnchor, settingsPressed) {
-        if (settingsAnchor != null && !settingsPressed) {
-            delay(4_000)
-            settingsAnchor = null
+    var showQuickControls by remember(editing, horizontal) { mutableStateOf(false) }
+    var quickControlsAtStart by remember(editing, horizontal) { mutableStateOf(false) }
+    val quickControlsVisible = showQuickControls && interactive && !editing
+    val showResizeHandles = editing || quickControlsVisible
+    var activeTouches by remember { mutableIntStateOf(0) }
+    var lastInteraction by remember { mutableIntStateOf(0) }
+    val onEditTouch = remember<(Boolean) -> Unit> {
+        { pressed: Boolean ->
+            if (pressed) activeTouches++ else {
+                activeTouches--
+                lastInteraction++
+            }
         }
     }
+    var contentSize by remember(editing, horizontal) { mutableStateOf(IntSize.Zero) }
+    val savePosition by rememberUpdatedState(onSavePosition)
+    val cancelEditing by rememberUpdatedState(onCancelEditing)
+    val fontSetting = rememberFullscreenChatFontSizeSetting()
+    val fontSize by fullscreenChatSetting(fontSetting)
+    val repository = LocalSettingsRepository.current
+    val scope = rememberCoroutineScope()
+    fun changeFontSize(delta: Int) {
+        lastInteraction++
+        scope.launch {
+            repository.editSettings {
+                val currentSize = this[fontSetting.key] ?: fontSetting.defaultValue
+                this[fontSetting.key] = (currentSize + delta).coerceIn(10, 24)
+            }
+        }
+    }
+    val settingsLabel = stringResource(R.string.fullscreen_chat_open_settings)
+    BackHandler(enabled = editing || quickControlsVisible) {
+        if (editing) onCancelEditing() else showQuickControls = false
+    }
     LaunchedEffect(interactive) {
-        if (!interactive) settingsAnchor = null
+        if (!interactive) showQuickControls = false
+    }
+    LaunchedEffect(editing, quickControlsVisible, dragging, activeTouches, lastInteraction, horizontal, draft) {
+        if (showResizeHandles && !dragging && activeTouches == 0) {
+            delay(FULLSCREEN_CHAT_EDIT_IDLE_MS)
+            if (editing) {
+                if (draft == savedPosition) cancelEditing() else savePosition(horizontal, draft)
+            } else {
+                showQuickControls = false
+            }
+        }
     }
 
     BoxWithConstraints(
         modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(8.dp),
         contentAlignment = AbsoluteAlignment.TopLeft,
     ) {
+        val availableWidth = maxWidth
+        val availableHeight = maxHeight
         val scale = preferences.scale / 100f
-        val panelWidth = if (horizontal) maxWidth else minOf(300.dp * scale, maxWidth * (0.53f * scale))
         val lineHeight = with(LocalDensity.current) { (fontSize + 8).sp.toDp() }
-        val laneHeight = minOf(maxOf(32.dp * scale, lineHeight), maxHeight)
-        val lanes = if (laneHeight > 0.dp) minOf(preferences.lanes, (maxHeight / laneHeight).toInt()) else 1
-        val panelHeight = if (horizontal) laneHeight * lanes else maxHeight * (0.44f * scale)
+        val defaultWidth = if (horizontal) maxWidth else minOf(300.dp * scale, maxWidth * (0.53f * scale))
+        val defaultLaneHeight = minOf(maxOf(32.dp * scale, lineHeight), maxHeight)
+        val defaultLanes = if (defaultLaneHeight > 0.dp) {
+            minOf(preferences.lanes, (maxHeight / defaultLaneHeight).toInt())
+        } else 1
+        val defaultHeight = if (horizontal) defaultLaneHeight * defaultLanes
+            else maxHeight * (0.44f * scale)
+        val panelWidth = draft.widthFraction?.let { maxWidth * it } ?: defaultWidth
+        val panelHeight = draft.heightFraction?.let { maxHeight * it } ?: defaultHeight
+        val lanes = if (draft.heightFraction == null) defaultLanes
+            else minOf(preferences.lanes, (panelHeight / lineHeight).toInt().coerceAtLeast(1))
+        val laneHeight = panelHeight / lanes
         val travelX = maxWidth - panelWidth
         val travelY = maxHeight - panelHeight
         val drawnHeight = with(LocalDensity.current) { contentSize.height.toDp() }
-        val dragTravelY by rememberUpdatedState(maxHeight - if (contentSize.height > 0) drawnHeight else panelHeight)
+        val dragTravelX by rememberUpdatedState(travelX)
+        val dragTravelY by rememberUpdatedState(
+            maxHeight - if (!showResizeHandles && contentSize.height > 0) drawnHeight else panelHeight
+        )
+        val resizeWithGesture by rememberUpdatedState(showResizeHandles)
+        val density = LocalDensity.current
+        val resizeDraft by rememberUpdatedState<(Int, Int, Offset) -> Unit> { horizontalEdge, verticalEdge, delta ->
+            with(density) {
+                if (horizontalEdge != 0) draft = draft.resize(
+                    availableWidth.toPx(), (draft.widthFraction?.let { availableWidth * it } ?: defaultWidth).toPx(),
+                    96.dp.toPx(), delta.x, horizontalEdge < 0, horizontalAxis = true,
+                )
+                if (verticalEdge != 0) draft = draft.resize(
+                    availableHeight.toPx(), (draft.heightFraction?.let { availableHeight * it } ?: defaultHeight).toPx(),
+                    lineHeight.toPx(), delta.y, verticalEdge < 0, horizontalAxis = false,
+                )
+            }
+        }
         val dock = viewport?.let {
             FullscreenChatDock(it, FullscreenChatEdges(
-                left = horizontal || draft.x == 0f,
+                left = travelX == 0.dp || draft.x == 0f,
                 top = draft.y == 0f,
-                right = horizontal || draft.x == 1f,
+                right = travelX == 0.dp || draft.x == 1f,
                 bottom = draft.y == 1f,
             ))
         }
-        val dragModifier = if (editing || !preferences.positionLocked) {
-            Modifier.pointerInput(editing, horizontal, travelX, travelY, savedPosition) {
-                val width = travelX.toPx()
+        val dragModifier = if (showResizeHandles || !preferences.positionLocked) {
+            Modifier.pointerInput(editing, horizontal, savedPosition, preferences.positionLocked) {
                 val threshold = 10.dp.toPx()
+                var width = 0f
                 var height = 0f
+                var horizontalEdge = 0
+                var verticalEdge = 0
                 var rawPosition = savedPosition
-                val start: (Offset) -> Unit = {
-                    height = dragTravelY.toPx()
-                    rawPosition = draft
-                    dragging = true
-                    settingsAnchor = null
-                }
-                val finish: () -> Unit = {
-                    dragging = false
-                    if (!editing && draft != savedPosition) savePosition(horizontal, draft)
-                }
-                val cancel: () -> Unit = {
-                    dragging = false
-                    if (!editing) draft = savedPosition
-                }
-                fun move(dx: Float, dy: Float) {
-                    rawPosition = FullscreenChatPosition(
-                        if (width > 0f) (rawPosition.x + dx / width).coerceIn(0f, 1f) else 0f,
-                        if (height > 0f) (rawPosition.y + dy / height).coerceIn(0f, 1f) else rawPosition.y,
-                    )
-                    draft = rawPosition.snapToEdges(width, height, threshold)
-                }
-                if (horizontal) {
-                    detectVerticalDragGestures(start, finish, cancel) { change, dy ->
-                        change.consume()
-                        move(0f, dy)
-                    }
-                } else {
-                    detectDragGestures(start, finish, cancel) { change, delta ->
-                        change.consume()
-                        move(delta.x, delta.y)
+                detectDragGestures(
+                    orientationLock = null,
+                    onDragStart = { down, _, _ ->
+                        val handleSize = minOf(36.dp.toPx(), size.width / 3f, size.height / 3f)
+                        val x = if (resizeWithGesture) resizeHandleAt(down.position.x, size.width, handleSize) else null
+                        val y = if (resizeWithGesture) resizeHandleAt(down.position.y, size.height, handleSize) else null
+                        horizontalEdge = if (y != null) x ?: 0 else 0
+                        verticalEdge = if (x != null) y ?: 0 else 0
+                        width = dragTravelX.toPx()
+                        height = dragTravelY.toPx()
+                        rawPosition = draft
+                        dragging = true
+                    },
+                    onDragEnd = {
+                        dragging = false
+                        if (!editing && draft != savedPosition) savePosition(horizontal, draft)
+                    },
+                    onDragCancel = {
+                        dragging = false
+                        if (!editing) draft = savedPosition
+                    },
+                ) { change, delta ->
+                    change.consume()
+                    if (horizontalEdge != 0 || verticalEdge != 0) {
+                        resizeDraft(horizontalEdge, verticalEdge, delta)
+                    } else if (editing || !preferences.positionLocked) {
+                        rawPosition = rawPosition.copy(
+                            x = if (width > 0f) (rawPosition.x + delta.x / width).coerceIn(0f, 1f) else rawPosition.x,
+                            y = if (height > 0f) (rawPosition.y + delta.y / height).coerceIn(0f, 1f) else rawPosition.y,
+                        )
+                        draft = rawPosition.snapToEdges(width, height, threshold)
                     }
                 }
             }
         } else Modifier
-        val editor = if (editing) {
+        val editor = if (showResizeHandles) {
             val editLabel = stringResource(R.string.fullscreen_chat_edit_position)
-            Modifier.border(1.dp, MaterialTheme.colorScheme.primary, preferences.shape.backgroundShape())
-                .semantics { contentDescription = editLabel }
+            Modifier.semantics { contentDescription = editLabel }
+                .observeChatEditTouch(onEditTouch)
                 .then(dragModifier)
         } else Modifier
         val measuredContent = Modifier.onSizeChanged { contentSize = it }
         val chatGestures = if (editing) Modifier else if (!interactive) measuredContent else {
             measuredContent
-                .then(dragModifier)
+                .then(if (showResizeHandles) Modifier else dragModifier)
                 .clickable(interactionSource = null, indication = null, onClickLabel = settingsLabel) {
-                    settingsAnchor = when {
-                        settingsAnchor != null -> null
-                        !horizontal && draft.x >= 0.5f -> AbsoluteAlignment.CenterLeft
-                        else -> AbsoluteAlignment.CenterRight
+                    if (!showQuickControls) {
+                        quickControlsAtStart = if (horizontal) draft.y >= 0.5f else travelX > 0.dp && draft.x >= 0.5f
                     }
+                    showQuickControls = !showQuickControls
                 }
         }
         val alignRight = travelX * draft.x + panelWidth / 2 > maxWidth / 2
@@ -280,6 +349,7 @@ internal fun FullscreenChatOverlay(
                     val preview = if (horizontal) List(lanes) { samples[it % samples.size] } else samples
                     ChatStack(preview.size, preferences.opacity, measuredContent, blur) { index ->
                         Text(preview[index], color = Color.White, fontSize = fontSize.sp, maxLines = 1,
+                            lineHeight = (fontSize + 4).sp,
                             textAlign = if (alignRight) TextAlign.Right else TextAlign.Left,
                             overflow = TextOverflow.Ellipsis, modifier = Modifier
                                 .then(if (horizontal) Modifier.height(laneHeight) else Modifier)
@@ -289,47 +359,145 @@ internal fun FullscreenChatOverlay(
                     CompositionLocalProvider(LocalChatAnimationsEnabled provides animationsEnabled) {
                         FullscreenChatMessages(
                             host, channel, liveChatViewModel, horizontal, playing && !dragging,
-                            preferences, fontSize, chatGestures, blur, lanes, laneHeight,
+                            preferences, fontSize, chatGestures, blur, lanes, laneHeight, lineHeight,
                         )
                     }
+                }
+            }
+            AnimatedVisibility(
+                visible = showResizeHandles,
+                modifier = Modifier.matchParentSize(),
+                enter = fadeIn(tween(200)),
+                exit = fadeOut(tween(160)),
+            ) {
+                Box(Modifier.fillMaxSize().border(
+                    1.dp, MaterialTheme.colorScheme.primary, preferences.shape.backgroundShape(),
+                )) {
+                    ChatResizeHandles()
                 }
             }
         }
 
         if (editing) {
             Surface(
-                modifier = Modifier.align(if (draft.y >= 0.5f) Alignment.TopCenter else Alignment.BottomCenter),
+                modifier = Modifier.align(if (draft.y >= 0.5f) Alignment.TopCenter else Alignment.BottomCenter)
+                    .observeChatEditTouch(onEditTouch),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 shape = RoundedCornerShape(8.dp),
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.padding(horizontal = 4.dp)) {
-                    TextButton(onClick = { draft = defaultPosition }) {
-                        Text(stringResource(R.string.fullscreen_chat_reset_position))
+                Column(Modifier.padding(horizontal = 4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        stringResource(
+                            R.string.fullscreen_chat_size_percent,
+                            if (availableWidth > 0.dp) (panelWidth / availableWidth * 100).roundToInt() else 0,
+                            if (availableHeight > 0.dp) (panelHeight / availableHeight * 100).roundToInt() else 0,
+                        ),
+                        modifier = Modifier.padding(top = 6.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        TextButton(onClick = {
+                            lastInteraction++
+                            draft = defaultPosition
+                        }) {
+                            Text(stringResource(R.string.fullscreen_chat_reset_position))
+                        }
+                        TextButton(onClick = onCancelEditing) { Text(stringResource(R.string.fullscreen_chat_cancel)) }
+                        TextButton(onClick = { onSavePosition(horizontal, draft) }) { Text(stringResource(R.string.fullscreen_chat_done)) }
                     }
-                    TextButton(onClick = onCancelEditing) { Text(stringResource(R.string.fullscreen_chat_cancel)) }
-                    TextButton(onClick = { onSavePosition(horizontal, draft) }) { Text(stringResource(R.string.fullscreen_chat_done)) }
                 }
             }
         }
-        settingsAnchor?.takeIf { interactive }?.let { anchor ->
+        AnimatedVisibility(
+            visible = quickControlsVisible,
+            modifier = Modifier.align(
+                if (horizontal) {
+                    if (quickControlsAtStart) Alignment.TopCenter else Alignment.BottomCenter
+                } else {
+                    if (quickControlsAtStart) AbsoluteAlignment.CenterLeft else AbsoluteAlignment.CenterRight
+                }
+            ),
+            enter = fadeIn(tween(200)),
+            exit = fadeOut(tween(160)),
+        ) {
+            val decreaseFontLabel = stringResource(R.string.fullscreen_chat_decrease_font_size)
+            val increaseFontLabel = stringResource(R.string.fullscreen_chat_increase_font_size)
             Surface(
-                modifier = Modifier.align(anchor).padding(horizontal = 8.dp).size(48.dp),
+                modifier = Modifier.padding(horizontal = 4.dp).observeChatEditTouch(onEditTouch),
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
-                shape = RoundedCornerShape(8.dp),
+                shape = RoundedCornerShape(16.dp),
             ) {
-                IconButton(
-                    onClick = {
-                        settingsAnchor = null
+                val buttons: @Composable () -> Unit = {
+                    val fontLabel = stringResource(R.string.fullscreen_chat_font_size)
+                    Column(
+                        Modifier.padding(6.dp).semantics(mergeDescendants = true) {},
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Icon(painterResource(R.drawable.format_size_24dp), fontLabel, Modifier.size(18.dp))
+                        Text("$fontSize sp", style = MaterialTheme.typography.labelSmall)
+                    }
+                    IconButton(enabled = fontSize > 10, onClick = { changeFontSize(-1) }) {
+                        Text("−", Modifier.semantics {
+                            contentDescription = decreaseFontLabel
+                        }, style = MaterialTheme.typography.titleLarge)
+                    }
+                    IconButton(enabled = fontSize < 24, onClick = { changeFontSize(1) }) {
+                        Text("+", Modifier.semantics {
+                            contentDescription = increaseFontLabel
+                        }, style = MaterialTheme.typography.titleLarge)
+                    }
+                    IconButton(onClick = {
+                        showQuickControls = false
                         onOpenSettings()
-                    },
-                    interactionSource = settingsInteraction,
-                ) {
-                    Icon(
-                        painterResource(R.drawable.settings_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
-                        contentDescription = settingsLabel,
-                    )
+                    }) {
+                        Icon(painterResource(R.drawable.settings_24dp_e3e3e3_fill0_wght400_grad0_opsz24), settingsLabel)
+                    }
+                    IconButton(onClick = { showQuickControls = false }) {
+                        Icon(
+                            painterResource(R.drawable.check_circle_24dp_e3e3e3_fill1_wght400_grad0_opsz24),
+                            stringResource(R.string.fullscreen_chat_done),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+                if (!horizontal && availableHeight >= 240.dp) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) { buttons() }
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) { buttons() }
                 }
             }
+        }
+    }
+}
+
+private fun Modifier.observeChatEditTouch(onTouch: (Boolean) -> Unit) = pointerInput(onTouch) {
+    awaitEachGesture {
+        awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        onTouch(true)
+        try {
+            do {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+            } while (event.changes.any { it.pressed })
+        } finally {
+            onTouch(false)
+        }
+    }
+}
+
+private fun resizeHandleAt(position: Float, length: Int, handleSize: Float): Int? = when {
+    position < handleSize -> -1
+    position > length - handleSize -> 1
+    kotlin.math.abs(position - length / 2f) <= handleSize / 2f -> 0
+    else -> null
+}
+
+@Composable
+private fun androidx.compose.foundation.layout.BoxScope.ChatResizeHandles() {
+    for (y in -1..1) {
+        for (x in -1..1) {
+            if (x == 0 && y == 0) continue
+            Box(Modifier.align(BiasAbsoluteAlignment(x.toFloat(), y.toFloat()))
+                .padding(2.dp).size(9.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
         }
     }
 }
@@ -347,6 +515,7 @@ private fun FullscreenChatMessages(
     blur: FullscreenChatBlur?,
     lanes: Int,
     laneHeight: Dp,
+    rowHeight: Dp,
 ) {
     val recording = host.recording
     val seek = host.recordingChatSeek.takeIf { recording != null }
@@ -401,15 +570,18 @@ private fun FullscreenChatMessages(
                 gestures, identity, blur, lanes, laneHeight)
         }
     } else if (visible.isNotEmpty()) {
-        val recent = visible.takeLast(12)
-        ChatStack(recent.size, preferences.opacity, gestures, blur) { index ->
+        val recent = visible.takeLast(if (preferences.verticalPosition.heightFraction == null) 12 else 32)
+        ChatStack(recent.size, preferences.opacity, gestures, blur, rowHeight) { index ->
             val message = recent[index]
-            key(message.id) { OverlayMessage(message, fontSize, lines = 2, identity) }
+            key(message.id) {
+                Box(contentAlignment = Alignment.CenterStart) {
+                    OverlayMessage(message, fontSize, lines = 1, identity)
+                }
+            }
         }
     }
 }
 
-/** The stack keeps the newest complete rows when messages wrap or font scaling increases. */
 private val LocalFullscreenChatAlignRight = androidx.compose.runtime.compositionLocalOf { false }
 
 @Composable
@@ -418,6 +590,7 @@ private fun ChatStack(
     opacity: Float,
     modifier: Modifier = Modifier,
     blur: FullscreenChatBlur? = null,
+    rowHeight: Dp? = null,
     content: @Composable (Int) -> Unit,
 ) {
     val alignRight = LocalFullscreenChatAlignRight.current
@@ -427,7 +600,13 @@ private fun ChatStack(
             content = { repeat(count) { content(it) } },
             modifier = Modifier.fillMaxWidth(),
         ) { measurables, constraints ->
-            val rows = measurables.asReversed().map { it.measure(constraints.copy(minWidth = 0, minHeight = 0)) }
+            val fixedHeight = rowHeight?.roundToPx()?.coerceAtMost(constraints.maxHeight)
+            val rowConstraints = constraints.copy(
+                minWidth = 0,
+                minHeight = fixedHeight ?: 0,
+                maxHeight = fixedHeight ?: constraints.maxHeight,
+            )
+            val rows = measurables.asReversed().map { it.measure(rowConstraints) }
             var height = 0
             val fittingRows = rows.takeWhile { row ->
                 if (height + row.height > constraints.maxHeight) false else {

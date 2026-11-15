@@ -1,10 +1,10 @@
 package com.lechixy.kick.components
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -26,21 +26,33 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 
+import com.lechixy.kick.BuildConfig
 import com.lechixy.kick.R
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 
 @Composable
-internal fun FadingAppBrand(
+internal fun SlidingAppBrand(
     visible: Boolean,
     modifier: Modifier = Modifier,
-    enter: EnterTransition = fadeIn(),
-    exit: ExitTransition = fadeOut()
+    offscreenInset: Dp = 16.dp,
+    fade: Boolean = false,
 ) {
-    AnimatedVisibility(visible = visible, modifier = modifier, enter = enter, exit = exit) {
+    val inset = with(LocalDensity.current) { offscreenInset.roundToPx() }
+    AnimatedVisibility(
+        visible = visible,
+        modifier = modifier,
+        enter = if (fade) fadeIn()
+            else slideInHorizontally(tween(320, easing = FastOutSlowInEasing)) { -it - inset },
+        exit = if (fade) fadeOut()
+            else slideOutHorizontally(tween(240, easing = FastOutSlowInEasing)) { -it - inset },
+    ) {
         ColoredAppText()
     }
 }
@@ -52,11 +64,13 @@ fun ColoredAppText() {
     val animate by remember(repository) { repository.get(setting) }
         .collectAsStateWithLifecycle(initialValue = setting.defaultValue)
     Text(
-        text = stringResource(R.string.app_name),
+        text = stringResource(if (BuildConfig.DEBUG) R.string.app_name_debug else R.string.app_name),
         color = MaterialTheme.colorScheme.primary,
         fontWeight = FontWeight.Bold,
         style = if (animate) animatedAppTextStyle() else TextStyle.Default,
-        fontSize = 22.sp
+        fontSize = 22.sp,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
     )
 }
 

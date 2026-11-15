@@ -39,6 +39,10 @@ internal data class ClipTrim(val start: Int, val end: Int) {
     fun resizeEnd(delta: Int, sourceDuration: Int) =
         copy(end = (end + delta).coerceIn(start + minOf(10, sourceDuration), (start + 60).coerceAtMost(sourceDuration)))
 
+    fun fitToSource(sourceDuration: Int): ClipTrim =
+        if (end <= sourceDuration) this
+        else ClipTrim((sourceDuration - duration).coerceAtLeast(0), sourceDuration)
+
     companion object {
         fun initial(sourceDuration: Int) = ClipTrim((sourceDuration - 30).coerceAtLeast(0), sourceDuration)
     }
@@ -54,10 +58,12 @@ internal data class CreateClipUiState(
     val creator: AccountProfile? = null,
     val title: String = "",
     val trim: ClipTrim = ClipTrim.initial(180),
+    val previewDurationSeconds: Int? = null,
     val isPlaying: Boolean = false,
     val isMuted: Boolean = false,
     @StringRes val errorMessage: Int? = null,
 ) {
+    val sourceDurationSeconds get() = previewDurationSeconds ?: draft?.sourceDurationSeconds ?: trim.end
     val canPublish get() = title.isNotBlank() && title.length <= CLIP_TITLE_LIMIT &&
         draft != null && !isPublishing && !needsSignIn
 }
@@ -98,6 +104,7 @@ internal class CreateClipViewModel(
         draftGeneration = session.generation
         mutableState.value = state.value.copy(
             isInitializing = true, needsSignIn = false, draft = null, isPlaying = false, errorMessage = null,
+            previewDurationSeconds = null,
         )
         viewModelScope.launch {
             try {
@@ -126,7 +133,19 @@ internal class CreateClipViewModel(
     }
 
     fun setTrim(trim: ClipTrim) {
-        if (!state.value.isPublishing) mutableState.value = state.value.copy(trim = trim)
+        val current = state.value
+        if (!current.isPublishing) mutableState.value = current.copy(trim = trim.fitToSource(current.sourceDurationSeconds))
+    }
+
+    fun updatePreviewDuration(durationMs: Long) {
+        val current = state.value
+        val draft = current.draft ?: return
+        if (durationMs <= 0 || current.isPublishing || current.publishedClip != null) return
+        val available = (durationMs / 1000).coerceIn(1L, draft.sourceDurationSeconds.toLong()).toInt()
+        mutableState.value = current.copy(
+            previewDurationSeconds = available,
+            trim = current.trim.fitToSource(available),
+        )
     }
 
     fun togglePlayback() {
@@ -185,6 +204,7 @@ internal class CreateClipViewModel(
         mutableState.value = state.value.copy(
             isInitializing = false, needsSignIn = true, draft = null, isPlaying = false,
             errorMessage = R.string.clip_sign_in_required,
+            previewDurationSeconds = null,
         )
     }
 }

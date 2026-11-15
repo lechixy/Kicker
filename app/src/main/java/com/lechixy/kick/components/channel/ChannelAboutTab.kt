@@ -114,7 +114,10 @@ internal fun ChannelAboutTabContent(
         linkFailed = runCatching { if (onLinkClick != null) onLinkClick(url) else uriHandler.openUri(url) }.isFailure
     } }
     val goal = goalState.value?.firstOrNull { it.status.equals("active", true) && it.type.equals("subscriptions", true) }
-    Column(modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(
+        modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
         BoxWithConstraints {
             if (maxWidth >= 650.dp && goal != null) Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 AboutChannelInfoCard(channelDetails, open, Modifier.weight(1f))

@@ -40,7 +40,7 @@ internal data class PlaybackBackupData(
 internal fun playbackBackupSnapshot() = PlaybackBackupData(
     WatchHistoryStore.entries.value,
     PlaybackProgressStore.progress.value,
-    PlaybackUsageStore.entries.value,
+    PlaybackUsageStore.backupSnapshot(),
     FavoriteUsersStore.favorites.value.users,
     RecordingDownloadQueue.tasks.value,
 ).withoutPlaybackUrls()
