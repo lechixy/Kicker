@@ -3,6 +3,7 @@ package com.lechixy.kick.screens.channel
 import android.content.Context
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
@@ -22,6 +23,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.rememberScrollableState
 import androidx.compose.foundation.gestures.scrollable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -61,7 +63,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryScrollableTabRow
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -84,6 +85,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
@@ -109,32 +111,31 @@ import com.lechixy.kick.components.ChannelTabSpace
 import com.lechixy.kick.components.ContentState
 import com.lechixy.kick.components.LiveBadge
 import com.lechixy.kick.components.LocalContentNavigation
-import com.lechixy.kick.components.PlayerHostState
-import com.lechixy.kick.components.PlayerMode
 import com.lechixy.kick.components.LocalPlayerAmbientState
 import com.lechixy.kick.components.LocalPlayerFullscreenProgress
+import com.lechixy.kick.components.PlayerHostState
+import com.lechixy.kick.components.PlayerMode
 import com.lechixy.kick.components.SkeletonBlock
 import com.lechixy.kick.components.SkeletonLoadingScope
 import com.lechixy.kick.components.VerifiedBadge
 import com.lechixy.kick.components.VideoCard
 import com.lechixy.kick.components.VideoSkeletonGrid
 import com.lechixy.kick.components.WIDE_BREAKPOINT_DP
-import com.lechixy.kick.components.account.rememberAccountFollowAction
 import com.lechixy.kick.components.account.accountActionMotion
+import com.lechixy.kick.components.account.rememberAccountFollowAction
 import com.lechixy.kick.components.channel.AnimatedCounterText
 import com.lechixy.kick.components.channel.ChannelAboutTabContent
 import com.lechixy.kick.components.channel.ChannelHeaderScrollConnection
+import com.lechixy.kick.components.channel.ChannelMediaTags
+import com.lechixy.kick.components.channel.ChannelMediaTitle
 import com.lechixy.kick.components.channel.ChannelTabPager
 import com.lechixy.kick.components.channel.OfflineBannerState
 import com.lechixy.kick.components.channel.OfflineChannelBanner
-import com.lechixy.kick.components.channel.TagChip
 import com.lechixy.kick.components.channel.chat.ChatRestoreButton
 import com.lechixy.kick.components.channel.chat.ChatView
 import com.lechixy.kick.components.channel.chat.LocalChatContentActive
 import com.lechixy.kick.components.channel.chat.collectAsChatState
 import com.lechixy.kick.components.channel.offlineBannerCompactHeight
-import com.lechixy.kick.components.channel.resolveEventChipColors
-import com.lechixy.kick.components.channel.resolveLanguageChipColors
 import com.lechixy.kick.components.contentColumns
 import com.lechixy.kick.components.rememberRecordingDownloadAction
 import com.lechixy.kick.data.channel.model.ChannelClip
@@ -327,6 +328,11 @@ fun ChannelScreen(
                     (channel?.livestream != null || playerHost?.recording != null)
                 var headerOffsetPx by remember(channelSlug, scrollWideHeader) { mutableFloatStateOf(0f) }
                 var headerHeightPx by remember(channelSlug, scrollWideHeader) { mutableFloatStateOf(0f) }
+                val tabsPinned by remember(channelSlug, scrollWideHeader) {
+                    derivedStateOf {
+                        scrollWideHeader && headerHeightPx > 0f && headerOffsetPx.roundToInt() >= headerHeightPx.roundToInt()
+                    }
+                }
                 val headerScroll = remember(offline, offlineCollapse, scrollWideHeader, channelSlug) {
                     when {
                         offline -> ChannelHeaderScrollConnection(offlineCollapse::drag, offlineCollapse::settle)
@@ -527,6 +533,7 @@ fun ChannelScreen(
                                         ChannelTabsRow(
                                             tabs = visibleTabs,
                                             selectedTab = visibleTabs[pagerState.currentPage],
+                                            pinned = tabsPinned,
                                             onTabSelected = { tab -> scope.launch { pagerState.animateScrollToPage(visibleTabs.indexOf(tab)) } }
                                         )
                                     }
@@ -1013,15 +1020,8 @@ private fun ChannelHeaderInfo(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = when(liveAvailable) {
-                            true -> channel.livestream.sessionTitle ?: "No title"
-                            false -> recording?.title ?: "No title"
-                        },
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 2,
-                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                    ChannelMediaTitle(
+                        title = (if (liveAvailable) channel.livestream.sessionTitle else recording?.title) ?: "No title",
                         modifier = Modifier
                             .weight(1f)
                             .padding(end = 8.dp)
@@ -1040,86 +1040,17 @@ private fun ChannelHeaderInfo(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    FlowRow(
+                    ChannelMediaTags(
+                        categories = if (liveAvailable) {
+                            channel.livestream.categories.map { it.name to it.slug }
+                        } else recording?.categories.orEmpty().map { it.name to it.slug },
+                        tags = if (liveAvailable) channel.livestream.tags else recording?.tags.orEmpty(),
+                        event = event,
+                        language = if (liveAvailable) channel.livestream.language else recording?.language,
                         modifier = Modifier
                             .weight(1f)
                             .padding(end = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        val categories = if (liveAvailable) {
-                            channel.livestream.categories.map { it.name to it.slug }
-                        } else {
-                            recording?.categories?.map { it.name to it.slug }
-                        }
-                        val navigation = LocalContentNavigation.current
-                        categories?.forEach { category ->
-                            val name = category.first
-                            val translatedName = when (name) {
-                                "Just Chatting" -> stringResource(R.string.category_just_chatting)
-                                else -> name
-                            }
-                            TagChip(tag = translatedName, onClick = { navigation.category(category.second) })
-                        }
-                        // Event
-                        event?.title?.takeIf { it.isNotBlank() }?.let { eventTitle ->
-                            val defaultContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                            val defaultContentColor = MaterialTheme.colorScheme.primary
-                            val (eventContainerColor, eventContentColor) = remember(
-                                event.palette?.accentPromoPoster,
-                                defaultContainerColor,
-                                defaultContentColor
-                            ) {
-                                resolveEventChipColors(
-                                    accentHex = event.palette?.accentPromoPoster,
-                                    defaultContainerColor = defaultContainerColor,
-                                    defaultContentColor = defaultContentColor
-                                )
-                            }
-                            TagChip(
-                                tag = eventTitle,
-                                icon = R.drawable.local_activity_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
-                                containerColor = eventContainerColor,
-                                contentColor = eventContentColor
-                            )
-                        }
-                        if (liveAvailable) {
-                            channel.livestream.tags.forEach { tag ->
-                                TagChip(tag = tag)
-                            }
-                        }
-
-                        val languageLabel = if (liveAvailable) {
-                            channel.livestream.language?.takeIf { it.isNotBlank() }
-                        } else {
-                            recording?.language?.takeIf { it.isNotBlank() }
-                        }
-                        if (!languageLabel.isNullOrBlank()) {
-                            val defaultContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                            val defaultContentColor = MaterialTheme.colorScheme.primary
-                            val (langContainerColor, langContentColor) = remember(
-                                languageLabel,
-                                defaultContainerColor,
-                                defaultContentColor
-                            ) {
-                                resolveLanguageChipColors(
-                                    language = languageLabel,
-                                    defaultContainerColor = defaultContainerColor,
-                                    defaultContentColor = defaultContentColor
-                                )
-                            }
-                            val translatedLabel = when (languageLabel) {
-                                "English" -> stringResource(R.string.language_english)
-                                "Turkish" -> stringResource(R.string.language_turkish)
-                                else -> languageLabel
-                            }
-                            TagChip(
-                                tag = translatedLabel,
-                                containerColor = langContainerColor,
-                                contentColor = langContentColor
-                            )
-                        }
-                    }
+                    )
 
                     val viewerCount = if (liveAvailable) {
                         channel.livestream.viewerCount
@@ -1269,13 +1200,20 @@ private fun ChannelHeaderInfo(
 private fun ChannelTabsRow(
     tabs: List<ChannelTab>,
     selectedTab: ChannelTab,
+    pinned: Boolean,
     onTabSelected: (ChannelTab) -> Unit
 ) {
     val selectedIndex = tabs.indexOf(selectedTab).coerceAtLeast(0)
+    val surfaceColor = MaterialTheme.colorScheme.surface
+    val containerColor by animateColorAsState(
+        targetValue = surfaceColor.copy(alpha = if (pinned) 1f else 0f),
+        animationSpec = tween(180),
+        label = "channel tab background",
+    )
     PrimaryScrollableTabRow(
         edgePadding = 8.dp,
         selectedTabIndex = selectedIndex,
-        containerColor = MaterialTheme.colorScheme.surface,
+        containerColor = containerColor,
         contentColor = MaterialTheme.colorScheme.primary
     ) {
         tabs.forEach { tab ->

@@ -111,6 +111,8 @@ import com.lechixy.kick.screens.following.FollowingScreen
 import com.lechixy.kick.screens.following.FollowingViewModel
 import com.lechixy.kick.screens.home.HomeScreen
 import com.lechixy.kick.screens.home.HomeViewModel
+import com.lechixy.kick.screens.home.WatchHistoryRoute
+import com.lechixy.kick.screens.home.WatchHistoryScreen
 import com.lechixy.kick.screens.settings.SettingsBackupHost
 import com.lechixy.kick.screens.settings.SettingsDestinations
 import com.lechixy.kick.screens.settings.SettingsHost
@@ -444,7 +446,8 @@ fun KickApp(restorePending: Boolean = false) {
                             .background(MaterialTheme.colorScheme.background)
                     ) {
                         Column(Modifier.fillMaxSize()) {
-                            com.lechixy.kick.components.HomeTopBar(
+                            val showSharedTopBar = currentRoute != WatchHistoryRoute
+                            if (showSharedTopBar) com.lechixy.kick.components.HomeTopBar(
                                 forceVisible = true,
                                 settingsSelected = currentRoute?.substringBefore('/') == "settings",
                                 onSettingsClick = {
@@ -475,7 +478,9 @@ fun KickApp(restorePending: Boolean = false) {
                                 navController = navController,
                                 modifier = Modifier
                                     .weight(1f)
-                                    .consumeWindowInsets(WindowInsets.statusBars),
+                                    .then(if (showSharedTopBar) {
+                                        Modifier.consumeWindowInsets(WindowInsets.statusBars)
+                                    } else Modifier),
                                 startDestination = "home",
                                 enterTransition = {
                                     com.lechixy.kick.components.navigationEnter(
@@ -517,7 +522,20 @@ fun KickApp(restorePending: Boolean = false) {
                                             navController.navigate("following") {
                                                 launchSingleTop = true
                                             }
+                                        },
+                                        onHistoryMoreClick = {
+                                            navController.navigate(WatchHistoryRoute) {
+                                                launchSingleTop = true
+                                            }
                                         }
+                                    )
+                                }
+
+                                composable(WatchHistoryRoute) { entry ->
+                                    val homeEntry = remember(entry) { navController.getBackStackEntry("home") }
+                                    WatchHistoryScreen(
+                                        viewModel = hiltViewModel(homeEntry),
+                                        onBack = { navController.popBackStack() },
                                     )
                                 }
 

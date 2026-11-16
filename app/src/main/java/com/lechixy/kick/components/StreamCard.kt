@@ -13,8 +13,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -91,16 +89,12 @@ fun StreamCard(
         }
     }
 
-    Card(
+    InteractiveCard(
         onClick = handleCardClick,
         modifier = modifier
             .fillMaxWidth()
             .onGloballyPositioned { cardCoordinates = it },
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-        )
-    ) {
+    ) { mediaZoom ->
         Column {
             Box(
                 modifier = Modifier
@@ -134,7 +128,7 @@ fun StreamCard(
                             )
                         },
                         contentDescription = stream.title,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().then(mediaZoom),
                         contentScale = ContentScale.Crop
                     )
                 }

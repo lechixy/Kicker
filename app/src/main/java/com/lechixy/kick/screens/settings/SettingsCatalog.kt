@@ -157,14 +157,7 @@ internal fun settingsCatalog(expandGroups: Boolean = false): List<SettingsEntry>
         },
         SettingsEntry("ambient-mode", R.string.player_ambient_mode, R.string.player_ambient_description,
             playback, R.string.settings_group_player_layout, searchTerms = ambientModeSearchTerms) {
-            SettingsExpander(
-                title = stringResource(R.string.player_ambient_mode),
-                description = stringResource(R.string.player_ambient_description),
-                icon = R.drawable.palette_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
-                initiallyExpanded = expandGroups,
-            ) {
-                AmbientModeSettings()
-            }
+            AmbientModeSettingsExpander(initiallyExpanded = expandGroups)
         },
         SettingsEntry("latency", R.string.player_low_latency, R.string.player_low_latency_description, playback, R.string.settings_group_streaming) {
             SettingSwitch(SettingsKeys.LOW_LATENCY, stringResource(R.string.player_low_latency),

@@ -3,6 +3,7 @@ package com.lechixy.kick.integration
 import com.lechixy.kick.data.channel.model.ChannelLivestream
 
 import androidx.activity.ComponentActivity
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
@@ -27,6 +28,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.*
 import org.junit.Assert.*
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.After
 import org.junit.Rule
@@ -42,6 +44,7 @@ import com.lechixy.kick.components.ExpansionSource
 import com.lechixy.kick.components.AmbientFrame
 import com.lechixy.kick.components.LocalPlayerAmbientState
 import com.lechixy.kick.components.LocalPlayerFullscreenProgress
+import com.lechixy.kick.components.PlayerAmbientState
 import com.lechixy.kick.components.PlayerHost
 import com.lechixy.kick.components.PlayerHostState
 import com.lechixy.kick.components.PlayerMode
@@ -151,6 +154,73 @@ class ChannelTransitionUiTest {
             fullscreenProgress = 0.65f
         }
         tab.assertIsDisplayed()
+    }
+
+    @Test fun channelTabsShowTheBackdropUntilTheHeaderFullyCollapses() {
+        assumeTrue(compose.activity.resources.configuration.screenWidthDp >= 740)
+        val channel = ChannelDetail(1, slug = "wide-channel", livestream = ChannelLivestream(1))
+        val api = Proxy.newProxyInstance(KickApi::class.java.classLoader, arrayOf(KickApi::class.java)) { _, method, _ ->
+            when (method.name) {
+                "getChannel" -> channel
+                "getChannelVideos" -> emptyList<ChannelVideo>()
+                "getChannelEvent" -> ChannelEventResponse()
+                "getChatHistory" -> ChatHistoryResponse()
+                "getCurrentViewers" -> emptyList<Any>()
+                else -> throw UnsupportedOperationException(method.name)
+            }
+        } as KickApi
+        runBlocking { settings.set(SettingsKeys.AUTO_CONNECT_CHAT, false) }
+        val host = PlayerHostState().apply {
+            open(channel.slug)
+            onChannelLoaded(channel.slug, channel)
+            updateChatVisibility(false)
+        }
+        lateinit var model: ChannelViewModel
+        compose.setContent {
+            CompositionLocalProvider(
+                LocalSettingsRepository provides settings,
+                LocalPlayerAmbientState provides remember { PlayerAmbientState() },
+            ) {
+                MaterialTheme {
+                    Box(Modifier.fillMaxSize().background(Color.Magenta)) {
+                        model = viewModel { ChannelViewModel(KickRepository(api)) }
+                        ChannelScreen(channel.slug, playerHost = host, viewModel = model)
+                    }
+                }
+            }
+        }
+        compose.waitUntil(5_000) { !model.uiState.value.isLoading }
+        val tabs = compose.onNode(
+            hasText(compose.activity.getString(ChannelTab.HOME.label)) and
+                SemanticsMatcher.keyIsDefined(SemanticsProperties.Selected)
+        )
+        val root = compose.onRoot()
+        fun tabBackground(): Color {
+            val bounds = tabs.fetchSemanticsNode().boundsInRoot
+            val pixels = root.captureToImage().toPixelMap()
+            val padding = with(compose.density) { 3.dp.toPx() }
+            return pixels[(bounds.right - padding).toInt(), bounds.center.y.toInt()]
+        }
+        val topWithHeader = tabs.fetchSemanticsNode().boundsInRoot.top
+        assertTrue(tabBackground().green < 0.1f)
+
+        root.performTouchInput {
+            down(Offset(width * 0.45f, height - 36.dp.toPx()))
+            moveBy(Offset(0f, -30.dp.toPx()))
+            advanceEventTime(300)
+            up()
+        }
+        assertTrue(tabs.fetchSemanticsNode().boundsInRoot.top < topWithHeader)
+        assertTrue(tabBackground().green < 0.1f)
+
+        repeat(2) {
+            val tabsBottom = tabs.fetchSemanticsNode().boundsInRoot.bottom
+            root.performTouchInput {
+                val x = width * 0.45f
+                swipe(Offset(x, height - 36.dp.toPx()), Offset(x, tabsBottom + 12.dp.toPx()))
+            }
+        }
+        assertTrue("Pinned tabs should use the opaque theme surface", tabBackground().green > 0.8f)
     }
 
     @Test fun connectedOpeningKeepsPageSizeAndCompositionStable() {
@@ -325,6 +395,61 @@ class ChannelTransitionUiTest {
             root.performTouchInput { cancel() }
         }
         compose.runOnIdle { assertEquals(PlayerMode.Fullscreen, host.mode) }
+    }
+
+    @Test fun inlineDownwardDragMovesAndFadesTheAmbientGlow() {
+        val host = PlayerHostState().apply {
+            open("test")
+            onChannelLoaded("test", ChannelDetail(1, slug = "test", livestream = ChannelLivestream(1)))
+        }
+        var playerBounds = Rect.Zero
+        compose.setContent {
+            CompositionLocalProvider(LocalSettingsRepository provides settings) {
+                MaterialTheme(colorScheme = darkColorScheme()) {
+                    Box(Modifier.width(420.dp).fillMaxHeight()) {
+                        PlayerHost(
+                            host, false, host::minimize, host::expand, host::close,
+                            onVideoBoundsChanged = { playerBounds = it ?: Rect.Zero },
+                            pageContent = {
+                                val ambient = checkNotNull(LocalPlayerAmbientState.current)
+                                val palette = remember { AmbientFrame.Palette(List(8) { Color.Red }) }
+                                SideEffect { ambient.frame = palette }
+                            },
+                        )
+                    }
+                }
+            }
+        }
+        val root = compose.onRoot()
+        fun glowAtVideoEdge(bounds: Rect): Float {
+            val pixels = root.captureToImage().toPixelMap()
+            val x = bounds.center.x.toInt()
+            val density = compose.density.density
+            fun redTintAt(offset: Int): Float {
+                val y = (bounds.bottom + offset * density).toInt().coerceAtMost(pixels.height - 1)
+                val color = pixels[x, y]
+                return color.red - color.green
+            }
+            val backgroundTint = redTintAt(155)
+            return listOf(12, 24, 36, 48).maxOf { redTintAt(it) } - backgroundTint
+        }
+        val initialBounds = compose.runOnIdle { playerBounds }
+        val initialGlow = glowAtVideoEdge(initialBounds)
+        assertTrue("A resting video should have a red glow, measured $initialGlow", initialGlow > 0.1f)
+        root.performTouchInput { down(initialBounds.center); moveBy(Offset(0f, 90.dp.toPx())) }
+        try {
+            val movedBounds = compose.runOnIdle { playerBounds }
+            assertTrue(movedBounds.bottom > initialBounds.bottom + 30f)
+            val fadedGlow = glowAtVideoEdge(movedBounds)
+            val details = "initial=$initialGlow at $initialBounds, faded=$fadedGlow at $movedBounds"
+            assertTrue("The glow should follow the new video edge ($details)", fadedGlow > initialGlow * 0.37f)
+            assertTrue("The glow should fade as the page is pulled down ($details)", fadedGlow < initialGlow * 0.77f)
+        } finally {
+            root.performTouchInput { cancel() }
+        }
+        val restoredBounds = compose.runOnIdle { playerBounds }
+        assertEquals(initialBounds.bottom, restoredBounds.bottom, 2f)
+        assertEquals(initialGlow, glowAtVideoEdge(restoredBounds), 0.025f)
     }
 
     @Test fun normalAndPinnedLinksOpenOnTouch() {

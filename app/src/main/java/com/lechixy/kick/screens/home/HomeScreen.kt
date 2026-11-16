@@ -78,7 +78,8 @@ fun HomeScreen(
     viewModel: HomeViewModel = hiltViewModel(),
     onStreamClick: (channelSlug: String, source: ExpansionSource?) -> Unit,
     onCategoryClick: (String) -> Unit = com.lechixy.kick.components.LocalContentNavigation.current.category,
-    onFollowingClick: () -> Unit
+    onFollowingClick: () -> Unit,
+    onHistoryMoreClick: () -> Unit,
 ) {
     val followingTitle = stringResource(R.string.home_following_live)
     val recommendedTitle = stringResource(R.string.home_recommended_live)
@@ -106,8 +107,7 @@ fun HomeScreen(
     val sectionOrder by LocalSettingsRepository.current.get(SettingsKeys.HOME_SECTION_ORDER)
         .collectAsStateWithLifecycle(SettingsKeys.HOME_SECTION_ORDER.defaultValue)
     val sections = remember(sectionOrder) { orderedHomeSections(sectionOrder) }
-    val context = androidx.compose.ui.platform.LocalContext.current
-    var openingHistory by remember { mutableStateOf(false) }
+    val (openingHistory, playHistory) = rememberHistoryPlayback(viewModel)
     val pullState = rememberPullToRefreshState()
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
@@ -168,6 +168,8 @@ fun HomeScreen(
                                         AnimatedVisibility(visible = showHistoryHeader,
                                             exit = shrinkVertically(tween(200), shrinkTowards = Alignment.Top) + fadeOut(tween(150))) {
                                             SectionHeader(stringResource(R.string.home_continue_watching),
+                                                onMore = onHistoryMoreClick,
+                                                moreEnabled = !openingHistory && showHistoryHeader,
                                                 leadingIcon = R.drawable.motion_play_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
                                                 compact = true)
                                         }
@@ -194,18 +196,7 @@ fun HomeScreen(
                                                         exitingHistory.remove(removal)
                                                     }
                                                 }) { source ->
-                                                    scope.launch {
-                                                        openingHistory = true
-                                                        try {
-                                                            val recording = viewModel.resolveHistoryRecording(entry)
-                                                            if (recording != null) navigation.recording(entry.channelSlug, recording, source)
-                                                            else android.widget.Toast.makeText(context, R.string.home_recording_unavailable, android.widget.Toast.LENGTH_SHORT).show()
-                                                        } catch (error: kotlinx.coroutines.CancellationException) {
-                                                            throw error
-                                                        } catch (_: Exception) {
-                                                            android.widget.Toast.makeText(context, R.string.home_recording_unavailable, android.widget.Toast.LENGTH_SHORT).show()
-                                                        } finally { openingHistory = false }
-                                                    }
+                                                    playHistory(entry, source)
                                                 }
                                             }
                                         }

@@ -618,17 +618,22 @@ fun PlayerHost(
                 modifier = Modifier.matchParentSize(),
                 videoBounds = {
                     val (inlineArea, fullscreenArea) = restingAreas.value
-                    val slot = lerpRect(
-                        inlineRect(inlineArea),
-                        fullRect(metrics.containerW, metrics.containerH, fullscreenArea, followGesture = false),
-                        fullscreenProgress(),
-                    )
-                    fitAmbientVideo(slot, ambient.videoAspectRatio)
+                    val progress = currentT()
+                    val slot = if (progress < 0f) {
+                        frameAt(progress, metrics.containerW, metrics.containerH, inlineArea, fullscreenArea)
+                    } else {
+                        lerpRect(
+                            inlineRect(inlineArea),
+                            fullRect(metrics.containerW, metrics.containerH, fullscreenArea, followGesture = false),
+                            fullscreenProgress(),
+                        )
+                    }
+                    fitAmbientVideo(slot.translate(IntOffset(0, playerDy.roundToInt())), ambient.videoAspectRatio)
                 },
                 backdropColor = backdropColor,
                 opacity = {
                     val fullscreenAlpha = if (ambient.fullscreenEnabled) 1f else 1f - fullscreenProgress()
-                    fullscreenAlpha * (1f + currentT().coerceIn(-1f, 0f))
+                    fullscreenAlpha * pageAlpha.coerceIn(0f, 1f)
                 },
             )
         }

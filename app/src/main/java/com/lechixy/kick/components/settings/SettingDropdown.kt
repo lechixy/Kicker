@@ -33,14 +33,6 @@ fun <T> SettingDropdown(
     enabled: Boolean = true,
     onValueChanged: ((T) -> Unit)? = null
 ) {
-    val repository = LocalSettingsRepository.current
-    val coroutineScope = rememberCoroutineScope()
-    val currentValue by repository.get(key).collectAsStateWithLifecycle(initialValue = key.defaultValue)
-
-    var expanded by remember(enabled) { mutableStateOf(false) }
-    val currentLabel = options.firstOrNull { it.first == currentValue }?.second
-        ?: currentValue.toString()
-
     SettingCard(
         title = title,
         modifier = modifier,
@@ -48,39 +40,44 @@ fun <T> SettingDropdown(
         icon = icon,
         enabled = enabled,
         action = {
-            Box {
-                FilledTonalButton(
-                    onClick = { expanded = true },
-                    enabled = enabled
-                ) {
-                    Text(
-                        text = currentLabel,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    Icon(
-                        painter = painterResource(R.drawable.keyboard_arrow_down_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
-                        contentDescription = null
-                    )
-                }
-
-                DropdownMenu(
-                    expanded = expanded && enabled,
-                    onDismissRequest = { expanded = false }
-                ) {
-                    options.forEach { (optionValue, label) ->
-                        DropdownMenuItem(
-                            text = { Text(text = label) },
-                            onClick = {
-                                expanded = false
-                                coroutineScope.launch {
-                                    repository.set(key, optionValue)
-                                }
-                                onValueChanged?.invoke(optionValue)
-                            }
-                        )
-                    }
-                }
-            }
+            SettingDropdownAction(key, options, enabled, onValueChanged)
         }
     )
+}
+
+@Composable
+internal fun <T> SettingDropdownAction(
+    key: SettingKey<T>,
+    options: List<Pair<T, String>>,
+    enabled: Boolean = true,
+    onValueChanged: ((T) -> Unit)? = null,
+) {
+    val repository = LocalSettingsRepository.current
+    val coroutineScope = rememberCoroutineScope()
+    val currentValue by remember(repository, key) { repository.get(key) }
+        .collectAsStateWithLifecycle(initialValue = key.defaultValue)
+    var expanded by remember(enabled) { mutableStateOf(false) }
+    val currentLabel = options.firstOrNull { it.first == currentValue }?.second ?: currentValue.toString()
+
+    Box {
+        FilledTonalButton(onClick = { expanded = true }, enabled = enabled) {
+            Text(currentLabel, style = MaterialTheme.typography.bodyMedium)
+            Icon(
+                painter = painterResource(R.drawable.keyboard_arrow_down_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
+                contentDescription = null,
+            )
+        }
+        DropdownMenu(expanded = expanded && enabled, onDismissRequest = { expanded = false }) {
+            options.forEach { (optionValue, label) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    onClick = {
+                        expanded = false
+                        coroutineScope.launch { repository.set(key, optionValue) }
+                        onValueChanged?.invoke(optionValue)
+                    },
+                )
+            }
+        }
+    }
 }

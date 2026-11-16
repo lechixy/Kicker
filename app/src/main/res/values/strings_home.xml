@@ -11,6 +11,11 @@
     <string name="navigation_collapse">Collapse navigation</string>
     <string name="home_continue_watching">Continue watching</string>
     <string name="home_remove_history">Remove</string>
+    <string name="home_show_history_actions">Show playback actions</string>
+    <string name="home_clear_history">Clear watch history</string>
+    <string name="home_clear_history_message">Remove all recordings from Continue watching?</string>
+    <string name="home_clear_history_confirm">Clear all</string>
+    <string name="home_history_empty">Your watch history is empty</string>
     <string name="home_last_position">Last watched: %1$s</string>
     <string name="home_recording_unavailable">The recording is not available yet, try again later</string>
 </resources>

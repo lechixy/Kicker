@@ -11,8 +11,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -84,16 +82,12 @@ fun ChannelCard(
         }
     }
 
-    Card(
+    InteractiveCard(
         onClick = handleCardClick,
         modifier = modifier
             .widthIn(min = 280.dp)
             .onGloballyPositioned { cardCoordinates = it },
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-        )
-    ) {
+    ) { mediaZoom ->
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -114,7 +108,8 @@ fun ChannelCard(
                 modifier = Modifier
                     .size(46.dp)
                     .clip(CircleShape)
-                    .onGloballyPositioned { avatarCoordinates = it },
+                    .onGloballyPositioned { avatarCoordinates = it }
+                    .then(mediaZoom),
                 contentScale = ContentScale.Crop
             )
 

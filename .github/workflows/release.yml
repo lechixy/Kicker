@@ -56,7 +56,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build signed release and debug APKs
+      - name: Build signed release APKs
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -77,7 +77,7 @@ jobs:
           trap 'rm -f "$ANDROID_KEYSTORE_PATH"' EXIT
           printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
           chmod +x gradlew
-          ./gradlew :app:assembleRelease :app:assembleDebug --no-configuration-cache --stacktrace
+          ./gradlew :app:assembleRelease --no-configuration-cache --stacktrace
 
       - name: Verify and prepare APKs
         env:
@@ -98,41 +98,39 @@ jobs:
           dist = Path('dist')
           dist.mkdir()
           expected_abis = {'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64', 'universal'}
+          output = Path('app/build/outputs/apk/release')
+          metadata = json.loads((output / 'output-metadata.json').read_text())
+          seen = set()
           release_certificates = set()
-          for build_type in ('release', 'debug'):
-              output = Path('app/build/outputs/apk') / build_type
-              metadata = json.loads((output / 'output-metadata.json').read_text())
-              seen = set()
-              for element in metadata['elements']:
-                  if element['versionName'] != os.environ['RELEASE_VERSION']:
-                      raise RuntimeError('APK versionName does not match the tag')
-                  filters = element.get('filters', [])
-                  abi = next((f['value'] for f in filters if f['filterType'] == 'ABI'), 'universal')
-                  if abi not in expected_abis or abi in seen:
-                      raise RuntimeError(f'Unexpected or duplicate ABI: {abi}')
-                  seen.add(abi)
-                  apk = output / element['outputFile']
-                  result = subprocess.run(
-                      [os.environ['APKSIGNER'], 'verify', '--verbose', '--print-certs', str(apk)],
-                      check=True, capture_output=True, text=True,
-                  )
-                  if build_type == 'release':
-                      if 'CN=Android Debug' in result.stdout:
-                          raise RuntimeError('Release APK is signed with a debug certificate')
-                      digests = tuple(line for line in result.stdout.splitlines()
-                                      if 'certificate SHA-256 digest:' in line)
-                      if not digests:
-                          raise RuntimeError('Missing release signing certificate')
-                      release_certificates.add(digests)
-                  target = dist / f'kicker_{os.environ["RELEASE_VERSION"]}_{abi}_{build_type}.apk'
-                  shutil.copyfile(apk, target)
-                  print(target.name)
-              if seen != expected_abis:
-                  raise RuntimeError(f'Missing APKs for {build_type}: {expected_abis - seen}')
+          for element in metadata['elements']:
+              if element['versionName'] != os.environ['RELEASE_VERSION']:
+                  raise RuntimeError('APK versionName does not match the tag')
+              filters = element.get('filters', [])
+              abi = next((f['value'] for f in filters if f['filterType'] == 'ABI'), 'universal')
+              if abi not in expected_abis or abi in seen:
+                  raise RuntimeError(f'Unexpected or duplicate ABI: {abi}')
+              seen.add(abi)
+              apk = output / element['outputFile']
+              result = subprocess.run(
+                  [os.environ['APKSIGNER'], 'verify', '--verbose', '--print-certs', str(apk)],
+                  check=True, capture_output=True, text=True,
+              )
+              if 'CN=Android Debug' in result.stdout:
+                  raise RuntimeError('Release APK is signed with a debug certificate')
+              digests = tuple(line for line in result.stdout.splitlines()
+                              if 'certificate SHA-256 digest:' in line)
+              if not digests:
+                  raise RuntimeError('Missing release signing certificate')
+              release_certificates.add(digests)
+              target = dist / f'kicker_{os.environ["RELEASE_VERSION"]}_{abi}_release.apk'
+              shutil.copyfile(apk, target)
+              print(target.name)
+          if seen != expected_abis:
+              raise RuntimeError(f'Missing release APKs for: {expected_abis - seen}')
           if len(release_certificates) != 1:
               raise RuntimeError('Release APKs must share one signing certificate')
           with (dist / 'sha256sums.txt').open('w', newline='\n') as checksums:
-              for apk in sorted(dist.glob('*.apk')):
+              for apk in sorted(dist.glob('*_release.apk')):
                   checksums.write(f'{hashlib.sha256(apk.read_bytes()).hexdigest()}  {apk.name}\n')
           PY
 
@@ -148,7 +146,7 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
-            dist/*.apk
+            dist/*_release.apk
             dist/sha256sums.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -3,6 +3,7 @@ package com.lechixy.kick.components.channel
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -12,14 +13,82 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.toColorInt
+import com.lechixy.kick.R
+import com.lechixy.kick.components.LocalContentNavigation
+import com.lechixy.kick.data.channel.model.ChannelEvent
+
+@Composable
+internal fun ChannelMediaTitle(title: String, modifier: Modifier = Modifier) {
+    Text(
+        text = title,
+        modifier = modifier,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.Bold,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@Composable
+internal fun ChannelMediaTags(
+    categories: List<Pair<String, String>>,
+    tags: List<String>,
+    event: ChannelEvent?,
+    language: String?,
+    modifier: Modifier = Modifier,
+    contentColor: Color = MaterialTheme.colorScheme.primary,
+) {
+    val navigation = LocalContentNavigation.current
+    val containerColor = contentColor.copy(alpha = 0.1f)
+    FlowRow(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        categories.forEach { (name, slug) ->
+            val title = if (name == "Just Chatting") stringResource(R.string.category_just_chatting) else name
+            TagChip(title, containerColor = containerColor, contentColor = contentColor, onClick = { navigation.category(slug) })
+        }
+        event?.title?.takeIf { it.isNotBlank() }?.let { title ->
+            val accent = event.palette?.accentPromoPoster
+            val (eventBackground, eventForeground) = remember(accent, containerColor, contentColor) {
+                resolveEventChipColors(accent, containerColor, contentColor)
+            }
+            TagChip(
+                tag = title,
+                icon = R.drawable.local_activity_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+                containerColor = eventBackground.copy(alpha = eventBackground.alpha.coerceAtMost(0.8f)),
+                contentColor = eventForeground,
+            )
+        }
+        tags.filter(String::isNotBlank).distinct().forEach {
+            TagChip(it, containerColor = containerColor, contentColor = contentColor)
+        }
+        language?.takeIf(String::isNotBlank)?.let { label ->
+            val (languageBackground, languageForeground) = remember(label, containerColor, contentColor) {
+                resolveLanguageChipColors(label, containerColor, contentColor)
+            }
+            val title = when (label) {
+                "English" -> stringResource(R.string.language_english)
+                "Turkish" -> stringResource(R.string.language_turkish)
+                else -> label
+            }
+            TagChip(title, containerColor = languageBackground, contentColor = languageForeground)
+        }
+    }
+}
 
 @Composable
 fun TagChip(

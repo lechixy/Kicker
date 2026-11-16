@@ -52,6 +52,7 @@ fun SettingsExpander(
     icon: Int? = null,
     toggleKey: SettingKey<Boolean>? = null,
     initiallyExpanded: Boolean = false,
+    headerAction: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.(enabled: Boolean) -> Unit,
 ) {
     var expanded by rememberSaveable(initiallyExpanded) { mutableStateOf(initiallyExpanded) }
@@ -87,6 +88,7 @@ fun SettingsExpander(
                             onCheckedChange = { checked -> scope.launch { repository.set(toggleKey, checked) } },
                             modifier = Modifier.semantics { contentDescription = title },
                         )
+                        headerAction?.invoke()
                         Icon(
                             painter = painterResource(R.drawable.keyboard_arrow_down_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
                             contentDescription = null,

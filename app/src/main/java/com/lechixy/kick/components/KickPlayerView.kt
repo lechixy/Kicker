@@ -47,7 +47,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -56,6 +55,7 @@ import androidx.compose.foundation.layout.displayCutout
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
@@ -74,6 +74,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
@@ -108,8 +109,8 @@ import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -144,7 +145,8 @@ import androidx.media3.session.SessionToken
 import coil3.compose.AsyncImage
 import com.lechixy.kick.R
 import com.lechixy.kick.components.channel.AnimatedCounterText
-import com.lechixy.kick.components.channel.TagChip
+import com.lechixy.kick.components.channel.ChannelMediaTags
+import com.lechixy.kick.components.channel.ChannelMediaTitle
 import com.lechixy.kick.components.channel.chat.FullscreenChatBackdrop
 import com.lechixy.kick.components.channel.chat.FullscreenChatBackdropRegion
 import com.lechixy.kick.components.channel.chat.FullscreenChatBlur
@@ -971,19 +973,35 @@ fun KickPlayerView(
             modifier = Modifier.fillMaxSize().graphicsLayer { alpha = controlsOpacity.value },
         ) {
             val hostStream = channel?.livestream
-            val updatedStream = liveChatViewModel?.uiState?.collectAsStateWithLifecycle()?.value?.channel?.livestream
+            val channelState = if (isFullScreen) liveChatViewModel?.uiState?.collectAsStateWithLifecycle()?.value else null
+            val currentChannelState = channelState?.takeIf { it.channel?.id == channel?.id }
+            val updatedStream = currentChannelState?.channel?.livestream
             val liveStream = updatedStream?.takeIf { it.id == hostStream?.id } ?: hostStream
             val controlFrame = if (Build.VERSION.SDK_INT < 31 && hasRenderedFirstFrame && playerTexture != null) {
                 rememberLegacyFullscreenChatFrame(playerTexture, isPlaying)
             } else null
             PlayerControlsOverlay(
                 isFullScreen = isFullScreen,
-                mediaTitle = if (recording == null) liveStream?.sessionTitle ?: streamTitle else streamTitle,
-                mediaTags = if (recording == null) {
-                    liveStream?.categories.orEmpty().map { it.name } + liveStream?.tags.orEmpty()
-                } else {
-                    recording.categories.map { it.name } + recording.tags
-                },
+                mediaInfo = if (isFullScreen) { modifier ->
+                    CompositionLocalProvider(LocalContentColor provides Color.White) {
+                        Column(
+                            modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            val title = recording?.title
+                                ?: (liveStream?.sessionTitle ?: streamTitle)
+                            if (title.isNotBlank()) ChannelMediaTitle(title)
+                            ChannelMediaTags(
+                                categories = recording?.categories?.map { it.name to it.slug }
+                                    ?: liveStream?.categories.orEmpty().map { it.name to it.slug },
+                                tags = recording?.tags ?: liveStream?.tags.orEmpty(),
+                                event = currentChannelState?.event,
+                                language = if (recording == null) liveStream?.language else recording.language,
+                                contentColor = Color.White,
+                            )
+                        }
+                    }
+                } else null,
                 isTheaterMode = isTheaterMode,
                 isChatVisible = if (fullscreenChatAvailable) {
                     fullscreenChatOverlayEnabled && !playerHost.isSideChatOpen(isWide = true)
@@ -1654,8 +1672,7 @@ private fun PlayerSettingsOptionRow(
 @Composable
 internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
     isFullScreen: Boolean,
-    mediaTitle: String = "",
-    mediaTags: List<String> = emptyList(),
+    mediaInfo: (@Composable (Modifier) -> Unit)? = null,
     isTheaterMode: Boolean = false,
     isChatVisible: Boolean = true,
     isClipModalVisible: Boolean = false,
@@ -1737,13 +1754,9 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
         }
         val chromeIconModifier = if (largeControls) Modifier.size(28.dp) else Modifier
         val showChatButton = isFullScreen || isTheaterMode || isWide
-        val showMediaInfo = isFullScreen && configuration.smallestScreenWidthDp >= 600 &&
-            maxWidth >= 560.dp && maxHeight >= 320.dp && mediaTitle.isNotBlank()
+        val mediaInfoBesideActions = maxWidth >= 560.dp
 
-        /**
-         * Top
-         */
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
@@ -1757,63 +1770,36 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                     end = if (isCompact) 6.dp else 12.dp,
                     bottom = if (isCompact) 2.dp else 8.dp
                 ),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
-            /**
-             * Top Start/Left
-             */
             Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(if (isCompact) 4.dp else 8.dp)
-            ) {
-                IconButton(
-                    onClick = onMinimize,
-                    modifier = chromeButtonModifier
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.keyboard_arrow_down_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
-                        contentDescription = "Minimize",
-                        modifier = chromeIconModifier,
-                        tint = Color.White,
-                    )
-                }
-                if (!showMediaInfo) Box(
-                    modifier = if (isFullScreen) Modifier.clickable(
-                        onClickLabel = stringResource(R.string.player_quality), onClick = onOpenQuality,
-                    ) else Modifier,
-                    contentAlignment = Alignment.Center,
-                ) {
-                    FrostedPlayerControl(controlFrame, controlBlur)
-                    Text(
-                        text = qualityLabel,
-                        color = Color.White,
-                        style = labelStyle,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        softWrap = false,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                    )
-                }
-
-            }
-            if (showMediaInfo) {
-                FullscreenMediaInfo(
-                    mediaTitle, mediaTags, qualityLabel, onOpenQuality,
-                    Modifier.weight(1f).padding(horizontal = 16.dp),
-                )
-            }
-            /**
-             * Top End/Right
-             */
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(if (isCompact) 4.dp else 8.dp)
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = if (isFullScreen) Alignment.Top else Alignment.CenterVertically,
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(if (isCompact) 4.dp else 8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(if (isCompact) 4.dp else 8.dp),
                 ) {
+                    IconButton(onClick = onMinimize, modifier = chromeButtonModifier) {
+                        Icon(
+                            painter = painterResource(R.drawable.keyboard_arrow_down_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
+                            contentDescription = "Minimize",
+                            modifier = chromeIconModifier,
+                            tint = Color.White,
+                        )
+                    }
+                    if (!isFullScreen) PlayerQualityBadge(qualityLabel, controlFrame, controlBlur)
+                }
+
+                if (mediaInfoBesideActions) {
+                    mediaInfo?.invoke(Modifier.weight(1f).padding(horizontal = 12.dp))
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(if (isCompact) 4.dp else 8.dp),
+                ) {
+                    if (isFullScreen) PlayerQualityBadge(qualityLabel, controlFrame, controlBlur, onOpenQuality)
                     IconButton(
                         onClick = onOpenCastDialog,
                         modifier = chromeButtonModifier
@@ -1837,7 +1823,9 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                         )
                     }
                 }
-
+            }
+            if (!mediaInfoBesideActions) {
+                mediaInfo?.invoke(Modifier.fillMaxWidth().padding(horizontal = 4.dp))
             }
         }
 
@@ -2154,38 +2142,28 @@ private fun Player.liveSeekWindow(): LiveSeekWindow? {
     return LiveSeekWindow(window.windowStartTimeMs, edge, currentPosition.coerceIn(0L, edge))
 }
 
-/**
- * Miniplayer
- */
 @Composable
-private fun FullscreenMediaInfo(
-    title: String,
-    tags: List<String>,
-    quality: String,
-    onOpenQuality: () -> Unit,
-    modifier: Modifier = Modifier,
+private fun PlayerQualityBadge(
+    label: String,
+    frame: State<FullscreenChatVideoFrame?>?,
+    blur: FrostedPlayerRegions?,
+    onClick: (() -> Unit)? = null,
 ) {
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Box(
+        modifier = if (onClick == null) Modifier else Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(8.dp))
+            .clickable(onClickLabel = stringResource(R.string.player_quality), onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        FrostedPlayerControl(frame, blur)
         Text(
-            title,
+            text = label,
             color = Color.White,
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.SemiBold,
             maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+            softWrap = false,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
         )
-        val chipBackground = Color.Black.copy(alpha = 0.42f)
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-            TagChip(
-                quality, icon = R.drawable.hd_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
-                containerColor = chipBackground, contentColor = Color.White, onClick = onOpenQuality,
-            )
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), maxLines = 1) {
-                tags.filter { it.isNotBlank() }.distinct().forEach { tag ->
-                    TagChip(tag, containerColor = chipBackground, contentColor = Color.White)
-                }
-            }
-        }
     }
 }
 

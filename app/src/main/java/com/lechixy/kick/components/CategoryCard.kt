@@ -1,15 +1,7 @@
 package com.lechixy.kick.components
 
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsFocusedAsState
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -22,7 +14,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
@@ -34,7 +25,6 @@ import coil3.compose.AsyncImage
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
 import coil3.request.crossfade
-import java.util.Locale
 
 import com.lechixy.kick.data.browse.model.BrowseCategory
 import com.lechixy.kick.util.FormatUtils
@@ -52,40 +42,23 @@ private val CategoryScrim = Brush.verticalGradient(
 @Composable
 fun CategoryCard(category: BrowseCategory, onClick: () -> Unit, modifier: Modifier = Modifier,
     showTag: Boolean = true, showViewers: Boolean = true, loading: Boolean = false) {
-    val interactions = remember { MutableInteractionSource() }
-    val hovered by interactions.collectIsHoveredAsState()
-    val focused by interactions.collectIsFocusedAsState()
-    val pressed by interactions.collectIsPressedAsState()
-    val emphasized = !loading && (hovered || focused)
-    val pressScale by animateFloatAsState(if (!loading && pressed) .97f else 1f,
-        animationSpec = tween(120), label = "category press")
-    val posterScale by animateFloatAsState(if (emphasized) 1.045f else 1f,
-        animationSpec = tween(220), label = "category poster zoom")
-    val lift by animateDpAsState(if (emphasized) (-3).dp else 0.dp,
-        animationSpec = tween(180), label = "category lift")
-    val elevation by animateDpAsState(if (emphasized) 10.dp else 2.dp,
-        animationSpec = tween(180), label = "category shadow")
-    val outline by animateColorAsState(if (emphasized) MaterialTheme.colorScheme.primary.copy(alpha = .65f)
-        else Color.White.copy(alpha = .08f), animationSpec = tween(180), label = "category outline")
     val context = LocalContext.current
     val poster = remember(context, category.banner?.url) {
         ImageRequest.Builder(context).data(category.banner?.url).crossfade(true)
             .memoryCachePolicy(CachePolicy.ENABLED).diskCachePolicy(CachePolicy.ENABLED).build()
     }
-    Surface(onClick = onClick, enabled = !loading, interactionSource = interactions,
-        shape = CategoryPosterShape, color = MaterialTheme.colorScheme.surfaceContainerLowest,
-        border = BorderStroke(1.dp, outline), shadowElevation = elevation,
-        modifier = modifier.fillMaxWidth().graphicsLayer {
-            scaleX = pressScale
-            scaleY = pressScale
-            translationY = lift.toPx()
-        }) {
+    InteractiveCard(
+        onClick = onClick,
+        enabled = !loading,
+        color = MaterialTheme.colorScheme.surfaceContainerLowest,
+        modifier = modifier.fillMaxWidth(),
+    ) { mediaZoom ->
         Box(Modifier.fillMaxWidth().aspectRatio(CategoryPosterRatio).clip(CategoryPosterShape)) {
             if (loading) {
                 CategoryPosterSkeleton(showTag, showViewers)
             } else {
                 AsyncImage(model = poster, contentDescription = null,
-                    modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = posterScale; scaleY = posterScale },
+                    modifier = Modifier.fillMaxSize().then(mediaZoom),
                     contentScale = ContentScale.Crop)
                 Box(Modifier.fillMaxSize().background(CategoryScrim))
                 if (showViewers) CategoryPill(Modifier.align(Alignment.TopStart).padding(10.dp)) {

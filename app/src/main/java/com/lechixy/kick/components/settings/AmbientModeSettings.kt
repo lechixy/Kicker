@@ -24,23 +24,51 @@ internal val PlayerAmbientMode.titleResource: Int
     }
 
 @Composable
-internal fun AmbientModeSettings() {
+private fun selectedAmbientMode(): PlayerAmbientMode {
     val repository = LocalSettingsRepository.current
     val key = SettingsKeys.AMBIENT_MODE
     val storedMode by remember(repository) { repository.get(key) }.collectAsStateWithLifecycle(key.defaultValue)
-    val mode = PlayerAmbientMode.fromValue(storedMode)
-    val description = when (mode) {
+    return PlayerAmbientMode.fromValue(storedMode)
+}
+
+private val PlayerAmbientMode.descriptionResource: Int
+    get() = when (this) {
         PlayerAmbientMode.Off -> R.string.player_ambient_description
         PlayerAmbientMode.Dynamic -> R.string.player_ambient_dynamic_description
         PlayerAmbientMode.Live -> R.string.player_ambient_live_description
     }
 
+@Composable
+private fun ambientModeOptions() = PlayerAmbientMode.entries.map { it.value to stringResource(it.titleResource) }
+
+@Composable
+internal fun AmbientModeSettingsExpander(initiallyExpanded: Boolean) {
+    val mode = selectedAmbientMode()
+    SettingsExpander(
+        title = stringResource(R.string.player_ambient_mode),
+        description = stringResource(mode.descriptionResource),
+        icon = R.drawable.palette_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+        initiallyExpanded = initiallyExpanded,
+        headerAction = { SettingDropdownAction(SettingsKeys.AMBIENT_MODE, ambientModeOptions()) },
+    ) {
+        AmbientModeControls(mode)
+    }
+}
+
+@Composable
+internal fun AmbientModeSettings() {
+    val mode = selectedAmbientMode()
     SettingDropdown(
-        key = key,
+        key = SettingsKeys.AMBIENT_MODE,
         title = stringResource(R.string.player_ambient_selection),
-        description = stringResource(description),
-        options = PlayerAmbientMode.entries.map { it.value to stringResource(it.titleResource) },
+        description = stringResource(mode.descriptionResource),
+        options = ambientModeOptions(),
     )
+    AmbientModeControls(mode)
+}
+
+@Composable
+private fun AmbientModeControls(mode: PlayerAmbientMode) {
     if (mode == PlayerAmbientMode.Live) {
         SettingDropdown(
             key = SettingsKeys.AMBIENT_LIVE_FPS,

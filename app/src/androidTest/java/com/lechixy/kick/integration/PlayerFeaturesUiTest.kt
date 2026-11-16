@@ -2,7 +2,9 @@ package com.lechixy.kick.integration
 
 import com.lechixy.kick.data.account.remote.string
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
@@ -40,9 +42,13 @@ import org.junit.Assert.*
 import com.lechixy.kick.KickNavScaffold
 import com.lechixy.kick.R
 import com.lechixy.kick.components.ConnectionNoticeBar
+import com.lechixy.kick.components.PlayerControlsOverlay
 import com.lechixy.kick.components.PlayerSleepTimerSettings
 import com.lechixy.kick.components.detectRecordingTaps
 import com.lechixy.kick.components.channel.ExpandableProfilePhoto
+import com.lechixy.kick.components.channel.ChannelMediaTags
+import com.lechixy.kick.components.channel.ChannelMediaTitle
+import com.lechixy.kick.data.channel.model.ChannelEvent
 import com.lechixy.kick.data.common.remote.ConnectionNotice
 import com.lechixy.kick.service.player.SleepTimerState
 
@@ -50,6 +56,69 @@ import com.lechixy.kick.service.player.SleepTimerState
 class PlayerFeaturesUiTest {
     @get:Rule val compose = createComposeRule()
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
+
+    @Test fun fullscreenShowsChannelMetadataAndQualityImmediatelyBeforeCast() {
+        var width by mutableStateOf(640.dp)
+        var qualityOpens = 0
+        var castOpens = 0
+        compose.setContent {
+            MaterialTheme {
+                AnimatedVisibility(visible = true, modifier = Modifier.size(width, 380.dp)) {
+                    PlayerControlsOverlay(
+                        isFullScreen = true,
+                        mediaInfo = { modifier ->
+                            Column(modifier) {
+                                ChannelMediaTitle("Stream title")
+                                ChannelMediaTags(
+                                    categories = listOf("Game" to "game"),
+                                    tags = listOf("Ranked"),
+                                    event = ChannelEvent(title = "Tournament"),
+                                    language = "English",
+                                )
+                            }
+                        },
+                        isPlaying = true,
+                        isMuted = false,
+                        volume = 1f,
+                        isSettingsDialogVisible = false,
+                        isCastDialogVisible = false,
+                        qualityLabel = "720p",
+                        sleepRemainingSeconds = 0,
+                        streamDuration = "",
+                        onTogglePlay = {},
+                        onToggleMute = {},
+                        onVolumeChange = {},
+                        onOpenSettings = {},
+                        onOpenQuality = { qualityOpens++ },
+                        onOpenCastDialog = { castOpens++ },
+                        onToggleFullScreen = {},
+                        onMinimize = {},
+                    )
+                }
+            }
+        }
+        val title = compose.onNodeWithText("Stream title")
+        val quality = compose.onNodeWithText("720p")
+        val cast = compose.onNodeWithContentDescription(context.getString(R.string.player_cast))
+        for (layoutWidth in listOf(640.dp, 340.dp)) {
+            compose.runOnIdle { width = layoutWidth }
+            title.assertIsDisplayed()
+            listOf("Game", "Ranked", "Tournament", context.getString(R.string.language_english)).forEach {
+                compose.onNodeWithText(it).assertIsDisplayed()
+            }
+            val qualityBounds = quality.fetchSemanticsNode().boundsInRoot
+            val castBounds = cast.fetchSemanticsNode().boundsInRoot
+            assertTrue(qualityBounds.right <= castBounds.left)
+            assertEquals(qualityBounds.center.y, castBounds.center.y, 1f)
+            if (layoutWidth == 340.dp) assertTrue(title.fetchSemanticsNode().boundsInRoot.top >= castBounds.bottom)
+            quality.performClick()
+            cast.performClick()
+        }
+        compose.runOnIdle {
+            assertEquals(2, qualityOpens)
+            assertEquals(2, castOpens)
+        }
+    }
 
     @Test fun recordingSkipContinuesForEveryTapAfterTheSecond() {
         val skips = mutableListOf<Pair<Boolean, Boolean>>()

@@ -69,6 +69,12 @@ object WatchHistoryStore {
     }
 
     @Synchronized
+    internal fun clear() {
+        if (activePlaybackKey != null) suppressActivePlayback = true
+        if (mutableEntries.value.isNotEmpty()) persist(emptyList())
+    }
+
+    @Synchronized
     internal fun restore(entries: List<WatchHistoryEntry>) {
         persist((mutableEntries.value + entries).filter { it.key.isNotBlank() && it.channelSlug.isNotBlank() }
             .sortedByDescending { it.watchedAt }.distinctBy { it.key }.take(20))

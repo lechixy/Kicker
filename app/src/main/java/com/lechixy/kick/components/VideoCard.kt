@@ -9,8 +9,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
@@ -58,15 +56,11 @@ fun VideoCard(
         FormatUtils.extractVideoThumbnailUrl(video.thumbnail)
     }
 
-    Card(
+    InteractiveCard(
         onClick,
         modifier = modifier
             .fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-        )
-    ) {
+    ) { mediaZoom ->
         Column {
             Box(
                 modifier = Modifier
@@ -84,7 +78,7 @@ fun VideoCard(
                         )
                     },
                     contentDescription = video.sessionTitle,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier.fillMaxSize().then(mediaZoom),
                     contentScale = ContentScale.Crop
                 )
 

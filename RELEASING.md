@@ -55,24 +55,20 @@ bulunmayan tag ile yayın yapmaz. Mevcut tag'i başka commit'e taşımayın.
 
 ## Çıktılar ve imzalar
 
-Her biri release ve debug olmak üzere `armeabi-v7a`, `arm64-v8a`, `x86`, `x86_64`
-ve `universal` APK'ları GitHub Release'e eklenir. Örnek:
+GitHub Release'e yalnızca imzalı release APK'ları ve `sha256sums.txt` eklenir.
+Workflow `armeabi-v7a`, `arm64-v8a`, `x86`, `x86_64` ve `universal` APK'larını derler.
 
 ```text
 kicker_1.0.0_arm64-v8a_release.apk
 kicker_1.0.0_armeabi-v7a_release.apk
+kicker_1.0.0_x86_release.apk
+kicker_1.0.0_x86_64_release.apk
 kicker_1.0.0_universal_release.apk
-kicker_1.0.0_arm64-v8a_debug.apk
 sha256sums.txt
 ```
 
 Release APK'ları Secrets'taki kalıcı anahtarla imzalanır. Workflow APK imzalarını,
 release sertifikalarının aynı olduğunu, sürümü ve beklenen mimarileri doğrular.
-Debug APK'ları geçici test anahtarıyla imzalanır; kullanıcı dağıtımı ve IzzyOnDroid
-için `release` dosyalarını kullanın. Debug ve release aynı uygulama kimliğini
-kullandığından birbirinin üzerine kurulamaz; geçişte mevcut kurulumun kaldırılması gerekebilir.
-Farklı workflow çalıştırmalarındaki debug APK'ları da aynı imzayı korumayabilir.
-
 Secrets verilmeden yerel debug derlemesi çalışmaya devam eder. İmzalama ortam değişkenleri
 verilmezse yerel release çıktısı imzasız olur; debug anahtarına otomatik dönüş yapılmaz.
 F-Droid'in kendi derleme ortamı da böylece imzasız derleme alıp kendi yayın sürecini uygulayabilir.

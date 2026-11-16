@@ -11,6 +11,11 @@
     <string name="navigation_collapse">Gezinmeyi daralt</string>
     <string name="home_continue_watching">İzlemeye devam et</string>
     <string name="home_remove_history">Kaldır</string>
+    <string name="home_show_history_actions">Oynatma seçeneklerini göster</string>
+    <string name="home_clear_history">İzleme geçmişini temizle</string>
+    <string name="home_clear_history_message">İzlemeye devam et listesindeki tüm kayıtlar kaldırılsın mı?</string>
+    <string name="home_clear_history_confirm">Tümünü temizle</string>
+    <string name="home_history_empty">İzleme geçmişin boş</string>
     <string name="home_last_position">Son izlenen: %1$s</string>
     <string name="home_recording_unavailable">Yayın kaydı henüz kullanılamıyor, daha sonra tekrar deneyin.</string>
 </resources>
