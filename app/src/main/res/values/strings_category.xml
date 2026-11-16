@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="category_event_streaming">%1$s streaming</string>
+    <string name="category_filter_by">Filter by</string>
+    <string name="category_languages">Languages</string>
+    <string name="category_all_languages">All languages</string>
+    <string name="category_sort_by">Sort by</string>
+    <string name="category_sort_featured">Featured</string>
+    <string name="category_sort_viewers">Viewers (High to Low)</string>
+    <string name="category_load_failed">Could not load this category</string>
+    <string name="category_streams_load_failed">Could not load livestreams</string>
+    <string name="category_no_live_streams">No live streams match your filters</string>
+    <string name="category_no_clips">No clips in this category yet</string>
+    <string name="category_follow_failed">Could not update the category follow status</string>
+</resources>

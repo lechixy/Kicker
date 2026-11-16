@@ -14,6 +14,40 @@ import com.lechixy.kick.data.account.remote.AccountApiException
 import com.lechixy.kick.data.following.repository.FollowingRepository
 
 class FollowingRepositoryTest {
+    @Test fun categoryFollowUsesAuthenticatedSlugRouteAndReadsAccountStatus() = runBlocking<Unit> {
+        var followed = false
+        val methods = mutableListOf<String>()
+        val auth = signedInAuth { request ->
+            when (request.url.encodedPath) {
+                "/api/v1/subcategories/rob-run" -> {
+                    methods.add(request.method)
+                    objectJson("""{
+                        "id":19698,"name":"Rob Run","slug":"rob-run",
+                        "followers_count":3000000000,"followed":$followed
+                    }""")
+                }
+                "/api/v1/subcategories/rob-run/toggle-follow" -> {
+                    assertNotNull(request.header("Authorization"))
+                    methods.add(request.method)
+                    followed = !followed
+                    objectJson("{}")
+                }
+                "/api/v1/user/livestreams" -> Json.parseToJsonElement("[]")
+                else -> objectJson("""{"channels":[]}""")
+            }
+        }
+        val job = SupervisorJob()
+        val repository = FollowingRepository(auth, CoroutineScope(coroutineContext + job))
+        try {
+            val category = repository.getCategory("rob-run")
+            assertFalse(category.followed)
+            assertEquals(3_000_000_000L, category.followersCount)
+            repository.toggleCategoryFollow(category.slug)
+            assertTrue(repository.getCategory(category.slug).followed)
+            assertEquals(listOf("GET", "POST", "GET"), methods)
+        } finally { job.cancelAndJoin() }
+    }
+
     @Test fun followMutationUsesServerResultAndFailureDoesNotChangeList() = runBlocking<Unit> {
         var followed = true
         var failMutation = false

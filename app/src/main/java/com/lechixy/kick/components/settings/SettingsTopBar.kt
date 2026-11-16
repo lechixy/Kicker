@@ -23,12 +23,14 @@ internal val SettingsContentWidth = 840.dp
 @Composable
 fun SettingsTopBar(
     title: String,
-    onBackClick: () -> Unit
+    onBackClick: () -> Unit,
+    actions: @Composable RowScope.() -> Unit = {},
 ) {
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
     TopAppBar(
         modifier = Modifier.widthIn(max = SettingsContentWidth).fillMaxWidth(),
         windowInsets = WindowInsets(0, 0, 0, 0),
+        actions = actions,
         title = { Text(
             title,
             style = MaterialTheme.typography.titleLarge,

@@ -53,8 +53,12 @@ data class FollowedLivestreamUser(val username: String, val profilepic: String? 
 
 @Serializable
 data class LivestreamData(
-    val livestreams: List<Livestream> = emptyList()
+    val livestreams: List<Livestream> = emptyList(),
+    val pagination: LivestreamPagination? = null
 )
+
+@Serializable
+data class LivestreamPagination(@SerialName("next_cursor") val nextCursor: String? = null)
 
 @Serializable
 data class Livestream(

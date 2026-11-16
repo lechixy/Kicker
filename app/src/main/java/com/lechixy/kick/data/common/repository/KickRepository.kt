@@ -20,7 +20,31 @@ import com.lechixy.kick.data.player.model.RecordedPlayback
 class KickRepository(
     private val api: KickApi
 ) {
+    suspend fun browseEvents(collection: String? = null, status: String? = null): List<ChannelEvent> =
+        api.browseEvents(collection, status).data.events
+            .filter { !it.isDraft && !it.id.isNullOrBlank() && !it.title.isNullOrBlank() }
+            .distinctBy { it.id }
+
+    suspend fun getEvent(slug: String): ChannelEvent =
+        checkNotNull(api.getEvent(slug).data?.takeUnless { it.isDraft || it.title.isNullOrBlank() })
+
+    suspend fun getEventStreams(slug: String) = api.getEventStreams(slug).data.streams
+
+    suspend fun getEventClips(slug: String) = api.getEventClips(slug).data.clips.distinctBy { it.id }
+
     suspend fun getCategories(page: Int = 1) = api.getCategories(page = page)
+
+    suspend fun getCategory(slug: String) = api.getCategory(slug)
+
+    suspend fun getCategoryClips(slug: String, cursor: String?) = api.getCategoryClips(slug, cursor)
+
+    suspend fun getCategoryLivestreams(
+        categoryId: Long,
+        sort: String,
+        displayLanguage: String,
+        language: String?,
+        cursor: String?,
+    ) = api.getCategoryLivestreams(categoryId, sort, displayLanguage, language, cursor).data
 
     suspend fun getEmotes(slug: String) = com.lechixy.kick.data.chat.model.parseEmoteCategories(api.getEmotes(slug))
     suspend fun getChannelLinks(slug: String) = com.lechixy.kick.data.channel.model.parseChannelLinks(api.getChannelLinks(slug))

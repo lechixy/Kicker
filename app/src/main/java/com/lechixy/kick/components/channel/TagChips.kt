@@ -1,6 +1,7 @@
 package com.lechixy.kick.components.channel
 
 import androidx.annotation.DrawableRes
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.FlowRow
@@ -91,17 +92,31 @@ internal fun ChannelMediaTags(
 }
 
 @Composable
+internal fun MetadataPill(text: String, onClick: (() -> Unit)? = null) {
+    val scheme = MaterialTheme.colorScheme
+    TagChip(
+        tag = text,
+        containerColor = scheme.surfaceContainerHigh,
+        contentColor = scheme.onSurfaceVariant,
+        border = BorderStroke(1.dp, scheme.outlineVariant.copy(alpha = 0.3f)),
+        onClick = onClick,
+    )
+}
+
+@Composable
 fun TagChip(
     tag: String,
     @DrawableRes icon: Int? = null,
     containerColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
     contentColor: Color = MaterialTheme.colorScheme.primary,
+    border: BorderStroke? = null,
     onClick: (() -> Unit)? = null
 ) {
     val shape = RoundedCornerShape(4.dp)
     Surface(
         color = containerColor,
         shape = shape,
+        border = border,
         modifier = Modifier
             .clip(shape)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)

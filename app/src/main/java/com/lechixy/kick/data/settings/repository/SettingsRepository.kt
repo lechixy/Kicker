@@ -16,7 +16,7 @@ import javax.inject.Singleton
 
 import com.lechixy.kick.data.settings.model.SettingKey
 import com.lechixy.kick.data.settings.model.SettingsKeys
-import com.lechixy.kick.util.kickLanguageCode
+import com.lechixy.kick.util.preferredStreamLanguageCode
 
 @Singleton
 class SettingsRepository @Inject constructor(
@@ -80,7 +80,7 @@ class SettingsRepository @Inject constructor(
 
 internal fun <T> MutablePreferences.setSetting(setting: SettingKey<T>, value: T): Boolean {
     if (setting.key == SettingsKeys.RECOMMENDED_LIVESTREAM_LANGUAGE.key && value is String) {
-        val code = kickLanguageCode(value) ?: return false
+        val code = preferredStreamLanguageCode(value) ?: return false
         this[SettingsKeys.RECOMMENDED_LIVESTREAM_LANGUAGE.key] = code
         return true
     }

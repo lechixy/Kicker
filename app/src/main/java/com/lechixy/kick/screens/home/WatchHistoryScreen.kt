@@ -4,16 +4,15 @@ import android.widget.Toast
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,22 +25,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lechixy.kick.R
 import com.lechixy.kick.components.ContentGrid
+import com.lechixy.kick.components.ContentPageHeader
 import com.lechixy.kick.components.ContinueWatchingCard
 import com.lechixy.kick.components.ExpansionSource
 import com.lechixy.kick.components.LocalContentNavigation
+import com.lechixy.kick.components.settings.SettingsContentWidth
 import com.lechixy.kick.data.player.local.WatchHistoryEntry
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
 internal const val WatchHistoryRoute = "home/watch-history"
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun WatchHistoryScreen(viewModel: HomeViewModel, onBack: () -> Unit) {
     val history by viewModel.watchHistory.collectAsStateWithLifecycle()
@@ -50,23 +48,9 @@ internal fun WatchHistoryScreen(viewModel: HomeViewModel, onBack: () -> Unit) {
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        stringResource(R.string.home_continue_watching),
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            painterResource(R.drawable.arrow_back_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
-                            stringResource(R.string.navigation_back),
-                        )
-                    }
-                },
+            ContentPageHeader(
+                title = stringResource(R.string.home_continue_watching),
+                onBack = onBack,
                 actions = {
                     IconButton(onClick = { confirmClear = true }, enabled = history.isNotEmpty() && !openingHistory) {
                         Icon(
@@ -87,15 +71,17 @@ internal fun WatchHistoryScreen(viewModel: HomeViewModel, onBack: () -> Unit) {
                 )
             }
         } else {
-            ContentGrid(Modifier.padding(padding).padding(top = 6.dp)) {
-                items(history, key = { it.key }) { entry ->
-                    Box(Modifier.animateItem()) {
-                        ContinueWatchingCard(
-                            entry = entry,
-                            enabled = !openingHistory,
-                            onRemove = { viewModel.removeHistory(entry.key) },
-                            onClick = { playHistory(entry, it) },
-                        )
+            Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.TopCenter) {
+                ContentGrid(Modifier.widthIn(max = SettingsContentWidth).padding(top = 6.dp)) {
+                    items(history, key = { it.key }) { entry ->
+                        Box(Modifier.animateItem()) {
+                            ContinueWatchingCard(
+                                entry = entry,
+                                enabled = !openingHistory,
+                                onRemove = { viewModel.removeHistory(entry.key) },
+                                onClick = { playHistory(entry, it) },
+                            )
+                        }
                     }
                 }
             }

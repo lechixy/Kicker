@@ -10,6 +10,7 @@ class NavigationSelectionTest {
         assertTrue(navigationDestinationSelected("following", null, "following"))
         assertTrue(navigationDestinationSelected("search?query=kick", null, "search"))
         assertTrue(navigationDestinationSelected("browse?slug=just-chatting", null, "browse"))
+        assertTrue(navigationDestinationSelected("category/just-chatting", null, "browse"))
         assertFalse(navigationDestinationSelected("search?query=kick", null, "browse"))
         assertFalse(navigationDestinationSelected("browse?slug=just-chatting", null, "search"))
         assertFalse(navigationDestinationSelected("home", null, "settings"))

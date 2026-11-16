@@ -1,3 +1,32 @@
 <resources>
-    <string name="events_coming_soon">Events will be available here soon</string>
+    <string name="events_only_on_kick">Only on KICK</string>
+    <string name="events_live_now">Live right now</string>
+    <string name="events_upcoming">Upcoming events</string>
+    <string name="events_back">Back to events</string>
+    <string name="events_host">Host</string>
+    <string name="events_verified_host">Verified host</string>
+    <string name="events_channel_count">+%1$s</string>
+    <string name="events_participating_channels">Participating channels</string>
+    <string name="events_open_host">Open %1$s’s channel</string>
+    <string name="events_open_details">View event details</string>
+    <string name="events_viewer_badge">%1$s watching</string>
+    <string name="events_remind_me">Remind me</string>
+    <string name="events_reminder_set">Reminder set</string>
+    <string name="events_reminder_sign_in">Sign in to set an event reminder.</string>
+    <string name="events_reminder_failed">Couldn’t update the reminder. Try again.</string>
+    <string name="events_empty">There are no events to show right now.</string>
+    <string name="events_load_failed">Couldn’t load events.</string>
+    <string name="events_partial_error">Some events couldn’t be refreshed.</string>
+    <string name="events_detail_load_failed">Couldn’t load the event details.</string>
+    <string name="events_streams_load_failed">Couldn’t load the event streams.</string>
+    <string name="events_clips_load_failed">Couldn’t load the key moments.</string>
+    <string name="events_no_streams">There are no live streams for this event right now.</string>
+    <string name="events_live_streams">Live streams</string>
+    <string name="events_show_all_streams">Show all streams</string>
+    <string name="events_streaming_count">%1$d streaming</string>
+    <string name="events_share">Share event</string>
+    <string name="events_starts_in">Starts %1$s</string>
+    <string name="events_key_moments">Key moments</string>
+    <string name="events_clips_latest">Latest</string>
+    <string name="events_clips_most_viewed">Most viewed</string>
 </resources>

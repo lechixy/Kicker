@@ -5,7 +5,9 @@ import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -22,8 +24,11 @@ import com.lechixy.kick.data.browse.model.BrowseCategory
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BrowseScreen(viewModel: BrowseViewModel = viewModel(),
-    selectedSlug: String? = null) {
+fun BrowseScreen(
+    viewModel: BrowseViewModel = viewModel(),
+    selectedSlug: String? = null,
+    onEventsClick: (() -> Unit)? = null
+) {
     val navigation = LocalContentNavigation.current
     val state by viewModel.state.collectAsStateWithLifecycle()
     val grid = rememberLazyGridState()
@@ -38,9 +43,23 @@ fun BrowseScreen(viewModel: BrowseViewModel = viewModel(),
                 LazyVerticalGrid(GridCells.Adaptive(150.dp), state = grid, modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    item(span = { GridItemSpan(maxLineSpan) }) { SectionHeader(stringResource(R.string.section_categories), compact = true) }
+                    item(span = { GridItemSpan(maxLineSpan) }) {
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            SectionHeader(stringResource(R.string.section_categories), modifier = Modifier.weight(1f), compact = true)
+                            if (onEventsClick != null) {
+                                FilledTonalButton(onClick = onEventsClick) {
+                                    Icon(
+                                        painterResource(R.drawable.local_activity_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
+                                        null, Modifier.size(18.dp)
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(stringResource(R.string.events))
+                                }
+                            }
+                        }
+                    }
                     if (state.loading) items(12) { CategoryCard(BrowseCategory(name = "", slug = ""), {}, loading = true) }
-                    else items(state.categories, key = { it.slug }) { CategoryCard(it, { navigation.search(it.name) }) }
+                    else items(state.categories, key = { it.slug }) { CategoryCard(it, { navigation.category(it.slug) }) }
                     state.error?.let { message -> item(span = { GridItemSpan(maxLineSpan) }) {
                         ContentState(message, if (state.categories.isEmpty()) viewModel::refresh else viewModel::more)
                     } }

@@ -1,3 +1,32 @@
 <resources>
-    <string name="events_coming_soon">Etkinlikler yakında burada olacak</string>
+    <string name="events_only_on_kick">Sadece KICK’te</string>
+    <string name="events_live_now">Şu anda canlı</string>
+    <string name="events_upcoming">Yaklaşan etkinlikler</string>
+    <string name="events_back">Etkinliklere dön</string>
+    <string name="events_host">Ev sahibi</string>
+    <string name="events_verified_host">Doğrulanmış ev sahibi</string>
+    <string name="events_channel_count">+%1$s</string>
+    <string name="events_participating_channels">Katılan kanallar</string>
+    <string name="events_open_host">%1$s kanalını aç</string>
+    <string name="events_open_details">Etkinlik ayrıntılarını gör</string>
+    <string name="events_viewer_badge">%1$s izleyici</string>
+    <string name="events_remind_me">Bana hatırlat</string>
+    <string name="events_reminder_set">Hatırlatıcı kuruldu</string>
+    <string name="events_reminder_sign_in">Hatırlatıcı kurmak için giriş yap.</string>
+    <string name="events_reminder_failed">Hatırlatıcı güncellenemedi. Tekrar dene.</string>
+    <string name="events_empty">Şu anda gösterilecek etkinlik yok.</string>
+    <string name="events_load_failed">Etkinlikler yüklenemedi.</string>
+    <string name="events_partial_error">Bazı etkinlikler yenilenemedi.</string>
+    <string name="events_detail_load_failed">Etkinlik ayrıntıları yüklenemedi.</string>
+    <string name="events_streams_load_failed">Etkinliğin yayınları yüklenemedi.</string>
+    <string name="events_clips_load_failed">Öne çıkan anlar yüklenemedi.</string>
+    <string name="events_no_streams">Bu etkinlikte şu anda canlı yayın yok.</string>
+    <string name="events_live_streams">Canlı yayınlar</string>
+    <string name="events_show_all_streams">Tüm yayınları göster</string>
+    <string name="events_streaming_count">%1$d canlı yayın</string>
+    <string name="events_share">Etkinliği paylaş</string>
+    <string name="events_starts_in">%1$s başlıyor</string>
+    <string name="events_key_moments">Öne çıkan anlar</string>
+    <string name="events_clips_latest">En yeni</string>
+    <string name="events_clips_most_viewed">En çok izlenen</string>
 </resources>

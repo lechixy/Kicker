@@ -24,6 +24,7 @@ data class SettingKey<T>(
 
 object SettingsKeys {
     val IS_FIRST_RUN = SettingKey(booleanPreferencesKey("is_first_run"), true, SettingType.BooleanType, isExportable = false)
+    val WELCOME_COMPLETED = SettingKey(booleanPreferencesKey("welcome_completed"), false, SettingType.BooleanType, isExportable = false)
     val LAST_USED_VERSION = SettingKey(stringPreferencesKey("last_used_version"), "", SettingType.StringType, isExportable = false)
     val NAVIGATION_RAIL_EXPANDED = SettingKey(booleanPreferencesKey("navigation_rail_expanded"), false, SettingType.BooleanType)
     val DEVELOPER_ENABLED = SettingKey(booleanPreferencesKey("developer_enabled"), false, SettingType.BooleanType, isExportable = false)

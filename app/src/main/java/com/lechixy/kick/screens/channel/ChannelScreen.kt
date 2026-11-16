@@ -57,9 +57,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryScrollableTabRow
@@ -111,6 +108,8 @@ import com.lechixy.kick.components.ChannelTabSpace
 import com.lechixy.kick.components.ContentState
 import com.lechixy.kick.components.LiveBadge
 import com.lechixy.kick.components.LocalContentNavigation
+import com.lechixy.kick.components.FilterDropdown
+import com.lechixy.kick.components.ClipVideoCard
 import com.lechixy.kick.components.LocalPlayerAmbientState
 import com.lechixy.kick.components.LocalPlayerFullscreenProgress
 import com.lechixy.kick.components.PlayerHostState
@@ -142,7 +141,6 @@ import com.lechixy.kick.data.channel.model.ChannelClip
 import com.lechixy.kick.data.channel.model.ChannelDetail
 import com.lechixy.kick.data.channel.model.ChannelEvent
 import com.lechixy.kick.data.channel.model.ChannelVideo
-import com.lechixy.kick.data.channel.model.VideoThumbnail
 import com.lechixy.kick.data.channel.model.getBannerUrl
 import com.lechixy.kick.data.chat.model.ChatTimestampMode
 import com.lechixy.kick.data.player.model.RecordedPlayback
@@ -1386,26 +1384,7 @@ private fun <T> ChannelMediaFilter(
     label: (T) -> Int,
     onSelect: (T) -> Unit
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    Box {
-        FilterChip(
-            selected = true,
-            onClick = { expanded = true },
-            label = { Text(stringResource(label(selected))) },
-            trailingIcon = {
-                Icon(painterResource(R.drawable.keyboard_arrow_down_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
-                    contentDescription = null, modifier = Modifier.size(18.dp))
-            }
-        )
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            options.forEach { option ->
-                DropdownMenuItem(text = { Text(stringResource(label(option))) }, onClick = {
-                    expanded = false
-                    onSelect(option)
-                })
-            }
-        }
-    }
+    FilterDropdown(stringResource(label(selected)), options, { stringResource(label(it)) }, onSelect = onSelect)
 }
 
 @Composable
@@ -1426,9 +1405,7 @@ private fun ChannelClipCard(
     onDownloadRecording: (RecordedPlayback) -> Unit
 ) {
     val recording = remember(clip) { clip.toRecording() }
-    VideoCard(video = ChannelVideo(id = 0, sessionTitle = clip.title, duration = recording.durationMs,
-        createdAt = clip.createdAt, views = clip.views, thumbnail = VideoThumbnail(src = clip.thumbnailUrl)), progressId = clip.id,
-        onDownload = { onDownloadRecording(recording) }, onClick = { onPlayRecording(recording) })
+    ClipVideoCard(clip, onDownload = { onDownloadRecording(recording) }, onClick = { onPlayRecording(recording) })
 }
 
 @Composable

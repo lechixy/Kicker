@@ -210,7 +210,7 @@ fun HomeScreen(
                                         onMore = onFollowingClick, itemKey = { it.id }, skeleton = { StreamCardSkeleton() }) { stream ->
                                         StreamCard(stream, onClick = { stream.channel?.slug?.let { onStreamClick(it, null) } },
                                             onClickWithSource = { source -> stream.channel?.slug?.let { onStreamClick(it, source) } },
-                                            onCategoryClick = onCategoryClick)
+                                            onCategoryClick = onCategoryClick, compactViewerCount = true)
                                     }
                                     if (!state.following.loading) {
                                         state.following.error?.let { message -> item(key = "following_error", span = { GridItemSpan(maxLineSpan) }) {
@@ -232,7 +232,7 @@ fun HomeScreen(
                                     loading = loading, itemKey = { it.id }, skeleton = { StreamCardSkeleton() }) { stream ->
                                     StreamCard(stream, onClick = { stream.channel?.slug?.let { onStreamClick(it, null) } },
                                         onClickWithSource = { source -> stream.channel?.slug?.let { onStreamClick(it, source) } },
-                                        onCategoryClick = onCategoryClick)
+                                        onCategoryClick = onCategoryClick, compactViewerCount = true)
                                 }
                             }
                         }

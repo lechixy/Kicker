@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -29,6 +30,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -40,19 +42,94 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.constrainHeight
+import androidx.compose.ui.unit.constrainWidth
 import androidx.compose.ui.unit.dp
 import com.lechixy.kick.R
 
 /** Shared sizing for media, video and channel cards, including their placeholders. */
 fun contentColumns(width: Dp): Int = if (width < 600.dp) 2 else (width / 280.dp).toInt().coerceAtLeast(2)
+
+@Composable
+internal fun cardLineHeight(style: TextStyle): Dp = with(LocalDensity.current) {
+    (if (style.lineHeight.isSp) style.lineHeight else style.fontSize).toDp()
+}
+
+@Composable
+internal fun CardTagRow(
+    spacing: Dp,
+    chipVerticalPadding: Dp,
+    content: @Composable () -> Unit,
+) {
+    Layout(
+        content = content,
+        modifier = Modifier.fillMaxWidth().heightIn(min = cardLineHeight(MaterialTheme.typography.labelSmall) + chipVerticalPadding),
+    ) { measurables, constraints ->
+        val spacingCount = (measurables.size - 1).coerceAtLeast(0)
+        val gap = spacing.roundToPx().coerceAtMost(constraints.maxWidth / spacingCount.coerceAtLeast(1))
+        val limits = IntArray(measurables.size) { constraints.maxWidth }
+        if (constraints.hasBoundedWidth) {
+            // Short chips keep their natural width and leave the rest for the longer labels.
+            val preferredWidths = measurables.map { it.maxIntrinsicWidth(Constraints.Infinity) }
+            var remaining = constraints.maxWidth - gap * spacingCount
+            preferredWidths.indices.sortedBy { preferredWidths[it] }.forEachIndexed { assigned, index ->
+                val width = minOf(preferredWidths[index], remaining / (measurables.size - assigned))
+                limits[index] = width
+                remaining -= width
+            }
+        }
+        val chips = measurables.mapIndexed { index, chip ->
+            chip.measure(constraints.copy(minWidth = 0, minHeight = 0, maxWidth = limits[index]))
+        }
+        val width = constraints.constrainWidth(chips.sumOf { it.width } + gap * spacingCount)
+        val height = constraints.constrainHeight(chips.maxOfOrNull { it.height } ?: 0)
+        layout(width, height) {
+            var x = 0
+            chips.forEach { chip ->
+                chip.placeRelative(x, (height - chip.height) / 2)
+                x += chip.width + gap
+            }
+        }
+    }
+}
+
+@Composable
+internal fun ContentPageHeader(
+    title: String,
+    onBack: () -> Unit,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onBack) {
+            Icon(
+                painterResource(R.drawable.arrow_back_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
+                stringResource(R.string.navigation_back),
+            )
+        }
+        Text(
+            title, Modifier.weight(1f).semantics { heading() },
+            style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
+            maxLines = 1, overflow = TextOverflow.Ellipsis,
+        )
+        actions()
+    }
+}
 
 @Composable
 fun SectionHeader(title: String, onMore: (() -> Unit)? = null, moreEnabled: Boolean = true,

@@ -1,0 +1,22 @@
+<resources>
+    <string name="welcome_settings_title">Welcome screen</string>
+    <string name="welcome_settings_summary">Revisit setup, connect your Kick account, or import a backup.</string>
+    <string name="welcome_intro_title">Welcome to Kicker</string>
+    <string name="welcome_intro_body">We built Kicker to make it easier to find streams you care about, keep up with your favorite creators, and watch the way that works for you.</string>
+    <string name="welcome_account_title">Connect your Kick account?</string>
+    <string name="welcome_account_body">Bring your followed channels with you and join the chat. You can also browse and watch as a guest.</string>
+    <string name="welcome_account_connected">Kick account connected</string>
+    <string name="welcome_account_connected_as">Connected as %1$s</string>
+    <string name="welcome_backup_title">Have a Kicker backup?</string>
+    <string name="welcome_backup_body">Import your backup to bring back your settings and watch history, or continue with a fresh setup.</string>
+    <string name="welcome_ready_title">Good to go.</string>
+    <string name="welcome_ready_body">We hope you enjoy the experience. See you in chat!</string>
+    <string name="welcome_get_started">Get started</string>
+    <string name="welcome_continue">Continue</string>
+    <string name="welcome_skip">Skip for now</string>
+    <string name="welcome_import_backup">Import a backup</string>
+    <string name="welcome_open_app">Open Kicker</string>
+    <string name="welcome_finish_failed">Couldn’t save setup. Try again.</string>
+    <string name="welcome_close">Close</string>
+    <string name="welcome_back">Previous step</string>
+</resources>

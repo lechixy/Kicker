@@ -120,6 +120,7 @@ fun ChannelCard(
                 ) {
                     Text(
                         text = channel.user?.username ?: "",
+                        modifier = Modifier.weight(1f, fill = false),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.SemiBold,
                         maxLines = 1,
@@ -138,7 +139,9 @@ fun ChannelCard(
                 Text(
                     text = channel.slug,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline
+                    color = MaterialTheme.colorScheme.outline,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
 

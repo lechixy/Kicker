@@ -28,4 +28,7 @@ internal fun navigationPopExit(from: String? = null, to: String? = null) = if (c
 else fadeOut(tween(300)) + scaleOut(targetScale = .98f, animationSpec = tween(300, easing = FastOutSlowInEasing))
 
 internal fun navigationDestinationSelected(route: String?, activeChannelSlug: String?, destination: String): Boolean =
-    activeChannelSlug == null && route?.substringBefore('?')?.substringBefore('/') == destination
+    activeChannelSlug == null && when (val section = route?.substringBefore('?')?.substringBefore('/')) {
+        "category" -> destination == "browse"
+        else -> section == destination
+    }

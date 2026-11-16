@@ -22,10 +22,16 @@ fun FollowedChannelCard(channel: FollowedChannel, modifier: Modifier = Modifier,
             AsyncImage(model = channel.avatar, contentDescription = null, modifier = Modifier.size(48.dp))
             Column(Modifier.weight(1f)) {
                 Text(channel.username, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(if (channel.live) "Canlı" else "Çevrimdışı", color = MaterialTheme.colorScheme.primary)
-                channel.title?.let { Text(it, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-                channel.category?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-                if (channel.live && channel.showViewers && channel.viewers != null) Text("${channel.viewers} izleyici", style = MaterialTheme.typography.bodySmall)
+                Text(
+                    if (channel.live) "Canlı" else "Çevrimdışı", color = MaterialTheme.colorScheme.primary,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                Text(channel.title.orEmpty(), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(channel.category.orEmpty(), style = MaterialTheme.typography.bodySmall, maxLines = 1,
+                    overflow = TextOverflow.Ellipsis)
+                val viewers = channel.viewers?.takeIf { channel.live && channel.showViewers }
+                Text(viewers?.let { "$it izleyici" }.orEmpty(), style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
     }

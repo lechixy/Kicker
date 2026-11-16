@@ -25,4 +25,12 @@ class RecommendedStreamLanguageTest {
         assertNull(kickLanguageCode("not-a-language"))
         assertEquals("en", recommendedStreamLanguage(Locale.ROOT))
     }
+
+    @Test fun streamPreferencesRetainKickSpecificLanguageCodes() {
+        assertEquals("en-IN", preferredStreamLanguageCode("en_in"))
+        assertEquals("fil", preferredStreamLanguageCode("fil"))
+        assertEquals("ast", preferredStreamLanguageCode("ast"))
+        assertEquals("mo", preferredStreamLanguageCode("mo"))
+        assertEquals("en", preferredStreamLanguageCode("en-US"))
+    }
 }

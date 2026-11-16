@@ -83,14 +83,15 @@ fun ContinueWatchingCard(
                         Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                         style = MaterialTheme.typography.labelSmall, color = Color.White)
                 }
+                if (entry.durationMs > 0) LinearProgressIndicator(
+                    progress = { (entry.positionMs.toDouble() / entry.durationMs).toFloat().coerceIn(0f, 1f) },
+                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(3.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    trackColor = MaterialTheme.colorScheme.primary.copy(alpha = .18f),
+                    strokeCap = StrokeCap.Butt,
+                    gapSize = 0.dp, drawStopIndicator = {},
+                )
             }
-            if (entry.durationMs > 0) LinearProgressIndicator(
-                progress = { (entry.positionMs.toDouble() / entry.durationMs).toFloat().coerceIn(0f, 1f) },
-                modifier = Modifier.fillMaxWidth().height(3.dp),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = MaterialTheme.colorScheme.primary.copy(alpha = .18f),
-                strokeCap = StrokeCap.Butt,
-                gapSize = 0.dp, drawStopIndicator = {})
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(entry.title.ifBlank { entry.channelName }, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold,
                     maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)

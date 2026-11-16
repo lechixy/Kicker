@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="category_event_streaming">%1$s canlı yayın</string>
+    <string name="category_filter_by">Filtrele</string>
+    <string name="category_languages">Diller</string>
+    <string name="category_all_languages">Tüm diller</string>
+    <string name="category_sort_by">Sırala</string>
+    <string name="category_sort_featured">Öne çıkanlar</string>
+    <string name="category_sort_viewers">İzleyici sayısı (azalan)</string>
+    <string name="category_load_failed">Bu kategori yüklenemedi</string>
+    <string name="category_streams_load_failed">Canlı yayınlar yüklenemedi</string>
+    <string name="category_no_live_streams">Filtrelerinize uyan canlı yayın yok</string>
+    <string name="category_no_clips">Bu kategoride henüz klip yok</string>
+    <string name="category_follow_failed">Kategori takip durumu güncellenemedi</string>
+</resources>

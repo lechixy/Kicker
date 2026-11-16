@@ -2,11 +2,19 @@ package com.lechixy.kick.util
 
 import java.util.Locale
 
-/** Kick uses a lower-case base language code, never a country or BCP-47 region tag. */
+/** Normalize a locale to its two-letter base language for existing preferences. */
 fun kickLanguageCode(value: String): String? {
     val language = Locale.forLanguageTag(value.trim().replace('_', '-')).language.lowercase(Locale.ROOT)
     val canonical = when (language) { "iw" -> "he"; "in" -> "id"; "ji" -> "yi"; else -> language }
     return canonical.takeIf { it.length == 2 && it in Locale.getISOLanguages() }
+}
+
+internal fun preferredStreamLanguageCode(value: String): String? {
+    val tag = Locale.forLanguageTag(value.trim().replace('_', '-')).toLanguageTag()
+    return when (tag) {
+        "ast", "en-IN", "fil", "mo" -> tag
+        else -> kickLanguageCode(tag)
+    }
 }
 
 fun recommendedStreamLanguage(locale: Locale): String {

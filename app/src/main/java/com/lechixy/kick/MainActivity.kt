@@ -113,7 +113,7 @@ import com.lechixy.kick.screens.home.HomeScreen
 import com.lechixy.kick.screens.home.HomeViewModel
 import com.lechixy.kick.screens.home.WatchHistoryRoute
 import com.lechixy.kick.screens.home.WatchHistoryScreen
-import com.lechixy.kick.screens.settings.SettingsBackupHost
+import com.lechixy.kick.screens.settings.WelcomeHost
 import com.lechixy.kick.screens.settings.SettingsDestinations
 import com.lechixy.kick.screens.settings.SettingsHost
 import com.lechixy.kick.screens.you.YouHost
@@ -248,7 +248,7 @@ class MainActivity : ComponentActivity() {
                     dynamicColor = dynamicColor,
                     launchSplashVisible = !nativeSplashDismissed
                 ) {
-                    SettingsBackupHost(settingsBackupManager) { restorePending ->
+                    WelcomeHost(settingsBackupManager) { restorePending ->
                         KickApp(restorePending)
                     }
                 }
@@ -318,6 +318,7 @@ fun KickApp(restorePending: Boolean = false) {
         }
     }
     val navController = rememberNavController()
+    val eventsOwner = checkNotNull(LocalViewModelStoreOwner.current)
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
     val searchViewModel: com.lechixy.kick.screens.search.SearchViewModel = viewModel()
@@ -327,8 +328,8 @@ fun KickApp(restorePending: Boolean = false) {
     // Tek yerde tutulan player oturumu; ChannelScreen, mini player ve nav bar buradan beslenir.
     val chatWidth = SettingsKeys.chatWidth(androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp)
     val playerHost = rememberPlayerHostState(chatWidth.defaultValue)
-    var chatClipId by rememberSaveable { mutableStateOf<String?>(null) }
-    val openChatClip: (String) -> Unit = remember { { chatClipId = it } }
+    var activeClipId by rememberSaveable { mutableStateOf<String?>(null) }
+    val openClip: (String) -> Unit = remember { { activeClipId = it } }
     val settingsRepository = LocalSettingsRepository.current
     LaunchedEffect(settingsRepository, chatWidth) {
         settingsRepository.get(chatWidth).collect { savedFraction ->
@@ -348,7 +349,7 @@ fun KickApp(restorePending: Boolean = false) {
     val isInPipMode = pipActive || enteringPip
     val winterSnow by settingsRepository.get(SettingsKeys.WINTER_SNOW)
         .collectAsStateWithLifecycle(SettingsKeys.WINTER_SNOW.defaultValue)
-    val showSnow = winterSnow && !isInPipMode && playerHost.mode != PlayerMode.Fullscreen && chatClipId == null
+    val showSnow = winterSnow && !isInPipMode && playerHost.mode != PlayerMode.Fullscreen && activeClipId == null
     val snowFollowsScroll by settingsRepository.get(SettingsKeys.WINTER_SNOW_SCROLL)
         .collectAsStateWithLifecycle(SettingsKeys.WINTER_SNOW_SCROLL.defaultValue)
     val snowScrollOffset = remember { mutableDoubleStateOf(0.0) }
@@ -367,6 +368,9 @@ fun KickApp(restorePending: Boolean = false) {
 
     val openChannel: (String, ExpansionSource?) -> Unit =
         { slug, source -> playerHost.open(slug, source) }
+    val openEvent: (String) -> Unit = { slug ->
+        navController.navigate("events/${android.net.Uri.encode(slug)}") { launchSingleTop = true }
+    }
     val navType =
         NavigationSuiteScaffoldDefaults.calculateFromAdaptiveInfo(currentWindowAdaptiveInfoV2())
     val useBottomBar = navType.toString().contains("NavigationBar", ignoreCase = true)
@@ -392,7 +396,7 @@ fun KickApp(restorePending: Boolean = false) {
         contentColor = MaterialTheme.colorScheme.onBackground
     ) {
         CompositionLocalProvider(
-            com.lechixy.kick.components.channel.chat.LocalOpenChatClip provides openChatClip,
+            com.lechixy.kick.components.channel.chat.LocalOpenChatClip provides openClip,
             com.lechixy.kick.components.account.LocalOpenChallenges provides {
                 challengesOpen = true
             },
@@ -409,8 +413,12 @@ fun KickApp(restorePending: Boolean = false) {
                 },
                 category = { slug ->
                     if (playerHost.isChannelVisible) playerHost.minimize()
-                    navController.navigate("browse?slug=${android.net.Uri.encode(slug)}") {
-                        launchSingleTop = true
+                    if (slug.isBlank()) {
+                        navController.navigate("browse") { launchSingleTop = true }
+                    } else if (navController.currentBackStackEntry?.arguments?.getString("slug") != slug ||
+                        navController.currentDestination?.route != "category/{slug}"
+                    ) {
+                        navController.navigate("category/${android.net.Uri.encode(slug)}")
                     }
                 }, channel = { openChannel(it, null) },
                 recording = { slug, recording, source ->
@@ -446,8 +454,7 @@ fun KickApp(restorePending: Boolean = false) {
                             .background(MaterialTheme.colorScheme.background)
                     ) {
                         Column(Modifier.fillMaxSize()) {
-                            val showSharedTopBar = currentRoute != WatchHistoryRoute
-                            if (showSharedTopBar) com.lechixy.kick.components.HomeTopBar(
+                            com.lechixy.kick.components.HomeTopBar(
                                 forceVisible = true,
                                 settingsSelected = currentRoute?.substringBefore('/') == "settings",
                                 onSettingsClick = {
@@ -478,9 +485,7 @@ fun KickApp(restorePending: Boolean = false) {
                                 navController = navController,
                                 modifier = Modifier
                                     .weight(1f)
-                                    .then(if (showSharedTopBar) {
-                                        Modifier.consumeWindowInsets(WindowInsets.statusBars)
-                                    } else Modifier),
+                                    .consumeWindowInsets(WindowInsets.statusBars),
                                 startDestination = "home",
                                 enterTransition = {
                                     com.lechixy.kick.components.navigationEnter(
@@ -574,11 +579,39 @@ fun KickApp(restorePending: Boolean = false) {
                                     arguments = listOf(navArgument("slug") { defaultValue = "" })
                                 ) { entry ->
                                     com.lechixy.kick.screens.browse.BrowseScreen(
-                                        selectedSlug = entry.arguments?.getString("slug")
+                                        selectedSlug = entry.arguments?.getString("slug"),
+                                        onEventsClick = { navController.navigate("events") { launchSingleTop = true } }
+                                    )
+                                }
+                                composable(
+                                    "category/{slug}",
+                                    arguments = listOf(navArgument("slug") { type = NavType.StringType }),
+                                ) {
+                                    com.lechixy.kick.screens.category.CategoryScreen(
+                                        viewModel = hiltViewModel(),
+                                        eventsViewModel = hiltViewModel(eventsOwner),
+                                        onBack = { navController.popBackStack() },
+                                        onStreamClick = openChannel,
+                                        onEventClick = openEvent,
+                                        onClipClick = openClip,
                                     )
                                 }
                                 composable("events") {
-                                    com.lechixy.kick.screens.events.EventsScreen()
+                                    com.lechixy.kick.screens.events.EventsScreen(
+                                        onEventClick = openEvent,
+                                        viewModel = hiltViewModel(eventsOwner),
+                                    )
+                                }
+                                composable(
+                                    "events/{slug}",
+                                    arguments = listOf(navArgument("slug") { type = NavType.StringType }),
+                                ) {
+                                    com.lechixy.kick.screens.events.EventDetailScreen(
+                                        viewModel = hiltViewModel(),
+                                        onBack = { navController.popBackStack() },
+                                        onStreamClick = openChannel,
+                                        onClipClick = openClip,
+                                    )
                                 }
 
                                 composable("you") {
@@ -704,19 +737,19 @@ fun KickApp(restorePending: Boolean = false) {
                     onTriggerLive = { playerHost.triggerLiveAnnouncement(System.nanoTime()) },
                     canTriggerLive = playerHost.channel?.livestream != null && playerHost.recording == null && playerHost.mode != PlayerMode.Hidden
                 )
-                if (!isInPipMode) chatClipId?.let { id ->
+                if (!isInPipMode) activeClipId?.let { id ->
                     key(id) {
                         com.lechixy.kick.screens.clip.ClipPlayerDialog(
                             clipId = id,
-                            onClose = { chatClipId = null },
+                            onClose = { activeClipId = null },
                             onWatchLivestream = { clip ->
-                                chatClipId = null
+                                activeClipId = null
                                 openChannel(clip.channel.slug, null)
                                 playerHost.playLive()
                             },
                             onWatchFullVideo = { clip ->
                                 clip.video?.let { video ->
-                                    chatClipId = null
+                                    activeClipId = null
                                     openChannel(clip.channel.slug, null)
                                     playerHost.playRecording(
                                         com.lechixy.kick.data.player.model.RecordedPlayback(
@@ -810,7 +843,7 @@ internal fun KickNavScaffold(
         destinations.filter(AppDestinations::visibleInBottomBar).forEach { destination ->
             val targetRoute = destination.name.lowercase()
             val isSelected = com.lechixy.kick.components.navigationDestinationSelected(
-                currentRoute,
+                if (currentRoute?.substringBefore('/') == "events") "browse" else currentRoute,
                 activeChannelSlug,
                 targetRoute
             )

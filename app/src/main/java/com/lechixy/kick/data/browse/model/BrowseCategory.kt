@@ -5,7 +5,10 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class BrowseCategory(val id: Long = 0, val name: String, val slug: String,
-    val tags: List<String> = emptyList(), val viewers: Int = 0, val banner: CategoryBanner? = null)
+    val tags: List<String> = emptyList(), val viewers: Int = 0, val banner: CategoryBanner? = null,
+    val description: String? = null,
+    @SerialName("followers_count") val followersCount: Long = 0,
+    val followed: Boolean = false)
 @OptIn(kotlinx.serialization.ExperimentalSerializationApi::class)
 @Serializable
 data class CategoryBanner(@kotlinx.serialization.json.JsonNames("src") val url: String? = null, @kotlinx.serialization.json.JsonNames("srcset") val responsive: String? = null)
@@ -16,3 +19,6 @@ data class CategoriesResponse(val data: List<BrowseCategory> = emptyList(),
 
 @Serializable
 data class RecentCategoriesResponse(val data: List<BrowseCategory> = emptyList())
+
+@Serializable
+data class StreamLanguageCodesResponse(val data: List<String>)

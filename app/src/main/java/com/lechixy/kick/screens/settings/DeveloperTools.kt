@@ -70,6 +70,7 @@ fun DeveloperToolsScreen(onBackClick: () -> Unit, onTriggerLive: () -> Unit, can
             item("floating-menu") {
                 SettingSwitch(key = SettingsKeys.DEVELOPER_FLOATING_MENU, title = stringResource(R.string.developer_floating_menu))
             }
+            item("welcome") { WelcomeSetting() }
             item("diagnostics") {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     DeveloperToolsContent(onTriggerLive, canTriggerLive)

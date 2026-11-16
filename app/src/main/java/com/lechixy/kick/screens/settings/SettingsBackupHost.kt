@@ -37,7 +37,11 @@ internal data class SettingsBackupActions(
     val defaultPath: String,
     val importSettings: () -> Unit,
     val exportSettings: () -> Unit,
-    val chooseAutomaticLocation: () -> Unit
+    val chooseAutomaticLocation: () -> Unit,
+    val welcomeImportEnabled: Boolean,
+    val welcomeImport: () -> Unit,
+    val restoreFoundBackup: (() -> Unit)?,
+    val finishStartupRestore: suspend () -> Unit
 )
 
 internal val LocalSettingsBackupActions = compositionLocalOf<SettingsBackupActions?> { null }
@@ -45,6 +49,7 @@ internal val LocalSettingsBackupActions = compositionLocalOf<SettingsBackupActio
 @Composable
 internal fun SettingsBackupHost(
     backup: SettingsBackupManager,
+    welcomeAtStartup: Boolean,
     content: @Composable (restorePending: Boolean) -> Unit
 ) {
     val context = LocalContext.current
@@ -112,6 +117,20 @@ internal fun SettingsBackupHost(
             putExtra(DocumentsContract.EXTRA_INITIAL_URI, initialUri)
         })
     }
+    fun restoreFoundBackup() {
+        runBackupOperation(R.string.settings_backup_import_failed) {
+            val language = backup.restoreDefaultBackup()
+            offerRestore = StartupBackup.None
+            applyImportedLanguage(language)
+        }
+    }
+
+    suspend fun finishStartupRestore() {
+        if (offerRestore != StartupBackup.None) {
+            backup.finishStartupRestore(preserveBackup = true)
+            offerRestore = StartupBackup.None
+        }
+    }
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument(SettingsBackupManager.MIME_TYPE)
     ) { uri ->
@@ -136,16 +155,22 @@ internal fun SettingsBackupHost(
             defaultPath = backup.defaultPath,
             importSettings = { importLauncher.launch(arrayOf("*/*")) },
             exportSettings = { exportLauncher.launch(backup.fileName) },
-            chooseAutomaticLocation = { choosingLocation = true }
+            chooseAutomaticLocation = { choosingLocation = true },
+            welcomeImportEnabled = !busy && !choosingRestoreFile && offerRestore != null,
+            welcomeImport = {
+                if (offerRestore == StartupBackup.None) importLauncher.launch(arrayOf("*/*"))
+                else chooseRestoreFile()
+            },
+            restoreFoundBackup = if (offerRestore is StartupBackup.Found) ::restoreFoundBackup else null,
+            finishStartupRestore = ::finishStartupRestore
         )
     ) { content(offerRestore != StartupBackup.None || choosingLocation) }
 
     val offer = offerRestore
-    if (offer != null && offer != StartupBackup.None && !busy && !choosingRestoreFile) {
+    if (!welcomeAtStartup && offer != null && offer != StartupBackup.None && !busy && !choosingRestoreFile) {
         val skip = {
             runBackupOperation(R.string.settings_backup_restore_choice_failed) {
-                backup.finishStartupRestore(preserveBackup = true)
-                offerRestore = StartupBackup.None
+                finishStartupRestore()
             }
         }
         AlertDialog(
@@ -167,15 +192,7 @@ internal fun SettingsBackupHost(
             },
             confirmButton = {
                 TextButton(onClick = {
-                    if (offer is StartupBackup.Found) {
-                        runBackupOperation(R.string.settings_backup_import_failed) {
-                            val language = backup.restoreDefaultBackup()
-                            offerRestore = StartupBackup.None
-                            applyImportedLanguage(language)
-                        }
-                    } else {
-                        chooseRestoreFile()
-                    }
+                    if (offer is StartupBackup.Found) restoreFoundBackup() else chooseRestoreFile()
                 }) { Text(stringResource(if (offer is StartupBackup.Found) R.string.settings_backup_restore else R.string.settings_backup_choose_file)) }
             },
             dismissButton = {

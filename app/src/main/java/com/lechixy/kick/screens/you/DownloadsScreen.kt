@@ -399,10 +399,10 @@ internal fun DownloadCard(recording: RecordingDownload, onClick: () -> Unit) {
     val context = LocalContext.current
     Card(onClick, Modifier.fillMaxWidth()) {
         DownloadThumbnail(recording, Modifier.fillMaxWidth())
-        Text(recording.name, Modifier.padding(start = 8.dp, end = 8.dp, top = 8.dp), maxLines = 2,
+        Text(recording.name, Modifier.padding(start = 8.dp, end = 8.dp, top = 8.dp), maxLines = 1,
             overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
         Text(Formatter.formatFileSize(context, recording.size), Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.bodySmall)
+            style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 

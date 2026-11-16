@@ -30,6 +30,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -39,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 
 import com.lechixy.kick.R
+import com.lechixy.kick.components.channel.MetadataPill
 import com.lechixy.kick.data.common.model.Livestream
 import com.lechixy.kick.util.FormatUtils
 import com.lechixy.kick.util.buildOptimizedImageRequest
@@ -56,9 +58,13 @@ fun StreamCard(
     onClick: () -> Unit = {},
     onClickWithSource: ((ExpansionSource) -> Unit)? = null,
     recordingId: String? = null,
-    onCategoryClick: (String) -> Unit = com.lechixy.kick.components.LocalContentNavigation.current.category
+    onCategoryClick: (String) -> Unit = LocalContentNavigation.current.category,
+    compact: Boolean = false,
+    compactViewerCount: Boolean = compact,
 ) {
     val context = LocalContext.current
+    val locale = LocalConfiguration.current.locales[0]
+    val avatarSize = if (compact) 32 else 40
     var cardCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var thumbnailCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
 
@@ -76,7 +82,7 @@ fun StreamCard(
                     title = stream.title,
                     username = stream.channel?.username,
                     category = stream.category?.name,
-                    viewerCount = stream.viewerCount,
+                    viewerCount = stream.viewerCount.takeIf { stream.showViewCount },
                     isLive = true,
                     isStreamCard = true
                 )
@@ -100,7 +106,7 @@ fun StreamCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(16f / 9f)
-                    .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
+                    .clip(if (compact) RoundedCornerShape(8.dp) else RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
                     .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                     .onGloballyPositioned { thumbnailCoordinates = it },
                 contentAlignment = Alignment.Center
@@ -135,52 +141,65 @@ fun StreamCard(
 
                 Row(
                     modifier = Modifier
-                        .align(Alignment.BottomStart)
+                        .align(if (compact) Alignment.TopStart else Alignment.BottomStart)
                         .padding(8.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    LiveBadge()
+                    if (!compact || !stream.showViewCount) LiveBadge()
 
                     if (stream.showViewCount) {
                         Surface(
-                            color = Color.Black.copy(alpha = 0.7f),
+                            color = Color.Black.copy(alpha = if (compact) 0.75f else 0.7f),
                             shape = RoundedCornerShape(4.dp)
                         ) {
-                            Text(
-                                text = stringResource(R.string.viewers_count, FormatUtils.formatViewersCount(stream.viewerCount, androidx.compose.ui.platform.LocalConfiguration.current.locales[0])),
-                                color = Color.White,
-                                style = MaterialTheme.typography.labelSmall,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
+                            Row(
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                if (compact) Box(Modifier.size(6.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
+                                val count = if (compactViewerCount) {
+                                    FormatUtils.formatCompactCount(stream.viewerCount.toLong(), locale)
+                                } else {
+                                    FormatUtils.formatViewersCount(stream.viewerCount, locale)
+                                }
+                                Text(
+                                    text = if (compact) count else stringResource(R.string.viewers_count, count),
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = if (compact) FontWeight.Bold else null,
+                                )
+                            }
                         }
                     }
                 }
+                PlaybackProgressBar(recordingId, Modifier.align(Alignment.BottomCenter))
             }
-
-            PlaybackProgressBar(recordingId)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(12.dp),
+                    .padding(if (compact) 8.dp else 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 AsyncImage(
-                    model = remember(stream.channel?.profilePic) {
+                    model = remember(stream.channel?.profilePic, avatarSize) {
                         buildOptimizedImageRequest(
                             context = context,
                             data = stream.channel?.profilePic,
-                            targetWidthDp = 44,
-                            targetHeightDp = 44
+                            targetWidthDp = if (compact) avatarSize else 44,
+                            targetHeightDp = if (compact) avatarSize else 44
                         )
                     },
                     contentDescription = stream.channel?.username,
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(avatarSize.dp)
                         .clip(CircleShape),
                     contentScale = ContentScale.Crop
                 )
 
-                Column(modifier = Modifier.weight(1f)) {
+                if (compact) {
+                    CompactStreamMetadata(stream, onCategoryClick, Modifier.weight(1f))
+                } else Column(modifier = Modifier.weight(1f)) {
                     Text(
                         text = stream.title ?: "No Title",
                         style = MaterialTheme.typography.bodyMedium,
@@ -195,17 +214,43 @@ fun StreamCard(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
-                    stream.category?.let { cat ->
-                        Text(
-                            text = cat.name,
-                            modifier = Modifier.clickable { onCategoryClick(cat.slug) },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
+                    val category = stream.category
+                    Text(
+                        text = category?.name.orEmpty(),
+                        modifier = if (category == null) Modifier else Modifier.clickable { onCategoryClick(category.slug) },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactStreamMetadata(stream: Livestream, onCategoryClick: (String) -> Unit, modifier: Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(
+            stream.channel?.username.orEmpty(),
+            style = MaterialTheme.typography.labelLarge,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            stream.title.orEmpty(),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        CardTagRow(spacing = 4.dp, chipVerticalPadding = 4.dp) {
+            stream.category?.let { category ->
+                MetadataPill(category.name) { onCategoryClick(category.slug) }
+            }
+            stream.language?.takeIf(String::isNotBlank)?.let {
+                MetadataPill(streamLanguageName(it))
             }
         }
     }

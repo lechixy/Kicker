@@ -30,3 +30,6 @@ data class ChannelClip(
 @Serializable
 data class ClipResponse(val clip: ChannelClip)
 
+@Serializable
+data class CategoryClipsResponse(val clips: List<ChannelClip> = emptyList(), val nextCursor: String? = null)
+

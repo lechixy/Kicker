@@ -32,7 +32,9 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 
 import com.lechixy.kick.R
+import com.lechixy.kick.data.channel.model.ChannelClip
 import com.lechixy.kick.data.channel.model.ChannelVideo
+import com.lechixy.kick.data.channel.model.VideoThumbnail
 import com.lechixy.kick.data.channel.model.playbackId
 import com.lechixy.kick.util.FormatUtils
 import com.lechixy.kick.util.buildOptimizedImageRequest
@@ -43,11 +45,27 @@ fun VideoCardSkeleton(modifier: Modifier = Modifier) {
 }
 
 @Composable
+internal fun ClipVideoCard(clip: ChannelClip, onDownload: (() -> Unit)? = null, onClick: () -> Unit) {
+    val video = remember(clip) {
+        ChannelVideo(
+            id = 0,
+            sessionTitle = clip.title,
+            duration = (clip.duration * 1000).toLong(),
+            createdAt = clip.createdAt,
+            views = clip.views,
+            thumbnail = VideoThumbnail(src = clip.thumbnailUrl),
+        )
+    }
+    VideoCard(video, progressId = clip.id, onDownload = onDownload, showCategory = false, onClick = onClick)
+}
+
+@Composable
 fun VideoCard(
     video: ChannelVideo,
     modifier: Modifier = Modifier,
     progressId: String? = video.video?.uuid ?: video.uuid ?: video.playbackId,
     onDownload: (() -> Unit)? = null,
+    showCategory: Boolean = true,
     onClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -131,9 +149,8 @@ fun VideoCard(
                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
                 }
+                PlaybackProgressBar(progressId, Modifier.align(Alignment.BottomCenter))
             }
-
-            PlaybackProgressBar(progressId)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -144,25 +161,26 @@ fun VideoCard(
                     text = video.sessionTitle ?: "Untitled Broadcast",
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.SemiBold,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
 
-                video.categories.firstOrNull()?.let { cat ->
+                if (showCategory) {
                     Text(
-                        text = cat.name,
+                        text = video.categories.firstOrNull()?.name.orEmpty(),
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                         maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
 
                 val date = FormatUtils.formatRelativeTime(context, video.startTime)
                     ?: FormatUtils.formatRelativeTime(context, video.createdAt)
-                if (date != null) {
-                    Text(date, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                }
+                Text(
+                    date.orEmpty(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
             }
         }
     }

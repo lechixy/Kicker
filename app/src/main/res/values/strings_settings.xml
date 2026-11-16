@@ -83,7 +83,7 @@
     <string name="settings_recommendations">Recommendations</string>
     <string name="settings_recommendations_description">Customize your home feed</string>
     <string name="settings_recommended_language">Recommended livestream language</string>
-    <string name="settings_recommended_language_description">Preferred language code, such as tr or en</string>
+    <string name="settings_recommended_language_description">Preferred language for livestream recommendations and category listings</string>
     <string name="settings_volume_sync">Sync player volume with device</string>
     <string name="settings_volume_sync_description">Use the device media volume for the player slider and mute control, volume keys and external changes stay in sync</string>
     <string name="developer_player">Player diagnostics</string>

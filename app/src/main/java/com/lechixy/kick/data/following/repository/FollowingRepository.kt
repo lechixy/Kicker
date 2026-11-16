@@ -17,6 +17,7 @@ import kotlinx.serialization.json.*
 import com.lechixy.kick.data.account.remote.string
 import com.lechixy.kick.data.account.remote.userMessage
 import com.lechixy.kick.data.account.repository.AuthRepository
+import com.lechixy.kick.data.browse.model.BrowseCategory
 import com.lechixy.kick.data.common.model.FollowedLivestream
 import com.lechixy.kick.data.following.model.FollowedChannel
 import com.lechixy.kick.data.following.model.FollowingState
@@ -130,6 +131,17 @@ class FollowingRepository(private val auth: AuthRepository, private val scope: C
     }
 
     /** Current status comes from /me; the paginated list alone cannot prove a negative. */
+    suspend fun getCategory(slug: String): BrowseCategory =
+        json.decodeFromJsonElement(auth.requestElement(categoryUrl(slug).toString()))
+
+    suspend fun toggleCategoryFollow(slug: String) {
+        val url = categoryUrl(slug).newBuilder().addPathSegment("toggle-follow").build()
+        auth.requestElement(url.toString(), "POST")
+    }
+
+    private fun categoryUrl(slug: String) =
+        "https://kick.com/api/v1/subcategories/".toHttpUrl().newBuilder().addPathSegment(slug).build()
+
     suspend fun isFollowing(slug: String): Boolean {
         require(slug.matches(CHANNEL_SLUG))
         val response = auth.request("https://kick.com/api/v2/channels/$slug/me")

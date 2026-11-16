@@ -71,13 +71,15 @@ fun CategoryCard(category: BrowseCategory, onClick: () -> Unit, modifier: Modifi
                 }
                 Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(category.name, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    Text(category.name, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = Color.White)
-                    if (showTag) category.tags.firstOrNull()?.let { tag ->
-                        CategoryPill {
-                            Text(tag, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium,
-                                color = Color.White.copy(alpha = .9f))
+                    if (showTag) CardTagRow(spacing = 0.dp, chipVerticalPadding = 10.dp) {
+                        category.tags.firstOrNull()?.let { tag ->
+                            CategoryPill {
+                                Text(tag, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium,
+                                    color = Color.White.copy(alpha = .9f))
+                            }
                         }
                     }
                 }

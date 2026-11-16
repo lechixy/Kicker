@@ -86,7 +86,7 @@ class HomeViewModel @Inject constructor(
                 launch {
                     try {
                         val language = settingsRepository.get(SettingsKeys.RECOMMENDED_LIVESTREAM_LANGUAGE).first()
-                        val streams = kickRepository.getRecommendedLivestreams(com.lechixy.kick.util.kickLanguageCode(language) ?: "en")
+                        val streams = kickRepository.getRecommendedLivestreams(com.lechixy.kick.util.preferredStreamLanguageCode(language) ?: "en")
                         _uiState.update { it.copy(streams = streams) }
                     } catch (error: Exception) {
                         if (error is CancellationException) throw error

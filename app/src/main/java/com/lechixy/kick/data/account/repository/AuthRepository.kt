@@ -165,10 +165,10 @@ class AuthRepository(
             return result
         } catch (failure: AccountApiException) {
             if (failure.status == 401 && generation == session.value.generation) {
-                val channelFollowRequest = request.url.host == "kick.com" &&
+                val followRequest = request.url.host == "kick.com" &&
                     FOLLOW_SESSION_PATH.matches(request.url.encodedPath)
-                // A channel endpoint can reject the request while the Kick account is still valid.
-                if (!channelFollowRequest || profileRejectsSession(current)) synchronized(lock) {
+                // A follow endpoint can reject the request while the Kick account is still valid.
+                if (!followRequest || profileRejectsSession(current)) synchronized(lock) {
                     if (generation == session.value.generation) clear(SessionStatus.ReauthenticationRequired)
                 }
             }
@@ -234,7 +234,8 @@ class AuthRepository(
     companion object {
         private const val VIEWER_CLIENT_TOKEN = "e1393935a959b4020a4491574f6490129f678acdaa92760471263db43487f823"
         private const val PROFILE_URL = "https://kick.com/api/v1/user"
-        private val FOLLOW_SESSION_PATH = Regex("/api/v2/channels/[A-Za-z0-9_-]+/(me|follow)")
+        private val FOLLOW_SESSION_PATH =
+            Regex("/api/(v2/channels/[A-Za-z0-9_-]+/(me|follow)|v1/subcategories/[A-Za-z0-9_-]+/toggle-follow)")
         private val JSON_TYPE = "application/json".toMediaType()
         internal fun cookie(header: String, name: String): String? = header.split(';').map { it.trim().split('=', limit = 2) }
             .firstOrNull { it.size == 2 && it[0] == name }?.get(1)?.takeIf { it.isNotBlank() }

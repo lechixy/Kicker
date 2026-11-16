@@ -7,12 +7,18 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 import retrofit2.http.Url
 
+import com.lechixy.kick.data.browse.model.BrowseCategory
 import com.lechixy.kick.data.browse.model.SearchResponse
+import com.lechixy.kick.data.browse.model.StreamLanguageCodesResponse
+import com.lechixy.kick.data.channel.model.CategoryClipsResponse
 import com.lechixy.kick.data.channel.model.ChannelDetail
 import com.lechixy.kick.data.channel.model.ChannelEventResponse
 import com.lechixy.kick.data.channel.model.ChannelVideo
 import com.lechixy.kick.data.channel.model.ClipDetailResponse
 import com.lechixy.kick.data.channel.model.ClipResponse
+import com.lechixy.kick.data.channel.model.EventsBrowseResponse
+import com.lechixy.kick.data.channel.model.EventClipsResponse
+import com.lechixy.kick.data.channel.model.EventStreamsResponse
 import com.lechixy.kick.data.channel.model.VideoDetailResponse
 import com.lechixy.kick.data.chat.model.ChatHistoryResponse
 import com.lechixy.kick.data.chat.model.RealtimeAuthRequest
@@ -28,6 +34,21 @@ import com.lechixy.kick.data.player.model.PlaybackRequest
 import com.lechixy.kick.data.player.model.PlaybackResponse
 
 interface KickApi {
+    @GET("api/v1/events/browse")
+    suspend fun browseEvents(
+        @Query("collection") collection: String? = null,
+        @Query("status") status: String? = null
+    ): EventsBrowseResponse
+
+    @GET("api/v1/events/{slug}")
+    suspend fun getEvent(@Path("slug") slug: String): ChannelEventResponse
+
+    @GET("api/v1/events/{slug}/streams")
+    suspend fun getEventStreams(@Path("slug") slug: String): EventStreamsResponse
+
+    @GET("api/v1/events/{slug}/clips")
+    suspend fun getEventClips(@Path("slug") slug: String): EventClipsResponse
+
     @GET("https://web.kick.com/api/v1/channels/{channelId}/clips")
     suspend fun getPopularChannelClips(@Path("channelId") channelId: Long,
         @Query("sort") sort: String = "views", @Query("time") time: String = "all",
@@ -40,6 +61,25 @@ interface KickApi {
 
     @GET("https://kick.com/api/v1/subcategories")
     suspend fun getCategories(@Query("page") page: Int = 1, @Query("limit") limit: Int = 32): com.lechixy.kick.data.browse.model.CategoriesResponse
+
+    @GET("https://kick.com/api/v1/subcategories/{slug}")
+    suspend fun getCategory(@Path("slug") slug: String): BrowseCategory
+
+    @GET("https://kick.com/api/v2/categories/{slug}/clips")
+    suspend fun getCategoryClips(@Path("slug") slug: String, @Query("cursor") cursor: String?): CategoryClipsResponse
+
+    @GET("api/v1/livestreams/language-codes")
+    suspend fun getStreamLanguageCodes(): StreamLanguageCodesResponse
+
+    @GET("api/v1/livestreams")
+    suspend fun getCategoryLivestreams(
+        @Query("category_id") categoryId: Long,
+        @Query("sort") sort: String,
+        @Query("display_language") displayLanguage: String,
+        @Query("language") language: String?,
+        @Query("after") cursor: String?,
+        @Query("limit") limit: Int = 24,
+    ): LivestreamResponse
 
     @GET("https://kick.com/emotes/{slug}")
     suspend fun getEmotes(@Path("slug") slug: String): kotlinx.serialization.json.JsonElement

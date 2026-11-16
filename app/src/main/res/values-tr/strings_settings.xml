@@ -83,7 +83,7 @@
     <string name="settings_recommendations">Öneriler</string>
     <string name="settings_recommendations_description">Ana sayfa akışını kişiselleştir</string>
     <string name="settings_recommended_language">Önerilen yayın dili</string>
-    <string name="settings_recommended_language_description">Tercih edilen dil kodu, örneğin tr veya en</string>
+    <string name="settings_recommended_language_description">Yayın önerileri ve kategori listeleri için tercih edilen dil</string>
     <string name="settings_volume_sync">Oynatıcı sesini cihazla eşitle</string>
     <string name="settings_volume_sync_description">Oynatıcı ses çubuğu ve sessize alma için cihazın medya sesini kullanır, ses tuşları ve dışarıdan yapılan değişiklikler eşitlenir</string>
     <string name="developer_player">Player tanılama</string>

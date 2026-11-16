@@ -10,6 +10,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -19,6 +20,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lechixy.kick.R
+import com.lechixy.kick.components.rememberStreamLanguageCodes
+import com.lechixy.kick.components.streamLanguageOptions
 import com.lechixy.kick.components.channel.chat.FullscreenChatPositionSetting
 import com.lechixy.kick.components.channel.chat.FullscreenChatSettingsExpander
 import com.lechixy.kick.components.channel.chat.fullscreenChatOptions
@@ -55,6 +58,10 @@ internal fun settingsCatalog(expandGroups: Boolean = false): List<SettingsEntry>
         .collectAsStateWithLifecycle(SettingsKeys.FULLSCREEN_CHAT_HORIZONTAL.defaultValue)
     val backup = LocalSettingsBackupActions.current
     return listOf(
+        SettingsEntry("welcome", R.string.welcome_settings_title, R.string.welcome_settings_summary,
+            general, R.string.settings_group_interface) {
+            WelcomeSetting()
+        },
         SettingsEntry("developer-floating-menu", R.string.developer_floating_menu, null, SettingsDestinations.DEVELOPER, R.string.settings_group_interface) {
             SettingSwitch(SettingsKeys.DEVELOPER_FLOATING_MENU, stringResource(R.string.developer_floating_menu),
                 icon = R.drawable.tune_24dp_e3e3e3_fill0_wght400_grad0_opsz24)
@@ -66,8 +73,15 @@ internal fun settingsCatalog(expandGroups: Boolean = false): List<SettingsEntry>
                 onValueChanged = { updateAppLocale(context, it) })
         },
         SettingsEntry("recommendations", R.string.settings_recommended_language, R.string.settings_recommended_language_description, general, R.string.settings_group_language) {
-            SettingTextField(SettingsKeys.RECOMMENDED_LIVESTREAM_LANGUAGE, stringResource(R.string.settings_recommended_language),
-                description = stringResource(R.string.settings_recommended_language_description), placeholder = "tr",
+            val key = SettingsKeys.RECOMMENDED_LIVESTREAM_LANGUAGE
+            val repository = LocalSettingsRepository.current
+            val selected by remember(repository) { repository.get(key) }
+                .collectAsStateWithLifecycle(key.defaultValue)
+            val codes by rememberStreamLanguageCodes()
+            val options = remember(codes, selected) { streamLanguageOptions(codes + selected) }
+            SettingDropdown(key, stringResource(R.string.settings_recommended_language),
+                options = options,
+                description = stringResource(R.string.settings_recommended_language_description),
                 icon = R.drawable.public_24dp_e3e3e3_fill0_wght400_grad0_opsz24)
         },
         SettingsEntry("backup-account", R.string.settings_backup_account_title, R.string.settings_backup_account_description,
