@@ -1,5 +1,10 @@
 package com.lechixy.kick.components
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -32,6 +37,12 @@ import com.lechixy.kick.data.settings.model.FullscreenChatBlurStyle
 import com.lechixy.kick.data.settings.model.FullscreenChatShape
 import kotlin.math.roundToInt
 
+internal val playbackButtonEnter = scaleIn(
+    spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessMedium),
+    initialScale = 0.5f,
+)
+internal val playbackButtonExit = scaleOut(tween(160), targetScale = 0.65f)
+
 @Stable
 internal class FrostedPlayerRegions {
     val regions = mutableStateMapOf<Any, FullscreenChatBackdropRegion>()
@@ -57,6 +68,7 @@ internal fun BoxScope.FrostedPlayerControl(
     frame: State<FullscreenChatVideoFrame?>?,
     backdrop: FrostedPlayerRegions? = null,
     videoReady: Boolean = false,
+    followsControlsOpacity: Boolean = true,
 ) {
     var origin by remember { mutableStateOf(Offset.Zero) }
     val key = remember { Any() }
@@ -69,6 +81,7 @@ internal fun BoxScope.FrostedPlayerControl(
                 shape = FullscreenChatShape.Pill,
                 frostedControl = true,
                 style = FullscreenChatBlurStyle.FrostedGlass,
+                followsControlsOpacity = followsControlsOpacity,
             )
         }
     }.clip(CircleShape).border(1.5.dp, Color.White.copy(alpha = 0.1f), CircleShape).drawBehind {

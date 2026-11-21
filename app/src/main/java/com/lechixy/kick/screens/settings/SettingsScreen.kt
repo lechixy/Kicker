@@ -38,6 +38,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -46,6 +47,7 @@ import com.lechixy.kick.R
 import com.lechixy.kick.components.ColoredAppText
 import com.lechixy.kick.components.ReleaseDialog
 import com.lechixy.kick.components.animatedCreatorCard
+import com.lechixy.kick.components.releaseDateLabel
 import com.lechixy.kick.components.settings.SettingCard
 import com.lechixy.kick.components.settings.SettingsContentWidth
 import com.lechixy.kick.data.releases.GitHubRelease
@@ -53,8 +55,8 @@ import com.lechixy.kick.data.releases.ReleaseDialogMode
 import com.lechixy.kick.data.releases.ReleaseDialogRequest
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
-import com.lechixy.kick.util.AppUtils
 import com.lechixy.kick.util.AppUtils.getVersionAndInfo
+import java.time.Instant
 import kotlinx.coroutines.launch
 
 enum class SettingsDestinations(val titleRes: Int, val descriptionRes: Int, val icon: Int) {
@@ -153,7 +155,7 @@ internal fun SettingsAboutPage(
 ) {
     var selected by remember { mutableStateOf<GitHubRelease?>(null) }
     val aboutContent: LazyListScope.() -> Unit = {
-        item("about-summary") { AboutSummary() }
+        item("about-summary") { AboutSummary(state.latestPublicationTime) }
         releaseNotes(state, onRetry) { selected = it }
     }
     if (overviewContent == null) {
@@ -174,7 +176,7 @@ internal fun SettingsAboutPage(
 }
 
 @Composable
-private fun AboutSummary() {
+private fun AboutSummary(latestPublicationTime: Instant?) {
     val context = LocalContext.current
     val resources = LocalResources.current
     val appInfo = remember(context) { getVersionAndInfo(context) }
@@ -217,14 +219,14 @@ private fun AboutSummary() {
                     appInfo.versionName
                 )
             )
-            Spacer(modifier = Modifier.height(2.dp))
-            Text(
-                text = stringResource(
-                    R.string.settings_updated,
-                    AppUtils.formatLastUpdateTime(appInfo.lastUpdateTimeMs)
-                ),
-                color = MaterialTheme.colorScheme.secondary
-            )
+            latestPublicationTime?.let {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = stringResource(R.string.settings_updated, releaseDateLabel(it)),
+                    color = MaterialTheme.colorScheme.secondary,
+                    textAlign = TextAlign.Center,
+                )
+            }
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = stringResource(R.string.settings_github),

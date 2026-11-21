@@ -22,7 +22,15 @@ data class SettingKey<T>(
     val defaultProvider: (() -> T)? = null
 )
 
+internal val <T> SettingKey<T>.resolvedDefault: T
+    get() = defaultProvider?.invoke() ?: defaultValue
+
 object SettingsKeys {
+    internal fun chatRulesAcceptance(userId: Long, channelId: Long) = SettingKey(
+        stringPreferencesKey("chat_rules_accepted_${userId}_$channelId"),
+        "", SettingType.StringType, isExportable = false
+    )
+
     val IS_FIRST_RUN = SettingKey(booleanPreferencesKey("is_first_run"), true, SettingType.BooleanType, isExportable = false)
     val WELCOME_COMPLETED = SettingKey(booleanPreferencesKey("welcome_completed"), false, SettingType.BooleanType, isExportable = false)
     val LAST_USED_VERSION = SettingKey(stringPreferencesKey("last_used_version"), "", SettingType.StringType, isExportable = false)

@@ -185,14 +185,19 @@ private fun RewardItemCard(reward: ChannelReward) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun BalanceTooltip(balance: Long?, isKicks: Boolean = false, unlimited: Boolean = false, unavailable: Boolean = false, content: @Composable () -> Unit) {
     val exactBalance = remember(balance) { balance?.let(::formatExactBalance) ?: "—" }
     val label = if (unavailable) stringResource(R.string.points_disabled) else if (unlimited) stringResource(R.string.points_unlimited) else stringResource(if (isKicks) R.string.channel_kicks_exact else R.string.channel_points_exact,
         exactBalance)
+    ChatControlTooltip(label, content)
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun ChatControlTooltip(label: String, content: @Composable () -> Unit) {
     TooltipBox(positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
-        tooltip = { PlainTooltip { Text(label) } }, state = rememberTooltipState()) { content() }
+        tooltip = { PlainTooltip { Text(label) } }, state = rememberTooltipState(), content = content)
 }
 
 @Composable

@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lechixy.kick.R
 import com.lechixy.kick.data.settings.model.SettingKey
+import com.lechixy.kick.data.settings.model.resolvedDefault
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 import kotlinx.coroutines.launch
 
@@ -53,14 +54,16 @@ fun SettingsExpander(
     toggleKey: SettingKey<Boolean>? = null,
     initiallyExpanded: Boolean = false,
     headerAction: (@Composable () -> Unit)? = null,
+    onReset: (() -> Unit)? = null,
     content: @Composable ColumnScope.(enabled: Boolean) -> Unit,
 ) {
     var expanded by rememberSaveable(initiallyExpanded) { mutableStateOf(initiallyExpanded) }
     val repository = toggleKey?.let { LocalSettingsRepository.current }
     val scope = rememberCoroutineScope()
+    val default = toggleKey?.resolvedDefault ?: true
     val enabled = if (toggleKey != null && repository != null) {
         remember(repository, toggleKey) { repository.get(toggleKey) }
-            .collectAsStateWithLifecycle(toggleKey.defaultValue).value
+            .collectAsStateWithLifecycle(default).value
     } else true
     val rotation = animateFloatAsState(if (expanded) 180f else 0f, tween(220), label = "settings chevron")
     val expansionState = stringResource(if (expanded) R.string.settings_expanded else R.string.settings_collapsed)
@@ -81,6 +84,12 @@ fun SettingsExpander(
                 containerColor = Color.Transparent,
                 borderColor = Color.Transparent,
                 onClick = { expanded = !expanded },
+                onReset = if (toggleKey != null && repository != null && enabled != default) {
+                    {
+                        scope.launch { repository.reset(toggleKey) }
+                        Unit
+                    }
+                } else onReset,
                 action = {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         if (toggleKey != null && repository != null) Switch(

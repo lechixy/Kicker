@@ -26,7 +26,12 @@ data class KickGoalDto(
     val status: String,
     @SerialName("target_value") val targetValue: Int,
     @SerialName("current_value") val currentValue: Int,
-    @SerialName("progress_bar_emoji_id") val progressBarEmojiId: String? = null
+    @SerialName("progress_bar_emoji_id") val progressBarEmojiId: String? = null,
+    @SerialName("created_at") val createdAt: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
+    @SerialName("achieved_at") val achievedAt: String? = null,
+    @SerialName("end_date") val endDate: String? = null,
+    @SerialName("count_from_creation") val countFromCreation: Boolean? = null
 )
 
 data class ChannelSectionState<T>(val value: T? = null, val loading: Boolean = false,

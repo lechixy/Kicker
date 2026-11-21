@@ -61,6 +61,30 @@ class PlayerHostState(
     internal var livePlaybackRequested by mutableStateOf(false)
         private set
     private var approvedMatureLivestreamId by mutableStateOf<Long?>(null)
+    private var preloadedChannel: ChannelDetail? = null
+    internal var preloadedChannelRevision by androidx.compose.runtime.mutableLongStateOf(0L)
+        private set
+
+    internal fun isMatureLivestreamApproved(slug: String, livestreamId: Long): Boolean =
+        this.slug.equals(slug, ignoreCase = true) && approvedMatureLivestreamId == livestreamId
+
+    internal fun openPreloadedChannel(
+        slug: String,
+        source: ExpansionSource?,
+        detail: ChannelDetail,
+        watchLive: Boolean,
+        matureApproved: Boolean,
+    ) {
+        open(slug, source)
+        onChannelLoaded(slug, detail)
+        if (watchLive) requestLivePlayback()
+        if (matureApproved) detail.livestream?.id?.let(::approveMatureLivestream)
+        preloadedChannel = detail
+        preloadedChannelRevision++
+    }
+
+    internal fun takePreloadedChannel(slug: String): ChannelDetail? =
+        if (this.slug == slug) preloadedChannel.also { preloadedChannel = null } else null
 
     var recordingPositionMs by androidx.compose.runtime.mutableLongStateOf(0L)
         private set
@@ -308,6 +332,7 @@ class PlayerHostState(
     }
 
     fun open(slug: String, source: com.lechixy.kick.components.ExpansionSource? = null) {
+        preloadedChannel = null
         if (mode == PlayerMode.Fullscreen) setFullscreen(false)
         if (this.slug != slug) {
             recording = null
@@ -409,6 +434,7 @@ class PlayerHostState(
     }
 
     fun close() {
+        preloadedChannel = null
         isEditingFullscreenChatPosition = false
         isExiting = false
         dragOffsetY = 0f

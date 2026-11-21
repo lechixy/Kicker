@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -20,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
@@ -67,6 +69,7 @@ fun ChatMessageItem(
     replyHighlight: Int = 0,
     onReplyClick: ((String) -> Unit)? = null,
     timestamp: String? = message.recordingOffsetMs?.let(com.lechixy.kick.util.FormatUtils::formatDuration),
+    subscriptionGoal: com.lechixy.kick.data.channel.model.KickGoalDto? = null
 ) {
     val eventContext = LocalContext.current
     // Read configuration so in-place app language changes rebuild every event sentence.
@@ -101,6 +104,24 @@ fun ChatMessageItem(
         return
     }
 
+    message.kicksGifted?.let { event ->
+        val primary = MaterialTheme.colorScheme.primary
+        ChatEventBaseItem(
+            iconRes = R.drawable.kicks_color,
+            segments = kicksGiftedSegments(eventContext, event, primary),
+            bodyContent = event.message.takeIf { it.isNotBlank() },
+            fontSizeSp = fontSizeSp,
+            stripeColor = ChatTextParser.parseHexColor(event.sender.usernameColor, primary),
+            onUsernameClick = onEventUserClick,
+            iconTint = Color.Unspecified,
+            streamerUsername = streamerUsername,
+            streamerSlug = streamerSlug,
+            modifier = modifier,
+            trailingContent = { KicksGiftArtwork(event.gift.amount) }
+        )
+        return
+    }
+
     // 2. Gifted Subscriptions Event
     val giftedEvent = message.giftedSubscriptions
     if (message.isGiftedSubscriptions && giftedEvent != null) {
@@ -119,6 +140,7 @@ fun ChatMessageItem(
             stripeColor = gifterColor,
             onUsernameClick = onEventUserClick,
             contentPadding = 10.dp,
+            subscriptionGoal = subscriptionGoal,
             streamerUsername = streamerUsername,
             streamerSlug = streamerSlug,
             modifier = modifier
@@ -140,14 +162,18 @@ fun ChatMessageItem(
         val userColor = remember(rawColor, defaultPrimaryColor) {
             ChatTextParser.parseHexColor(rawColor, defaultPrimaryColor)
         }
-        val months = celebration?.totalMonths
+        val months = celebration?.totalMonths?.takeIf { it > 0 }
 
-        val segments = subscriptionEventSegments(eventContext, senderName, months,
+        val segments = celebrationEventSegments(eventContext, senderName, months,
             userColor = userColor, primaryColor = defaultPrimaryColor)
         ChatEventBaseItem(
             iconRes = R.drawable.celebration_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
             segments = segments,
-            bodyContent = message.content.takeIf { it.isNotBlank() },
+            bodyContent = message.content.takeIf { it.isNotBlank() }?.let {
+                stringResource(R.string.chat_event_celebration_message, senderName, it)
+            },
+            subtitle = months?.let { stringResource(R.string.chat_event_celebration_milestone, it) },
+            subscriptionGoal = subscriptionGoal,
             fontSizeSp = fontSizeSp,
             stripeColor = userColor,
             onUsernameClick = onEventUserClick,
@@ -271,7 +297,7 @@ fun ChatMessageItem(
             .fillMaxWidth()
             .padding(horizontal = 6.dp)
             .clip(RoundedCornerShape(6.dp))
-            .background(broadcasterPalette.backgroundColor)
+            .background(broadcasterPalette.backgroundColor.copy(alpha = 0.95f))
             .then(pulseModifier)
             .padding(horizontal = 4.dp, vertical = 4.dp)
     } else {
@@ -453,11 +479,14 @@ fun ChatEventBaseItem(
     iconTint: Color = MaterialTheme.colorScheme.primary,
     streamerUsername: String? = null,
     streamerSlug: String? = null,
-    onUsernameClick: ((String) -> Unit)? = null
+    onUsernameClick: ((String) -> Unit)? = null,
+    subscriptionGoal: com.lechixy.kick.data.channel.model.KickGoalDto? = null,
+    subtitle: String? = null,
+    trailingContent: (@Composable () -> Unit)? = null
 ) {
     val boldColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
     val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f)
-    val backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh
+    val backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.95f)
     val headerFontSizeSp = (fontSizeSp - 1).coerceAtLeast(11)
     val stripeWidth = 4.dp
 
@@ -471,7 +500,7 @@ fun ChatEventBaseItem(
         onUsernameClick = onUsernameClick
     )
 
-    Column(
+    Row(
         modifier = modifier
             .fillMaxWidth()
             .background(backgroundColor)
@@ -486,47 +515,56 @@ fun ChatEventBaseItem(
             .padding(start = stripeWidth)
             .padding(contentPadding)
             .padding(vertical = 4.dp, horizontal = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp)
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Text(
-            text = parsedHeader.annotatedString,
-            inlineContent = parsedHeader.inlineContent,
-            fontSize = headerFontSizeSp.sp,
-            lineHeight = (headerFontSizeSp + 4).sp,
-            color = mutedColor,
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        if (!bodyContent.isNullOrBlank()) {
-            val hasStreamerMention = remember(bodyContent, streamerUsername, streamerSlug) {
-                ChatTextParser.containsStreamerMention(bodyContent, streamerUsername, streamerSlug)
-            }
-            val (streamerMentionBrush, streamerMentionShadow) = if (hasStreamerMention) {
-                rememberStreamerMentionEffects(fontSizeSp = fontSizeSp)
-            } else {
-                null to null
-            }
-
-            val parsedBody = ChatTextParser.parseContentOnly(
-                content = bodyContent,
-                fontSizeSp = fontSizeSp,
-                streamerUsername = streamerUsername,
-                streamerSlug = streamerSlug,
-                streamerMentionBrush = streamerMentionBrush,
-                streamerMentionShadow = streamerMentionShadow
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(
+                text = parsedHeader.annotatedString,
+                inlineContent = parsedHeader.inlineContent,
+                fontSize = headerFontSizeSp.sp,
+                lineHeight = (headerFontSizeSp + 4).sp,
+                color = mutedColor,
+                modifier = Modifier.fillMaxWidth()
             )
 
-            ChatClipLinks(parsedBody.annotatedString) {
-                Text(
-                    text = parsedBody.annotatedString.withMentionLinks(onUsernameClick),
-                    inlineContent = parsedBody.inlineContent,
-                    fontSize = fontSizeSp.sp,
-                    lineHeight = (fontSizeSp + 5).sp,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.fillMaxWidth()
+            if (subtitle != null) {
+                Text(subtitle, style = MaterialTheme.typography.labelSmall, color = mutedColor)
+            }
+
+            if (!bodyContent.isNullOrBlank()) {
+                val hasStreamerMention = remember(bodyContent, streamerUsername, streamerSlug) {
+                    ChatTextParser.containsStreamerMention(bodyContent, streamerUsername, streamerSlug)
+                }
+                val (streamerMentionBrush, streamerMentionShadow) = if (hasStreamerMention) {
+                    rememberStreamerMentionEffects(fontSizeSp = fontSizeSp)
+                } else {
+                    null to null
+                }
+
+                val parsedBody = ChatTextParser.parseContentOnly(
+                    content = bodyContent,
+                    fontSizeSp = fontSizeSp,
+                    streamerUsername = streamerUsername,
+                    streamerSlug = streamerSlug,
+                    streamerMentionBrush = streamerMentionBrush,
+                    streamerMentionShadow = streamerMentionShadow
                 )
+
+                ChatClipLinks(parsedBody.annotatedString) {
+                    Text(
+                        text = parsedBody.annotatedString.withMentionLinks(onUsernameClick),
+                        inlineContent = parsedBody.inlineContent,
+                        fontSize = fontSizeSp.sp,
+                        lineHeight = (fontSizeSp + 5).sp,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         }
+        if (subscriptionGoal != null) ChatSubscriptionGoalProgress(subscriptionGoal)
+        trailingContent?.invoke()
     }
 }
 

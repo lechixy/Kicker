@@ -65,7 +65,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -75,6 +74,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -100,18 +100,17 @@ import com.lechixy.kick.components.settings.SettingCard
 import com.lechixy.kick.components.settings.SettingSlider
 import com.lechixy.kick.components.settings.SettingSwitch
 import com.lechixy.kick.data.channel.model.SubscriberBadge
-import com.lechixy.kick.data.chat.model.ChannelSubscriptionEvent
 import com.lechixy.kick.data.chat.model.ChatCelebration
 import com.lechixy.kick.data.chat.model.ChatMessage
+import android.os.SystemClock
+import com.lechixy.kick.data.channel.model.KickGoalDto
 import com.lechixy.kick.data.chat.model.ChatWebSocketEvent
-import com.lechixy.kick.data.chat.model.GiftedSubscriptionsEvent
+import com.lechixy.kick.data.chat.model.TimedChatEvent
 import com.lechixy.kick.data.chat.model.PinnedMessageInfo
 import com.lechixy.kick.data.chat.remote.ChatConnectionState
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -126,23 +125,32 @@ fun ChatView(
     subscriberBadges: List<SubscriberBadge> = emptyList(),
     userColors: Map<String, String> = emptyMap(),
     pinnedMessage: PinnedMessageInfo? = null,
-    chatEvents: Flow<ChatWebSocketEvent> = emptyFlow(),
+    tickerEvents: List<TimedChatEvent> = emptyList(),
+    onDismissTickerEvents: (Set<Long>) -> Unit = {},
+    subscriptionGoal: KickGoalDto? = null,
     streamerUsername: String? = null,
     streamerSlug: String? = null,
     channelId: Long? = null,
     onConnectClick: () -> Unit = {},
     onDisconnectClick: () -> Unit = {},
     onHideChat: (() -> Unit)? = null,
-    composer: @Composable () -> Unit = {},
+    composer: @Composable (chatContent: @Composable () -> Unit) -> Unit = { it() },
     onOpenChannel: (String) -> Unit = {},
     onReplyTo: (ChatMessage) -> Unit = {},
     isReplay: Boolean = false,
     highTraffic: Boolean = false,
     autoHideHeader: Boolean = false,
-    playerControlsVisible: Boolean = false
+    playerControlsVisible: Boolean = false,
+    floatingComposer: Boolean = false
 ) {
     val repository = LocalSettingsRepository.current
     val chatActive = LocalChatContentActive.current
+    val latestGiftMessageId = remember(messages, subscriptionGoal != null) {
+        if (subscriptionGoal != null) messages.lastOrNull { it.isGiftedSubscriptions && !it.isHistory }?.id else null
+    }
+    val latestCelebrationMessageId = remember(messages, subscriptionGoal != null) {
+        if (subscriptionGoal != null) messages.lastOrNull { it.isCelebration && !it.isHistory }?.id else null
+    }
     val smallestWidth = androidx.compose.ui.platform.LocalConfiguration.current.smallestScreenWidthDp
     val ambient = LocalPlayerAmbientState.current
     val chatOpacity = if (ambientUiVisible(ambient)) ambient?.chatOpacity ?: 1f else 1f
@@ -253,6 +261,222 @@ fun ChatView(
             }
         }
         previousMessageId = lastMessageId
+    }
+
+    val chatContent: @Composable () -> Unit = {
+        Column(Modifier.fillMaxSize()) {
+            // Chat Message List
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+            ) {
+                if (visibleMessages.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        when (connectionState) {
+                            ChatConnectionState.CONNECTING -> {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    AppLoadingIndicator(
+                                        modifier = Modifier.size(40.dp), contained = true
+                                    )
+                                    Text(
+                                        text = stringResource(if (isReplay) R.string.recorded_chat_loading else R.string.chat_connecting_message),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.outline
+                                    )
+                                }
+                            }
+
+                            ChatConnectionState.DISCONNECTED -> {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    Text(
+                                        text = stringResource(if (!autoConnectChat) R.string.chat_auto_connect_disabled else R.string.chat_disconnected_message),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.outline
+                                    )
+                                    Button(
+                                        onClick = onConnectClick,
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text(stringResource(R.string.chat_connect_action))
+                                    }
+                                }
+                            }
+
+                            else -> {
+                                Text(
+                                    text = stringResource(R.string.chat_empty_message),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        state = listState,
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(messageSpacing.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp)
+                    ) {
+                        items(
+                            items = visibleMessages,
+                            key = { it.id }
+                        ) { message ->
+                            Column {
+                                if (message.id == firstNewMessageId) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                    ) {
+                                        HorizontalDivider(Modifier.weight(1f))
+                                        Text(stringResource(R.string.chat_new_messages),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        HorizontalDivider(Modifier.weight(1f))
+                                    }
+                                }
+                                SwipeToReply(enabled = !isReplay && accountSession.signedIn && message.sender?.id != null &&
+                                    !message.isDeleted && message.type in listOf("message", "reply"), onReply = { onReplyTo(message) }) {
+                                ChatMessageItem(
+                                    subscriptionGoal = subscriptionGoal.takeIf {
+                                        message.id == latestGiftMessageId || message.id == latestCelebrationMessageId
+                                    },
+                                    message = message,
+                                    fontSizeSp = fontSize,
+                                    timestamp = remember(message.createdAt, message.recordingOffsetMs, timestampMode, isReplay, timestampZone) {
+                                        com.lechixy.kick.data.chat.model.chatTimestamp(message, timestampMode, isReplay, timestampZone)
+                                    },
+                                    subscriberBadges = subscriberBadges,
+                                    userColors = userColors,
+                                    streamerUsername = streamerUsername,
+                                    streamerSlug = streamerSlug,
+                                    isOwnMessage = accountSession.signedIn && isOwnChatMessage(message,
+                                        accountSession.profile?.userId, accountSession.profile?.name),
+                                    isFavorite = favorites.contains(message.sender?.id ?: message.userId, message.sender?.username, message.sender?.slug),
+                                    replyHighlight = if (message.id == highlightedReply) highlightSequence else 0,
+                                    onReplyClick = { originalId ->
+                                        if (currentVisibleMessages.any { it.id == originalId }) {
+                                            replyNavigationJob?.cancel()
+                                            autoScrollEnabled = false
+                                            navigatingReply = true
+                                            replyNavigationJob = scope.launch {
+                                                try {
+                                                    val index = currentVisibleMessages.indexOfFirst { it.id == originalId }
+                                                    if (index >= 0) {
+                                                        listState.scrollToItem(index)
+                                                        // Measure the actual row (replies and emotes can change height)
+                                                        // before aligning its center with the chat viewport center.
+                                                        withFrameNanos { }
+                                                        val layout = listState.layoutInfo
+                                                        val target = layout.visibleItemsInfo.firstOrNull { it.key == originalId }
+                                                        if (target != null) {
+                                                            val viewportCenter = (layout.viewportStartOffset + layout.viewportEndOffset) / 2f
+                                                            listState.scrollBy(target.offset + target.size / 2f - viewportCenter)
+                                                        }
+                                                        highlightedReply = originalId
+                                                        highlightSequence++
+                                                    }
+                                                } finally { navigatingReply = false }
+                                            }
+                                        }
+                                    },
+                                    onUserClick = { sender -> streamerSlug?.let { slug ->
+                                        community.openProfile(slug, com.lechixy.kick.data.chat.model.ActiveChatter(
+                                            username = sender.username, slug = sender.slug.orEmpty()), sender, subscriberBadges)
+                                    } }
+                                )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                var tickerOverlayHeightPx by remember { mutableIntStateOf(0) }
+                val overlapGapAdjustmentPx = with(LocalDensity.current) { 4.dp.roundToPx() }
+                val targetPinnedOffsetPx = if (tickerOverlayHeightPx > 0) {
+                    (tickerOverlayHeightPx - overlapGapAdjustmentPx).coerceAtLeast(0)
+                } else {
+                    0
+                }
+                val animatedPinnedOffsetPx by animateIntAsState(
+                    targetValue = targetPinnedOffsetPx,
+                    animationSpec = spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessLow
+                    ),
+                    label = "pinned_message_slide_down"
+                )
+
+                // Event Ticker Overlay above PinnedMessageOverlay
+                LaunchedEffect(chatActive) {
+                    if (!chatActive) tickerOverlayHeightPx = 0
+                }
+                if (chatActive) ChatEventTickerOverlay(
+                    events = tickerEvents,
+                    onDismiss = onDismissTickerEvents,
+                    userColors = userColors,
+                    fontSizeSp = fontSize,
+                    onActiveHeightChanged = { tickerOverlayHeightPx = it },
+                    onUsernameClick = { username -> streamerSlug?.let { slug ->
+                        community.openProfile(slug, com.lechixy.kick.data.chat.model.ActiveChatter(username = username), subscriberBadges = subscriberBadges)
+                    } },
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                )
+
+                // Pinned Message Overlay at top of chat (slides down smoothly when ticker overlay is active)
+                PinnedMessageOverlay(
+                    pinnedMessage = pinnedMessage,
+                    fontSizeSp = fontSize,
+                    subscriberBadges = subscriberBadges,
+                    streamerUsername = streamerUsername,
+                    streamerSlug = streamerSlug,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .offset { IntOffset(0, animatedPinnedOffsetPx) }
+                        .fillMaxWidth()
+                )
+
+                // Floating "Scroll to bottom" button with unread counter
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = !autoScrollEnabled && !isAtBottom && visibleMessages.isNotEmpty(),
+                    enter = fadeIn(),
+                    exit = fadeOut(),
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = if (floatingComposer) 56.dp else 12.dp)
+                ) {
+                    ChatScrollButton(unreadCount) {
+                        replyNavigationJob?.cancel()
+                        highlightedReply = null
+                        autoScrollEnabled = true
+                        unreadCount = 0
+                        scope.launch {
+                            val lastIdx = visibleMessages.lastIndex
+                            if (lastIdx >= 0) listState.scrollToItem(lastIdx)
+                        }
+                    }
+                }
+            }
+            if (highTraffic) {
+                Text(stringResource(R.string.chat_high_traffic),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp))
+            }
+        }
     }
 
     androidx.compose.runtime.CompositionLocalProvider(LocalChatAnimationsEnabled provides true) {
@@ -394,285 +618,7 @@ fun ChatView(
                     alpha = 1f - chattersBackProgress
                 })
         } else {
-        // Chat Message List
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-        ) {
-            if (visibleMessages.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    when (connectionState) {
-                        ChatConnectionState.CONNECTING -> {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                AppLoadingIndicator(
-                                    modifier = Modifier.size(40.dp), contained = true
-                                )
-                                Text(
-                                    text = stringResource(if (isReplay) R.string.recorded_chat_loading else R.string.chat_connecting_message),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.outline
-                                )
-                            }
-                        }
-
-                        ChatConnectionState.DISCONNECTED -> {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Text(
-                                    text = stringResource(if (!autoConnectChat) R.string.chat_auto_connect_disabled else R.string.chat_disconnected_message),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.outline
-                                )
-                                Button(
-                                    onClick = onConnectClick,
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text(stringResource(R.string.chat_connect_action))
-                                }
-                            }
-                        }
-
-                        else -> {
-                            Text(
-                                text = stringResource(R.string.chat_empty_message),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.outline
-                            )
-                        }
-                    }
-                }
-            } else {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(messageSpacing.dp),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 8.dp)
-                ) {
-                    items(
-                        items = visibleMessages,
-                        key = { it.id }
-                    ) { message ->
-                        Column {
-                            if (message.id == firstNewMessageId) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
-                                ) {
-                                    HorizontalDivider(Modifier.weight(1f))
-                                    Text(stringResource(R.string.chat_new_messages),
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    HorizontalDivider(Modifier.weight(1f))
-                                }
-                            }
-                            SwipeToReply(enabled = !isReplay && accountSession.signedIn && message.sender?.id != null &&
-                                !message.isDeleted && message.type in listOf("message", "reply"), onReply = { onReplyTo(message) }) {
-                            ChatMessageItem(
-                                message = message,
-                                fontSizeSp = fontSize,
-                                timestamp = remember(message.createdAt, message.recordingOffsetMs, timestampMode, isReplay, timestampZone) {
-                                    com.lechixy.kick.data.chat.model.chatTimestamp(message, timestampMode, isReplay, timestampZone)
-                                },
-                                subscriberBadges = subscriberBadges,
-                                userColors = userColors,
-                                streamerUsername = streamerUsername,
-                                streamerSlug = streamerSlug,
-                                isOwnMessage = accountSession.signedIn && isOwnChatMessage(message,
-                                    accountSession.profile?.userId, accountSession.profile?.name),
-                                isFavorite = favorites.contains(message.sender?.id ?: message.userId, message.sender?.username, message.sender?.slug),
-                                replyHighlight = if (message.id == highlightedReply) highlightSequence else 0,
-                                onReplyClick = { originalId ->
-                                    if (currentVisibleMessages.any { it.id == originalId }) {
-                                        replyNavigationJob?.cancel()
-                                        autoScrollEnabled = false
-                                        navigatingReply = true
-                                        replyNavigationJob = scope.launch {
-                                            try {
-                                                val index = currentVisibleMessages.indexOfFirst { it.id == originalId }
-                                                if (index >= 0) {
-                                                    listState.scrollToItem(index)
-                                                    // Measure the actual row (replies and emotes can change height)
-                                                    // before aligning its center with the chat viewport center.
-                                                    withFrameNanos { }
-                                                    val layout = listState.layoutInfo
-                                                    val target = layout.visibleItemsInfo.firstOrNull { it.key == originalId }
-                                                    if (target != null) {
-                                                        val viewportCenter = (layout.viewportStartOffset + layout.viewportEndOffset) / 2f
-                                                        listState.scrollBy(target.offset + target.size / 2f - viewportCenter)
-                                                    }
-                                                    highlightedReply = originalId
-                                                    highlightSequence++
-                                                }
-                                            } finally { navigatingReply = false }
-                                        }
-                                    }
-                                },
-                                onUserClick = { sender -> streamerSlug?.let { slug ->
-                                    community.openProfile(slug, com.lechixy.kick.data.chat.model.ActiveChatter(
-                                        username = sender.username, slug = sender.slug.orEmpty()), sender, subscriberBadges)
-                                } }
-                            )
-                            }
-                        }
-                    }
-                }
-            }
-
-            val currentPrimaryColor by rememberUpdatedState(MaterialTheme.colorScheme.primary)
-            val tickerEventQueue = remember {
-                mutableStateListOf<ChatTickerOverlayItem>()
-            }
-
-            LaunchedEffect(streamerSlug) {
-                tickerEventQueue.clear()
-            }
-
-            LaunchedEffect(chatEvents, chatActive) {
-                if (!chatActive) { tickerEventQueue.clear(); return@LaunchedEffect }
-                chatEvents.collect { wsEvent ->
-                    val tickerItem = when (wsEvent) {
-                        is ChatWebSocketEvent.StreamHosted -> {
-                            val raid = wsEvent.event
-                            val raidCount = raid.message.numberOfViewers
-                            // min 20_000L max 60_000L
-                            val durationDependingOnRaidCount = (raidCount * 1000L).coerceIn(20_000L, 60_000L)
-                            ChatTickerOverlayItem(
-                                id = "raid_${raid.message.id}",
-                                iconRes = R.drawable.swords_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
-                                accentColor = currentPrimaryColor,
-                                durationMillis = durationDependingOnRaidCount,
-                                source = ChatTickerEventSource.Raid(raid)
-                            )
-                        }
-                        is ChatWebSocketEvent.GiftedSubscriptions -> {
-                            buildGiftedSubscriptionsTickerItem(
-                                event = wsEvent.event,
-                                primaryColor = currentPrimaryColor
-                            )
-                        }
-
-                        is ChatWebSocketEvent.ChannelSubscribed -> {
-                            buildChannelSubscriptionTickerItem(
-                                event = wsEvent.event,
-                                primaryColor = currentPrimaryColor
-                            )
-                        }
-
-                        is ChatWebSocketEvent.Celebration -> {
-                            buildCelebrationTickerItem(
-                                celebration = wsEvent.event,
-                                senderUsername = wsEvent.event.sender?.username
-                                    ?: wsEvent.event.username,
-                                senderColorHex = wsEvent.event.sender?.identity?.color,
-                                primaryColor = currentPrimaryColor
-                            )
-                        }
-
-                        is ChatWebSocketEvent.MessageReceived -> {
-                            val msg = wsEvent.message
-                            if (msg.isCelebration) {
-                                val celebration =
-                                    msg.metadata?.celebration ?: ChatCelebration(id = msg.id)
-                                buildCelebrationTickerItem(
-                                    celebration = celebration,
-                                    senderUsername = msg.sender?.username,
-                                    senderColorHex = msg.sender?.identity?.color,
-                                    primaryColor = currentPrimaryColor
-                                )
-                            } else {
-                                null
-                            }
-                        }
-
-                        else -> null
-                    }
-                    if (tickerItem != null) {
-                        if (tickerEventQueue.none { it.id == tickerItem.id }) tickerEventQueue.add(tickerItem)
-                    }
-                }
-            }
-
-            var tickerOverlayHeightPx by remember { mutableIntStateOf(0) }
-            val overlapGapAdjustmentPx = with(LocalDensity.current) { 4.dp.roundToPx() }
-            val targetPinnedOffsetPx = if (tickerOverlayHeightPx > 0) {
-                (tickerOverlayHeightPx - overlapGapAdjustmentPx).coerceAtLeast(0)
-            } else {
-                0
-            }
-            val animatedPinnedOffsetPx by animateIntAsState(
-                targetValue = targetPinnedOffsetPx,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioNoBouncy,
-                    stiffness = Spring.StiffnessLow
-                ),
-                label = "pinned_message_slide_down"
-            )
-
-            // Event Ticker Overlay above PinnedMessageOverlay
-            ChatEventTickerOverlay(
-                queue = tickerEventQueue,
-                userColors = userColors,
-                fontSizeSp = fontSize,
-                onActiveHeightChanged = { tickerOverlayHeightPx = it },
-                onUsernameClick = { username -> streamerSlug?.let { slug ->
-                    community.openProfile(slug, com.lechixy.kick.data.chat.model.ActiveChatter(username = username), subscriberBadges = subscriberBadges)
-                } },
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .fillMaxWidth()
-            )
-
-            // Pinned Message Overlay at top of chat (slides down smoothly when ticker overlay is active)
-            PinnedMessageOverlay(
-                pinnedMessage = pinnedMessage,
-                fontSizeSp = fontSize,
-                subscriberBadges = subscriberBadges,
-                streamerUsername = streamerUsername,
-                streamerSlug = streamerSlug,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .offset { IntOffset(0, animatedPinnedOffsetPx) }
-                    .fillMaxWidth()
-            )
-
-            // Floating "Scroll to bottom" button with unread counter
-            androidx.compose.animation.AnimatedVisibility(
-                visible = !autoScrollEnabled && !isAtBottom && visibleMessages.isNotEmpty(),
-                enter = fadeIn(),
-                exit = fadeOut(),
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 12.dp)
-            ) {
-                ChatScrollButton(unreadCount) {
-                    replyNavigationJob?.cancel()
-                    highlightedReply = null
-                    autoScrollEnabled = true
-                    unreadCount = 0
-                    scope.launch {
-                        val lastIdx = visibleMessages.lastIndex
-                        if (lastIdx >= 0) listState.scrollToItem(lastIdx)
-                    }
-                }
-            }
-        }
-        if (highTraffic) {
-            Text(stringResource(R.string.chat_high_traffic),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp))
-        }
-        composer()
+            Box(Modifier.weight(1f).fillMaxWidth()) { composer(chatContent) }
         }
     }
     }
@@ -937,17 +883,9 @@ internal fun PinnedMessageOverlay(
 
         }
         }
-        // Restore the pin on the side most recently used to dismiss it.
-        AnimatedVisibility(
+        ChatRestoreOverlay(
             visible = showUnhidePin,
-            enter = slideInHorizontally(
-                animationSpec = tween(durationMillis = 250, delayMillis = 200),
-                initialOffsetX = { fullWidth -> hideSide * (fullWidth + 40) }
-            ) + fadeIn(animationSpec = tween(durationMillis = 200, delayMillis = 200)),
-            exit = slideOutHorizontally(
-                animationSpec = tween(durationMillis = 180),
-                targetOffsetX = { fullWidth -> hideSide * (fullWidth + 40) }
-            ) + fadeOut(animationSpec = tween(durationMillis = 150)),
+            side = hideSide,
             modifier = Modifier
                 .align(if (hideSide < 0) androidx.compose.ui.AbsoluteAlignment.TopLeft else androidx.compose.ui.AbsoluteAlignment.TopRight)
                 .padding(top = 6.dp, start = 10.dp, end = 10.dp)
@@ -958,6 +896,27 @@ internal fun PinnedMessageOverlay(
             }
         }
     }
+}
+
+@Composable
+internal fun ChatRestoreOverlay(
+    visible: Boolean,
+    modifier: Modifier = Modifier,
+    side: Int = 1,
+    content: @Composable () -> Unit
+) {
+    AnimatedVisibility(
+        visible = visible,
+        enter = slideInHorizontally(
+            animationSpec = tween(durationMillis = 250, delayMillis = 200),
+            initialOffsetX = { fullWidth -> side * (fullWidth + 40) }
+        ) + fadeIn(animationSpec = tween(durationMillis = 200, delayMillis = 200)),
+        exit = slideOutHorizontally(
+            animationSpec = tween(durationMillis = 180),
+            targetOffsetX = { fullWidth -> side * (fullWidth + 40) }
+        ) + fadeOut(animationSpec = tween(durationMillis = 150)),
+        modifier = modifier
+    ) { content() }
 }
 
 @Composable
@@ -1077,188 +1036,104 @@ private fun ChatHeader(
     }
 }
 
-sealed interface ChatTickerEventSource {
-    data class Raid(val event: com.lechixy.kick.data.chat.model.StreamHostedEvent) : ChatTickerEventSource
-    data class GiftedSubscriptions(val event: GiftedSubscriptionsEvent) : ChatTickerEventSource
-    data class Celebration(val event: ChatCelebration, val username: String = "", val colorHex: String? = null) :
-        ChatTickerEventSource
-
-    data class ChannelSubscription(val event: ChannelSubscriptionEvent) : ChatTickerEventSource
-}
-
-data class ChatTickerOverlayItem(
-    val id: String,
+private data class ChatTickerContent(
     @DrawableRes val iconRes: Int,
-    val accentColor: Color? = null,
-    val durationMillis: Long = 7_000L,
-    val isInfinite: Boolean = false,
-    val source: ChatTickerEventSource
+    val segments: List<ChatTextParser.EventTextSegment>
 )
 
-private fun buildCelebrationTickerItem(
-    celebration: ChatCelebration,
-    senderUsername: String?,
-    senderColorHex: String?,
-    primaryColor: Color
-): ChatTickerOverlayItem {
-    val username = senderUsername?.takeIf { it.isNotBlank() }
-        ?: celebration.sender?.username?.takeIf { it.isNotBlank() } ?: celebration.username
-    return ChatTickerOverlayItem(
-        id = "celebration_${celebration.id.ifBlank { username }}_${System.nanoTime()}",
-        iconRes = R.drawable.celebration_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
-        accentColor = primaryColor,
-        durationMillis = 12_000L,
-        source = ChatTickerEventSource.Celebration(celebration, username, senderColorHex)
-    )
+private fun tickerContent(
+    event: ChatWebSocketEvent,
+    context: android.content.Context,
+    userColors: Map<String, String>,
+    accent: Color
+): ChatTickerContent? {
+    fun userColor(username: String, hex: String? = null) =
+        ChatTextParser.parseHexColor(hex ?: userColors[username.lowercase()], accent)
+
+    fun celebration(event: ChatCelebration, sender: com.lechixy.kick.data.chat.model.ChatSender?): ChatTickerContent {
+        val username = sender?.username?.takeIf { it.isNotBlank() } ?: event.username
+        return ChatTickerContent(R.drawable.celebration_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+            subscriptionEventSegments(context, username, event.totalMonths,
+                userColor = userColor(username, sender?.identity?.color), primaryColor = accent))
+    }
+
+    return when (event) {
+        is ChatWebSocketEvent.StreamHosted -> ChatTickerContent(
+            R.drawable.swords_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+            raidEventSegments(context, event.event.user.username, event.event.message.numberOfViewers,
+                userColor(event.event.user.username)))
+        is ChatWebSocketEvent.GiftedSubscriptions -> ChatTickerContent(
+            R.drawable.featured_seasonal_and_gifts_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+            giftedEventSegments(context, event.event, userColors, accent))
+        is ChatWebSocketEvent.ChannelSubscribed -> ChatTickerContent(
+            R.drawable.star_shine_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+            subscriptionEventSegments(context, event.event.username, event.event.totalMonths ?: event.event.months,
+                (event.event.userIds.size - 1).coerceAtLeast(0), userColor(event.event.username), accent))
+        is ChatWebSocketEvent.Celebration -> celebration(event.event, event.event.sender)
+        is ChatWebSocketEvent.MessageReceived -> celebration(
+            event.message.metadata?.celebration ?: ChatCelebration(id = event.message.id), event.message.sender)
+        else -> null
+    }
 }
-
-private fun buildChannelSubscriptionTickerItem(
-    event: ChannelSubscriptionEvent,
-    primaryColor: Color
-) = ChatTickerOverlayItem(
-    id = "sub_${event.username}_${System.nanoTime()}",
-    iconRes = R.drawable.star_shine_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
-    accentColor = primaryColor,
-    durationMillis = 12_000L,
-    source = ChatTickerEventSource.ChannelSubscription(event)
-)
-
-private fun buildGiftedSubscriptionsTickerItem(
-    event: GiftedSubscriptionsEvent,
-    primaryColor: Color
-) = ChatTickerOverlayItem(
-    id = "gift_${event.correlationId ?: event.gifterUsername}_${System.nanoTime()}",
-    iconRes = R.drawable.featured_seasonal_and_gifts_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
-    accentColor = primaryColor,
-    durationMillis = 15_000L,
-    source = ChatTickerEventSource.GiftedSubscriptions(event)
-)
 
 @Composable
 private fun ChatEventTickerOverlay(
-    queue: MutableList<ChatTickerOverlayItem>,
+    events: List<TimedChatEvent>,
+    onDismiss: (Set<Long>) -> Unit,
     userColors: Map<String, String>,
     fontSizeSp: Int,
     onActiveHeightChanged: (Int) -> Unit,
     modifier: Modifier = Modifier,
     onUsernameClick: ((String) -> Unit)? = null
 ) {
-    val currentItem = queue.firstOrNull()
-    var displayedItem by remember { mutableStateOf<ChatTickerOverlayItem?>(null) }
+    val now = SystemClock.elapsedRealtime()
+    val currentItem = events.firstOrNull { it.remainingMillis(now) > 0 }
+    var displayedItem by remember { mutableStateOf<TimedChatEvent?>(null) }
     var isShowing by remember { mutableStateOf(false) }
-    var isUserScrolling by remember { mutableStateOf(false) }
     var measuredHeightPx by remember { mutableIntStateOf(0) }
-    var progress by remember { mutableFloatStateOf(1f) }
-
+    val progress = remember { mutableFloatStateOf(0f) }
     val scaleAnim = remember { Animatable(0f) }
-
-    if (currentItem != null) {
-        displayedItem = currentItem
-    }
 
     LaunchedEffect(isShowing, measuredHeightPx) {
         onActiveHeightChanged(if (isShowing) measuredHeightPx else 0)
     }
 
-    val chatActive = LocalChatContentActive.current
-    val smallestWidth = androidx.compose.ui.platform.LocalConfiguration.current.smallestScreenWidthDp
-    val fontSetting = SettingsKeys.chatFontSize(smallestWidth)
-    val spacingSetting = SettingsKeys.chatMessageSpacing(smallestWidth)
-    LaunchedEffect(currentItem?.id, chatActive) {
-        if (!chatActive) return@LaunchedEffect
-        if (currentItem == null) {
+    LaunchedEffect(currentItem?.id) {
+        if (currentItem == null || currentItem.remainingMillis(SystemClock.elapsedRealtime()) == 0L) {
             isShowing = false
-            isUserScrolling = false
-            if (scaleAnim.value > 0f) {
-                scaleAnim.animateTo(
-                    targetValue = 0f,
-                    animationSpec = tween(
-                        durationMillis = 240,
-                        easing = FastOutSlowInEasing
-                    )
-                )
-            }
+            scaleAnim.animateTo(0f, tween(240, easing = FastOutSlowInEasing))
             displayedItem = null
             return@LaunchedEffect
         }
 
+        val initialRemaining = currentItem.remainingMillis(SystemClock.elapsedRealtime())
         displayedItem = currentItem
+        progress.floatValue = initialRemaining.toFloat() / currentItem.durationMillis
         isShowing = true
-        isUserScrolling = false
-        progress = 1f
         scaleAnim.snapTo(0f)
-
-        // Enter animation: same bouncy spring scale-in as PinnedMessageOverlay
-        scaleAnim.animateTo(
-            targetValue = 1f,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioLowBouncy,
-                stiffness = Spring.StiffnessMediumLow
-            )
-        )
-
-        val durationMs = currentItem.durationMillis.coerceAtLeast(1_000L)
-        var remainingMs = durationMs.toFloat()
-        var lastFrameNanos = withFrameNanos { it }
-        while (isActive && (currentItem.isInfinite || remainingMs > 0f)) {
-            withFrameNanos { frameNanos ->
-                val deltaMs = ((frameNanos - lastFrameNanos).coerceAtLeast(0L)) / 1_000_000f
-                lastFrameNanos = frameNanos
-                if (!isUserScrolling) {
-                    remainingMs -= deltaMs
-                    if (currentItem.isInfinite && remainingMs <= 0f) {
-                        remainingMs = durationMs.toFloat()
-                    }
-                    progress = (remainingMs / durationMs.toFloat()).coerceIn(0f, 1f)
+        kotlinx.coroutines.coroutineScope {
+            launch {
+                scaleAnim.animateTo(1f, spring(
+                    dampingRatio = Spring.DampingRatioLowBouncy,
+                    stiffness = Spring.StiffnessMediumLow
+                ))
+            }
+            while (progress.floatValue > 0f) {
+                withFrameNanos {
+                    progress.floatValue = currentItem.remainingMillis(SystemClock.elapsedRealtime()).toFloat() /
+                        currentItem.durationMillis
                 }
-            }
-        }
-
-        if (!currentItem.isInfinite) {
-            // If no more items are waiting in the queue, start sliding PinnedMessageOverlay back up during scale-out
-            if (queue.size <= 1) {
-                isShowing = false
-            }
-
-            // Exit animation: reverse of enter (scale out to 0)
-            scaleAnim.animateTo(
-                targetValue = 0f,
-                animationSpec = tween(
-                    durationMillis = 260,
-                    easing = FastOutSlowInEasing
-                )
-            )
-
-            if (queue.firstOrNull()?.id == currentItem.id) {
-                queue.removeAt(0)
-            }
-            if (queue.isEmpty()) {
-                isShowing = false
-                displayedItem = null
             }
         }
     }
 
     val active = displayedItem ?: return
-    val defaultAccent = MaterialTheme.colorScheme.primary
-    val accentColor = active.accentColor ?: defaultAccent
+    val accentColor = MaterialTheme.colorScheme.primary
     val context = androidx.compose.ui.platform.LocalContext.current
-    androidx.compose.ui.platform.LocalConfiguration.current
-    val segments = when (val source = active.source) {
-        is ChatTickerEventSource.GiftedSubscriptions -> giftedEventSegments(context, source.event, userColors, accentColor)
-        is ChatTickerEventSource.Celebration -> subscriptionEventSegments(context, source.username,
-            source.event.totalMonths,
-            userColor = ChatTextParser.parseHexColor(source.colorHex ?: source.event.sender?.identity?.color
-                ?: userColors[source.username.lowercase()], accentColor), primaryColor = accentColor)
-        is ChatTickerEventSource.ChannelSubscription -> subscriptionEventSegments(context, source.event.username,
-            source.event.totalMonths ?: source.event.months,
-            (source.event.userIds.size - 1).coerceAtLeast(0),
-            userColor = ChatTextParser.parseHexColor(userColors[source.event.username.lowercase()], accentColor),
-            primaryColor = accentColor)
-        is ChatTickerEventSource.Raid -> raidEventSegments(context, source.event.user.username,
-            source.event.message.numberOfViewers,
-            ChatTextParser.parseHexColor(userColors[source.event.user.username.lowercase()], accentColor))
-    }
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val content = remember(active, context, configuration, userColors, accentColor) {
+        tickerContent(active.event, context, userColors, accentColor)
+    } ?: return
 
     Box(
         modifier = modifier.onSizeChanged { size ->
@@ -1294,13 +1169,12 @@ private fun ChatEventTickerOverlay(
                 ) {
                     key(active.id) {
                         ContinuousTickerRow(
-                            iconRes = active.iconRes,
+                            iconRes = content.iconRes,
                             iconTint = accentColor,
-                            segments = segments,
+                            segments = content.segments,
                             fontSizeSp = fontSizeSp,
                             defaultBoldColor = accentColor,
                             defaultTextColor = MaterialTheme.colorScheme.onSurface,
-                            onScrollingChanged = { isUserScrolling = it },
                             onUsernameClick = onUsernameClick,
                             modifier = Modifier
                                 .weight(1f)
@@ -1317,8 +1191,7 @@ private fun ChatEventTickerOverlay(
                             .clickable {
                                 if (isShowing) {
                                     isShowing = false
-                                    isUserScrolling = false
-                                    queue.clear()
+                                    onDismiss(events.mapTo(mutableSetOf()) { it.id })
                                 }
                             }
                     ) {
@@ -1342,9 +1215,8 @@ private fun ChatEventTickerOverlay(
                 ) {
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth(progress.coerceIn(0f, 1f))
-                            .height(3.dp)
-                            .background(accentColor)
+                            .fillMaxSize()
+                            .drawBehind { drawRect(accentColor, size = size.copy(width = size.width * progress.floatValue)) }
                     )
                 }
             }

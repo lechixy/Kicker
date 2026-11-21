@@ -41,6 +41,7 @@ import coil3.compose.AsyncImage
 
 import com.lechixy.kick.R
 import com.lechixy.kick.components.channel.MetadataPill
+import com.lechixy.kick.components.channel.TagChip
 import com.lechixy.kick.data.common.model.Livestream
 import com.lechixy.kick.util.FormatUtils
 import com.lechixy.kick.util.buildOptimizedImageRequest
@@ -143,7 +144,8 @@ fun StreamCard(
                     modifier = Modifier
                         .align(if (compact) Alignment.TopStart else Alignment.BottomStart)
                         .padding(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (!compact || !stream.showViewCount) LiveBadge()
 
@@ -163,6 +165,13 @@ fun StreamCard(
                                 fontWeight = if (compact) FontWeight.Bold else null,
                             )
                         }
+                    }
+                    if (stream.isMature) {
+                        TagChip(
+                            tag = stringResource(R.string.channel_mature_badge),
+                            containerColor = Color.Black.copy(alpha = if (compact) 0.75f else 0.7f),
+                            contentColor = Color.White,
+                        )
                     }
                 }
                 PlaybackProgressBar(recordingId, Modifier.align(Alignment.BottomCenter))

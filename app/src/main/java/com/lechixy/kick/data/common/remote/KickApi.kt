@@ -49,6 +49,12 @@ interface KickApi {
     @GET("api/v1/events/{slug}/clips")
     suspend fun getEventClips(@Path("slug") slug: String): EventClipsResponse
 
+    @GET("api/v1/drops/campaigns/livestream")
+    suspend fun getLivestreamDrops(
+        @Query("channel_id") channelId: Long,
+        @Query("category_id") categoryId: Long
+    ): com.lechixy.kick.data.channel.model.DropsCampaignsResponseDto
+
     @GET("https://web.kick.com/api/v1/channels/{channelId}/clips")
     suspend fun getPopularChannelClips(@Path("channelId") channelId: Long,
         @Query("sort") sort: String = "views", @Query("time") time: String = "all",

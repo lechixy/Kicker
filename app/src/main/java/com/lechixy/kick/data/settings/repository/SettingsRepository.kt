@@ -16,6 +16,7 @@ import javax.inject.Singleton
 
 import com.lechixy.kick.data.settings.model.SettingKey
 import com.lechixy.kick.data.settings.model.SettingsKeys
+import com.lechixy.kick.data.settings.model.resolvedDefault
 import com.lechixy.kick.util.preferredStreamLanguageCode
 
 @Singleton
@@ -32,7 +33,7 @@ class SettingsRepository @Inject constructor(
                 }
             }
             .map { preferences ->
-                preferences[settingKey.key] ?: settingKey.defaultProvider?.invoke() ?: settingKey.defaultValue
+                preferences[settingKey.key] ?: settingKey.resolvedDefault
             }
             .distinctUntilChanged()
     }

@@ -6,6 +6,7 @@ import android.icu.number.Notation
 import android.icu.number.Precision
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
+import java.time.Instant
 import java.util.Locale
 import java.util.TimeZone
 
@@ -81,7 +82,11 @@ object FormatUtils {
 
     fun formatRelativeTime(context: android.content.Context, startTimeStr: String?): String? {
         val start = com.lechixy.kick.data.chat.model.recordingStartInstant(startTimeStr) ?: return null
-        val seconds = (System.currentTimeMillis() - start.toEpochMilli()) / 1000.0
+        return formatRelativeTime(start, context.resources.configuration.locales[0])
+    }
+
+    fun formatRelativeTime(start: Instant, locale: Locale, now: Instant = Instant.now()): String {
+        val seconds = (now.toEpochMilli() - start.toEpochMilli()) / 1000.0
         val magnitude = kotlin.math.abs(seconds)
         val (divisor, unit) = when {
             magnitude < 3600 -> 60.0 to android.icu.text.RelativeDateTimeFormatter.RelativeDateTimeUnit.MINUTE
@@ -91,7 +96,6 @@ object FormatUtils {
             magnitude < 31536000 -> 2592000.0 to android.icu.text.RelativeDateTimeFormatter.RelativeDateTimeUnit.MONTH
             else -> 31536000.0 to android.icu.text.RelativeDateTimeFormatter.RelativeDateTimeUnit.YEAR
         }
-        val locale = context.resources.configuration.locales[0]
         return android.icu.text.RelativeDateTimeFormatter.getInstance(locale)
             .formatNumeric(-(seconds / divisor).toLong().toDouble(), unit)
     }

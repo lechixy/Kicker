@@ -30,6 +30,7 @@ import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 import com.lechixy.kick.data.settings.model.SettingKey
+import com.lechixy.kick.data.settings.model.resolvedDefault
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 
 @Composable
@@ -66,7 +67,8 @@ private fun <T> NumberSettingSlider(
 ) {
     val repository = LocalSettingsRepository.current
     val coroutineScope = rememberCoroutineScope()
-    val persistentValue by repository.get(key).collectAsStateWithLifecycle(initialValue = key.defaultValue)
+    val default = key.resolvedDefault
+    val persistentValue by remember(repository, key) { repository.get(key) }.collectAsStateWithLifecycle(default)
     val contentAlpha = if (enabled) 1f else 0.38f
 
     var sliderPosition by remember {
@@ -117,6 +119,11 @@ private fun <T> NumberSettingSlider(
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary.copy(alpha = contentAlpha)
                 )
+                if (persistentValue != default) {
+                    SettingResetButton(title, onClick = {
+                        coroutineScope.launch { repository.reset(key) }
+                    }, enabled = enabled)
+                }
             }
 
             Spacer(modifier = Modifier.height(8.dp))

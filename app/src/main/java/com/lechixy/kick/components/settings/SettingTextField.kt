@@ -35,6 +35,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 
 import com.lechixy.kick.data.settings.model.SettingKey
+import com.lechixy.kick.data.settings.model.resolvedDefault
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 
 @Composable
@@ -50,7 +51,8 @@ fun SettingTextField(
 ) {
     val repository = LocalSettingsRepository.current
     val coroutineScope = rememberCoroutineScope()
-    val persistentValue by repository.get(key).collectAsStateWithLifecycle(initialValue = key.defaultValue)
+    val default = key.resolvedDefault
+    val persistentValue by remember(repository, key) { repository.get(key) }.collectAsStateWithLifecycle(default)
 
     var draftValue by rememberSaveable { mutableStateOf(persistentValue) }
     var isFocused by remember { mutableStateOf(false) }
@@ -65,9 +67,10 @@ fun SettingTextField(
     }
 
     fun commit() {
-        if (draftValue != persistentValue) {
+        val value = draftValue
+        if (value != persistentValue) {
             coroutineScope.launch {
-                repository.set(key, draftValue)
+                repository.set(key, value)
             }
         }
     }
@@ -127,34 +130,47 @@ fun SettingTextField(
                         }),
                     )
                 },
+                {
+                    if (draftValue != default || persistentValue != default) {
+                        SettingResetButton(title, onClick = {
+                            draftValue = default
+                            coroutineScope.launch { repository.reset(key) }
+                        }, enabled = enabled)
+                    }
+                },
             ),
             modifier = Modifier.fillMaxWidth().padding(16.dp),
-        ) { (headerItems, fieldItems), constraints ->
+        ) { (headerItems, fieldItems, resetItems), constraints ->
             val gap = 12.dp.roundToPx()
+            val loose = constraints.copy(minWidth = 0, minHeight = 0)
             val header = headerItems.single()
             val field = fieldItems.single()
+            val reset = resetItems.singleOrNull()?.measure(loose)
+            val resetSpace = reset?.let { it.width + 4.dp.roundToPx() } ?: 0
+            val availableWidth = if (constraints.hasBoundedWidth) (constraints.maxWidth - resetSpace).coerceAtLeast(0)
+                else Constraints.Infinity
             val fieldWidth = maxOf(144.dp.roundToPx(), (fieldFontSize * 8).roundToPx())
             val headerWidth = header.maxIntrinsicWidth(Constraints.Infinity).coerceAtMost(280.dp.roundToPx())
-            val sideBySide = constraints.hasBoundedWidth && headerWidth + gap + fieldWidth <= constraints.maxWidth
-            val loose = constraints.copy(minWidth = 0, minHeight = 0)
+            val sideBySide = constraints.hasBoundedWidth && headerWidth + gap + fieldWidth <= availableWidth
             val headerPlaceable = header.measure(
-                if (sideBySide) loose.copy(maxWidth = constraints.maxWidth - gap - fieldWidth) else loose,
+                loose.copy(maxWidth = if (sideBySide) availableWidth - gap - fieldWidth else availableWidth)
             )
             val fieldPlaceable = field.measure(
-                if (sideBySide) loose.copy(minWidth = fieldWidth, maxWidth = fieldWidth) else loose,
+                if (sideBySide) loose.copy(minWidth = fieldWidth, maxWidth = fieldWidth) else loose
             )
-            val height = if (sideBySide) maxOf(headerPlaceable.height, fieldPlaceable.height)
-                else headerPlaceable.height + gap + fieldPlaceable.height
+            val headerHeight = maxOf(headerPlaceable.height, reset?.height ?: 0)
+            val topHeight = if (sideBySide) maxOf(headerHeight, fieldPlaceable.height) else headerHeight
+            val height = if (sideBySide) topHeight else topHeight + gap + fieldPlaceable.height
             val width = if (constraints.hasBoundedWidth) constraints.maxWidth
-                else maxOf(headerPlaceable.width, fieldPlaceable.width).coerceAtLeast(constraints.minWidth)
+                else maxOf(headerPlaceable.width + resetSpace, fieldPlaceable.width).coerceAtLeast(constraints.minWidth)
             layout(width, height.coerceIn(constraints.minHeight, constraints.maxHeight)) {
+                headerPlaceable.placeRelative(0, (topHeight - headerPlaceable.height) / 2)
                 if (sideBySide) {
-                    headerPlaceable.placeRelative(0, (height - headerPlaceable.height) / 2)
-                    fieldPlaceable.placeRelative(width - fieldPlaceable.width, (height - fieldPlaceable.height) / 2)
+                    fieldPlaceable.placeRelative(width - resetSpace - fieldPlaceable.width, (topHeight - fieldPlaceable.height) / 2)
                 } else {
-                    headerPlaceable.placeRelative(0, 0)
-                    fieldPlaceable.placeRelative(0, headerPlaceable.height + gap)
+                    fieldPlaceable.placeRelative(0, topHeight + gap)
                 }
+                reset?.placeRelative(width - reset.width, (topHeight - reset.height) / 2)
             }
         }
     }

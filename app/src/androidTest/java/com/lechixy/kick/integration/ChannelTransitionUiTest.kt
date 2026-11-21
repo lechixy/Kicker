@@ -41,7 +41,9 @@ import kotlin.coroutines.Continuation
 import kotlin.coroutines.intrinsics.COROUTINE_SUSPENDED
 import kotlin.coroutines.resume
 
+import com.lechixy.kick.components.ChannelEntry
 import com.lechixy.kick.components.ExpansionSource
+import com.lechixy.kick.components.StreamCard
 import com.lechixy.kick.R
 import com.lechixy.kick.components.AmbientFrame
 import com.lechixy.kick.components.LocalPlayerAmbientState
@@ -58,6 +60,8 @@ import com.lechixy.kick.data.chat.model.ChatHistoryResponse
 import com.lechixy.kick.data.chat.model.ChatMessage
 import com.lechixy.kick.data.chat.model.PinnedMessageInfo
 import com.lechixy.kick.data.chat.remote.ChatConnectionState
+import com.lechixy.kick.data.common.model.Channel
+import com.lechixy.kick.data.common.model.Livestream
 import com.lechixy.kick.data.common.remote.KickApi
 import com.lechixy.kick.data.common.repository.KickRepository
 import com.lechixy.kick.data.settings.model.SettingsKeys
@@ -291,6 +295,60 @@ class ChannelTransitionUiTest {
         }
         assertEquals(width, compose.onNodeWithTag("page").fetchSemanticsNode().boundsInRoot.width, 1f)
         compose.mainClock.autoAdvance = true
+    }
+
+    @Test fun matureStreamCardShowsTheAgeBesideViewersAndWaitsBeforeOpeningTheChannel() {
+        val label: (Int) -> String = compose.activity::getString
+        val host = PlayerHostState()
+        val slug = "rated-live"
+        val response = CompletableDeferred<ChannelDetail>()
+        val detail = ChannelDetail(42, slug = slug, livestream = ChannelLivestream(7, isMature = true))
+        val stream = Livestream(id = "7", channel = Channel(42, slug = slug, username = "Streamer"),
+            isMature = true, viewerCount = 321)
+
+        compose.setContent {
+            CompositionLocalProvider(LocalSettingsRepository provides settings) {
+                MaterialTheme {
+                    val scope = rememberCoroutineScope()
+                    val entry = remember { ChannelEntry(host, settings, scope, { response.await() }) { error("Channel load failed") } }
+                    if (host.isChannelVisible) {
+                        androidx.compose.material3.Text("Channel content")
+                    } else {
+                        StreamCard(stream, modifier = Modifier.width(320.dp), compact = true, isDataSaverActive = true,
+                            onClickWithSource = { entry.open(slug, it) }, onClick = { entry.open(slug, null) })
+                    }
+                    entry.Confirmation()
+                }
+            }
+        }
+
+        val age = compose.onNodeWithText(label(R.string.channel_mature_badge), useUnmergedTree = true).assertIsDisplayed()
+        val viewers = compose.onNodeWithText("321", useUnmergedTree = true).assertIsDisplayed()
+        val viewerBounds = viewers.fetchSemanticsNode().boundsInRoot
+        val ageBounds = age.fetchSemanticsNode().boundsInRoot
+        assertTrue("Viewers $viewerBounds and age badge $ageBounds should sit beside each other",
+            viewerBounds.right <= ageBounds.left || ageBounds.right <= viewerBounds.left)
+        assertEquals(viewerBounds.center.y, ageBounds.center.y, 1f)
+        age.performTouchInput { click() }
+        compose.onNodeWithText("Channel content").assertDoesNotExist()
+        compose.runOnIdle { response.complete(detail) }
+        val title = label(R.string.mature_live_title)
+        compose.waitUntil(5_000) { compose.onAllNodesWithText(title).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Channel content").assertDoesNotExist()
+        compose.runOnIdle { assertNull(host.slug) }
+        compose.onNodeWithText(label(R.string.mature_live_cancel)).performClick()
+        compose.onNodeWithText(title).assertDoesNotExist()
+        compose.onNodeWithText("Channel content").assertDoesNotExist()
+
+        age.performTouchInput { click() }
+        compose.waitUntil(5_000) { compose.onAllNodesWithText(title).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText(label(R.string.mature_live_watch)).performClick()
+        compose.onNodeWithText("Channel content").assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals(slug, host.pageSlug)
+            assertTrue(host.isMatureLivestreamApproved(slug, 7))
+            assertEquals(detail, host.takePreloadedChannel(slug))
+        }
     }
 
     @Test fun matureLiveDialogOnlyPersistsOptOutOnConfirmation() {

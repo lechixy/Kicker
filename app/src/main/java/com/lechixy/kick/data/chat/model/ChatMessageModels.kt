@@ -23,6 +23,7 @@ object ChatMessageType {
     const val CELEBRATION = "celebration"
     const val REWARD_REDEEMED = "reward_redeemed"
     const val GIFTED_SUBSCRIPTIONS = "gifted_subscriptions"
+    const val KICKS_GIFTED = "kicks_gifted"
     const val CHANNEL_SUBSCRIPTION = "channel_subscription"
 }
 
@@ -51,7 +52,8 @@ data class ChatMessage(
     @kotlinx.serialization.Transient
     val isHistory: Boolean = false,
     @kotlinx.serialization.Transient
-    val recordingOffsetMs: Long? = null
+    val recordingOffsetMs: Long? = null,
+    val kicksGifted: KicksGiftedEvent? = null
 ) {
     val isDeleted: Boolean
         get() = messageDeleted != null
@@ -377,6 +379,10 @@ sealed interface ChatWebSocketEvent {
     data class MessageDeleted(val event: MessageDeletedEvent) : ChatWebSocketEvent
     data class SettingsChanged(val settings: JsonObject) : ChatWebSocketEvent
     data class PointsUpdated(val event: PointsUpdatedEvent) : ChatWebSocketEvent
+    data class KicksGifted(val event: KicksGiftedEvent) : ChatWebSocketEvent
+    data class GoalProgressUpdated(val goal: com.lechixy.kick.data.channel.model.KickGoalDto) : ChatWebSocketEvent
+    data class GiftsLeaderboardUpdated(val event: GiftsLeaderboardUpdatedEvent) : ChatWebSocketEvent
+    data class KicksLeaderboardUpdated(val event: KicksLeaderboardUpdatedEvent) : ChatWebSocketEvent
     data class PinnedMessageCreated(val event: PinnedMessageInfo) : ChatWebSocketEvent
     data object PinnedMessageDeleted : ChatWebSocketEvent
     data class StreamerIsLive(val event: StreamerIsLiveEvent) : ChatWebSocketEvent

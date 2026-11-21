@@ -224,20 +224,24 @@ internal fun SubscriptionGoalCard(goal: KickGoalDto, slug: String, onLinkClick: 
 }
 
 @Composable
-internal fun StripedProgressBar(progress: Float, modifier: Modifier = Modifier) {
+internal fun StripedProgressBar(progress: Float, modifier: Modifier = Modifier, animated: Boolean = true) {
     val background = MaterialTheme.colorScheme.surfaceContainerHighest
-    val stripes = rememberInfiniteTransition(label = "subscription_stripes")
-        .animateFloat(0f, 1f, infiniteRepeatable(tween(2_000, easing = androidx.compose.animation.core.LinearEasing)), label = "stripe_offset")
+    val stripes = if (animated) {
+        rememberInfiniteTransition(label = "subscription_stripes").animateFloat(
+            0f, 1f, infiniteRepeatable(tween(2_000, easing = androidx.compose.animation.core.LinearEasing)), label = "stripe_offset"
+        )
+    } else null
     Canvas(modifier.clip(RoundedCornerShape(8.dp)).semantics { progressBarRangeInfo = ProgressBarRangeInfo(progress, 0f..1f) }) {
         drawRect(background)
         val width = size.width * progress
+        if (width <= 0f || size.height <= 0f) return@Canvas
         clipRect(right = width) {
             drawRect(Brush.horizontalGradient(listOf(Color(0xFFFFA800), Color(0xFFFFC700))), size = Size(width, size.height))
-            val spacing = 14.dp.toPx()
+            val spacing = minOf(14.dp.toPx(), size.height * 2f)
             // One full stripe period per cycle makes the rightward motion seamless.
-            var x = -size.height - spacing + stripes.value * spacing
+            var x = -size.height - spacing + (stripes?.value ?: 0f) * spacing
             while (x < width + size.height) {
-                drawLine(Color.White.copy(alpha = 0.3f), Offset(x, size.height), Offset(x + size.height, 0f), strokeWidth = 5.dp.toPx())
+                drawLine(Color.White.copy(alpha = 0.3f), Offset(x, size.height), Offset(x + size.height, 0f), strokeWidth = minOf(5.dp.toPx(), size.height * 0.45f))
                 x += spacing
             }
         }

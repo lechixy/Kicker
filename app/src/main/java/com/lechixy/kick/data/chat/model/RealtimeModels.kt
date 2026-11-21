@@ -31,7 +31,7 @@ data class RealtimeConnectionRequest(
 
 @Serializable
 data class ConnectionCredentials(
-    val url: String
+    val url: String? = null
 )
 
 @Serializable

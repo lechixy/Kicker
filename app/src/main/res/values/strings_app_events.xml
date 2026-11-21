@@ -10,6 +10,7 @@
     <string name="notification_dismiss">Dismiss notification</string>
     <string name="release_whats_new">What’s new</string>
     <string name="release_update_available">Update available</string>
+    <string name="release_publication_date">%1$s (%2$s)</string>
     <string name="github_label" translatable="false">GitHub</string>
     <string name="release_no_notes">Release notes are not available right now, you can view published releases on GitHub</string>
     <string name="release_update">Update</string>

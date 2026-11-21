@@ -28,7 +28,6 @@ import com.lechixy.kick.data.chat.model.ChatHistoryData
 import com.lechixy.kick.data.chat.model.ChatMessage
 import com.lechixy.kick.data.chat.model.ChatWebSocketEvent
 import com.lechixy.kick.data.chat.model.PinnedMessageInfo
-import com.lechixy.kick.data.chat.model.PointsUpdatedEvent
 import com.lechixy.kick.data.chat.model.StopStreamBroadcastEvent
 import com.lechixy.kick.data.chat.model.StreamerIsLiveEvent
 import com.lechixy.kick.data.chat.remote.ChatConnectionState
@@ -76,7 +75,13 @@ class ChannelViewModel(
     val pinnedMessage: StateFlow<PinnedMessageInfo?> = repository.chatWebSocketClient.pinnedMessage
     val userColors: StateFlow<Map<String, String>> = repository.chatWebSocketClient.userColors
     val chatEvents: SharedFlow<ChatWebSocketEvent> = repository.chatWebSocketClient.events
-    val pointsUpdated: StateFlow<PointsUpdatedEvent?> = repository.chatWebSocketClient.pointsUpdated
+    val pointsUpdated = repository.chatWebSocketClient.pointsUpdated
+    val tickerEvents = repository.chatWebSocketClient.tickerEvents
+    val subscriptionGoal = repository.chatWebSocketClient.subscriptionGoal
+
+    fun consumePoints(revision: Long): Long = repository.chatWebSocketClient.consumePoints(revision)
+
+    fun dismissTickerEvents(ids: Set<Long>) = repository.chatWebSocketClient.dismissTickerEvents(ids)
     val chatConnectionState: StateFlow<ChatConnectionState> = repository.chatWebSocketClient.connectionState
 
     private val _chatSettings = MutableStateFlow(kotlinx.serialization.json.JsonObject(emptyMap()))
@@ -111,9 +116,6 @@ class ChannelViewModel(
             }
         }
     }
-    private val seenRules = mutableSetOf<Pair<Long, Long>>()
-    fun rulesSeen(generation: Long, channelId: Long) = (generation to channelId) in seenRules
-    fun markRulesSeen(generation: Long, channelId: Long) { seenRules.add(generation to channelId) }
 
     private var viewersPollingJob: Job? = null
     private var liveRefreshJob: Job? = null
@@ -291,7 +293,7 @@ class ChannelViewModel(
         }
     }
 
-    fun loadChannel(slug: String, autoConnectChat: Boolean = true) {
+    fun loadChannel(slug: String, autoConnectChat: Boolean = true, preloadedChannel: ChannelDetail? = null) {
         channelLoadJob?.cancel()
         channelLoadJob = viewModelScope.launch {
             val changedChannel = loadedSlug != null && !loadedSlug.equals(slug, ignoreCase = true)
@@ -312,7 +314,7 @@ class ChannelViewModel(
                 error = null, liveAnnouncementId = null, lastHourGiftedSubsRank = null, raid = null)
 
             try {
-                val channelDeferred = async { repository.getChannel(slug) }
+                val channelDeferred = async { preloadedChannel ?: repository.getChannel(slug) }
                 val videosDeferred = async {
                     try {
                         repository.getChannelVideos(slug).filterNot { it.isLive }

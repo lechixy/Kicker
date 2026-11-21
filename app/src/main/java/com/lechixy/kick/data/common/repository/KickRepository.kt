@@ -48,6 +48,9 @@ class KickRepository(
 
     suspend fun getEmotes(slug: String) = com.lechixy.kick.data.chat.model.parseEmoteCategories(api.getEmotes(slug))
     suspend fun getChannelLinks(slug: String) = com.lechixy.kick.data.channel.model.parseChannelLinks(api.getChannelLinks(slug))
+    suspend fun getLivestreamDrops(channelId: Long, categoryId: Long) =
+        api.getLivestreamDrops(channelId, categoryId).data
+
     suspend fun getChannelGoals(slug: String) = com.lechixy.kick.data.channel.model.parseChannelGoals(api.getChannelGoals(slug))
 
     suspend fun getLastHourGiftedSubsRank(channelId: Long): Int? =

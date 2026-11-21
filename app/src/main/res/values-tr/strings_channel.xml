@@ -73,7 +73,6 @@
     <string name="chat_cancel_reply">Yanıtı iptal et</string>
     <string name="chat_channel_points">Kanal puanları</string>
     <string name="chat_checking_permissions">Sohbet izinleri kontrol ediliyor…</string>
-    <string name="chat_collapse_rules">Kuralları daralt</string>
     <string name="chat_connect_action">Sohbete bağlan</string>
     <string name="chat_connect_to_send">Mesaj göndermek için sohbete bağlanın</string>
     <string name="chat_connecting_message">Sohbete bağlanılıyor…</string>
@@ -90,7 +89,6 @@
     <string name="chat_event_someone">Bir kullanıcı</string>
     <string name="chat_event_subscribed">%1$s abone oldu</string>
     <string name="chat_event_user">Kullanıcı</string>
-    <string name="chat_expand_rules">Kuralları genişlet</string>
     <string name="chat_follow_duration_required">Gerekli takip süresi henüz dolmadı</string>
     <string name="chat_follow_time_unknown">Takip süreniz doğrulanamadı</string>
     <string name="chat_followers_only">Yalnızca takipçiler</string>
@@ -218,6 +216,7 @@
     <string name="player_off">Kapalı</string>
     <string name="player_per_hour">/saat</string>
     <string name="player_quality">Kalite</string>
+    <string name="player_playback_speed">Oynatma hızı</string>
     <string name="player_show_chat">Sohbeti göster</string>
     <string name="player_sleep_badge">Uyku: %1$d dk</string>
     <string name="player_sync_volume">Oynatıcı sesini cihazın medya sesiyle eşitle</string>
@@ -283,4 +282,27 @@
     <string name="recording_download_failed">Video indirilemedi</string>
     <string name="recording_download_cancel">İptal</string>
     <string name="recording_download_fallback_name">Yayın kaydı</string>
+    <string name="drops_and_rewards">Drop’lar ve Ödüller</string>
+    <string name="drops_eligibility">Bu ödülleri kazanmak için %1$s yayıncısını %2$s kategorisinde canlı yayındayken izle.</string>
+    <string name="drops_empty">Bu canlı yayında aktif Drop yok.</string>
+    <string name="drops_load_failed">Drop’lar yüklenemedi.</string>
+    <string name="drops_unlocked">Kilidi açıldı</string>
+    <string name="drops_unlock_minutes">Açılmasına %1$d dk kaldı</string>
+    <string name="drops_unlock_hours">Açılmasına %1$d sa %2$d dk kaldı</string>
+    <string name="drops_ends_on">Bitiş tarihi %1$s</string>
+    <string name="drops_progress">İzleme ilerlemesi: %1$s</string>
+    <string name="chat_event_kicks_gifted">%1$s, %2$s × %3$s gönderdi</string>
+    <string name="chat_event_gifted_channel_total_single">%1$s! Bu kanalda toplam %2$s abonelik hediye etti.</string>
+    <string name="chat_event_gifted_channel_total">%1$s! Bu kanalda toplam %2$s abonelik hediye etti.</string>
+    <string name="drops_previous_campaign">Önceki kampanya</string>
+    <string name="drops_next_campaign">Sonraki kampanya</string>
+    <string name="drops_campaign_page">%1$d / %2$d</string>
+    <string name="chat_rules_accept">Tamam</string>
+    <string name="chat_rules_save_failed">Onayın kaydedilemedi. Tekrar dene.</string>
+    <string name="chat_event_celebrates_month">%1$s, %2$s aylık aboneliğini kutluyor!</string>
+    <string name="chat_event_celebrates_months">%1$s, %2$s aylık aboneliğini kutluyor!</string>
+    <string name="chat_event_celebration_milestone">%1$d Aylık Abone</string>
+    <string name="chat_event_celebration_message">%1$s: %2$s</string>
+    <string name="player_reset_zoom">Yakınlaştırmayı 1× değerine sıfırla</string>
+    <string name="channel_open_failed">Kanal açılamadı. Tekrar dene.</string>
 </resources>

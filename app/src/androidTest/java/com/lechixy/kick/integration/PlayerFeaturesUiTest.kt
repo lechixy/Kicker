@@ -12,6 +12,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import java.util.concurrent.atomic.AtomicInteger
@@ -47,6 +48,8 @@ import com.lechixy.kick.R
 import com.lechixy.kick.components.ConnectionNoticeBar
 import com.lechixy.kick.components.PlayerControlsOverlay
 import com.lechixy.kick.components.PlayerSleepTimerSettings
+import com.lechixy.kick.components.PlayerZoomResetButton
+import com.lechixy.kick.components.detectPlayerPinch
 import com.lechixy.kick.components.detectRecordingTaps
 import com.lechixy.kick.components.channel.ExpandableProfilePhoto
 import com.lechixy.kick.components.channel.ChannelMediaTags
@@ -214,6 +217,98 @@ class PlayerFeaturesUiTest {
             }
         }
         compose.runOnIdle { assertEquals(listOf(true to false, true to true, true to true), skips) }
+    }
+
+    @Test fun recordingPinchConsumesTheGestureAndReportsItsOffCenterFocusAndPan() {
+        var zoom = 1f
+        var focus = Offset.Zero
+        var pan = Offset.Zero
+        var pinchesEnded = 0
+        compose.setContent {
+            Box(
+                Modifier.fillMaxSize().testTag("recording")
+                    .pointerInput(Unit) {
+                        detectPlayerPinch({ centroid, movement, factor ->
+                            zoom *= factor
+                            focus = Offset(centroid.x / size.width, centroid.y / size.height)
+                            pan += Offset(movement.x / size.width, movement.y / size.height)
+                        }, { pinchesEnded++ })
+                    }
+                    .pointerInput(Unit) {
+                        detectRecordingTaps(
+                            onTap = { error("Pinch toggled controls") },
+                            onHoldStart = { error("Pinch started fast-forward") },
+                        ) { _, _ -> error("Pinch skipped playback") }
+                    },
+            )
+        }
+        compose.onNodeWithTag("recording").performTouchInput {
+            down(0, Offset(width * 0.4f, height * 0.33f))
+            down(1, Offset(width * 0.8f, height * 0.33f))
+            updatePointerTo(0, Offset(width * 0.3f, height * 0.38f))
+            updatePointerTo(1, Offset(width * 0.9f, height * 0.38f))
+            move()
+            up(1)
+            up(0)
+        }
+        compose.runOnIdle {
+            assertEquals(1.5f, zoom, 0.01f)
+            assertEquals(0.6f, focus.x, 0.01f)
+            assertEquals(0.33f, focus.y, 0.01f)
+            assertEquals(0f, pan.x, 0.01f)
+            assertEquals(0.05f, pan.y, 0.01f)
+            assertEquals(1, pinchesEnded)
+        }
+    }
+
+    @Test fun zoomResetAppearsWhenZoomedAndRetainsItsLabelWhileExiting() {
+        var zoom by mutableFloatStateOf(1f)
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            MaterialTheme {
+                PlayerZoomResetButton(
+                    label = if (zoom > 1f) "x2" else null,
+                    onReset = { zoom = 1f },
+                    frame = null,
+                    backdrop = null,
+                    videoReady = false,
+                )
+            }
+        }
+        compose.mainClock.advanceTimeByFrame()
+        val resetButton = compose.onNodeWithText("x2")
+        resetButton.assertDoesNotExist()
+        compose.runOnIdle { zoom = 2f }
+        compose.mainClock.advanceTimeBy(500)
+        resetButton.assertIsDisplayed().performClick()
+        compose.runOnIdle { assertEquals(1f, zoom, 0f) }
+        compose.mainClock.advanceTimeBy(64)
+        resetButton.assertIsDisplayed()
+        compose.onNodeWithText("x1").assertDoesNotExist()
+        compose.mainClock.advanceTimeBy(240)
+        resetButton.assertDoesNotExist()
+    }
+
+    @Test fun recordingHoldStartsOnEitherSideAndEndsOnRelease() {
+        val holds = AtomicInteger()
+        val releases = AtomicInteger()
+        compose.setContent {
+            Box(Modifier.fillMaxSize().testTag("recording").pointerInput(Unit) {
+                detectRecordingTaps(
+                    onTap = { error("Hold toggled controls") },
+                    onHoldStart = { holds.incrementAndGet() },
+                    onHoldEnd = { releases.incrementAndGet() },
+                ) { _, _ -> error("Hold skipped playback") }
+            })
+        }
+        val recording = compose.onNodeWithTag("recording")
+        for ((index, side) in listOf(0.2f, 0.8f).withIndex()) {
+            recording.performTouchInput { down(Offset(width * side, center.y)) }
+            compose.waitUntil(timeoutMillis = 5_000) { holds.get() == index + 1 }
+            assertEquals(index, releases.get())
+            recording.performTouchInput { up() }
+            compose.runOnIdle { assertEquals(index + 1, releases.get()) }
+        }
     }
 
     @Test fun sleepTimerOffersStopAndUpdatesOnlyWhenTheNewDurationIsApplied() {

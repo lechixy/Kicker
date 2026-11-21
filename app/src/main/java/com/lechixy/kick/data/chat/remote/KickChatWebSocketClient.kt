@@ -39,7 +39,15 @@ import com.lechixy.kick.data.chat.model.ChatMessageMetadata
 import com.lechixy.kick.data.chat.model.ChatMessageType
 import com.lechixy.kick.data.chat.model.ChatWebSocketEvent
 import com.lechixy.kick.data.chat.model.ConnectPayload
+import android.os.SystemClock
+import com.lechixy.kick.data.channel.model.KickGoalDto
+import com.lechixy.kick.data.chat.model.ChatPointsUpdate
 import com.lechixy.kick.data.chat.model.GiftedSubscriptionsEvent
+import com.lechixy.kick.data.chat.model.GiftsLeaderboardUpdatedEvent
+import com.lechixy.kick.data.chat.model.KicksGiftedEvent
+import com.lechixy.kick.data.chat.model.KicksLeaderboardUpdatedEvent
+import com.lechixy.kick.data.chat.model.TimedChatEvent
+import com.lechixy.kick.data.chat.model.tickerDurationMillis
 import com.lechixy.kick.data.chat.model.MessageDeletedEvent
 import com.lechixy.kick.data.chat.model.PinnedMessageInfo
 import com.lechixy.kick.data.chat.model.PointsUpdatedEvent
@@ -114,8 +122,43 @@ class KickChatWebSocketClient(
     private val _events = MutableSharedFlow<ChatWebSocketEvent>(extraBufferCapacity = 64)
     val events: SharedFlow<ChatWebSocketEvent> = _events.asSharedFlow()
 
-    private val _pointsUpdated = MutableStateFlow<PointsUpdatedEvent?>(null)
-    val pointsUpdated: StateFlow<PointsUpdatedEvent?> = _pointsUpdated.asStateFlow()
+    private val _tickerEvents = MutableStateFlow<List<TimedChatEvent>>(emptyList())
+    val tickerEvents = _tickerEvents.asStateFlow()
+    private val _subscriptionGoal = MutableStateFlow<KickGoalDto?>(null)
+    val subscriptionGoal = _subscriptionGoal.asStateFlow()
+
+    private val presentationRevision = AtomicLong()
+    private val _pointsUpdated = MutableStateFlow<ChatPointsUpdate?>(null)
+    val pointsUpdated = _pointsUpdated.asStateFlow()
+
+    fun consumePoints(revision: Long): Long {
+        while (true) {
+            val update = _pointsUpdated.value ?: return 0L
+            if (update.revision != revision || update.pendingPoints == 0L) return 0L
+            if (_pointsUpdated.compareAndSet(update, update.copy(pendingPoints = 0L))) {
+                return update.pendingPoints
+            }
+        }
+    }
+
+    fun dismissTickerEvents(ids: Set<Long>) {
+        _tickerEvents.update { events -> events.filterNot { it.id in ids } }
+    }
+
+    private fun publishEvent(event: ChatWebSocketEvent) {
+        event.tickerDurationMillis()?.let { duration ->
+            val now = SystemClock.elapsedRealtime()
+            val timed = TimedChatEvent(presentationRevision.incrementAndGet(), event, duration, now + duration)
+            _tickerEvents.update { events ->
+                val active = events.filter { it.expiresAtMillis > now }
+                val duplicate = event is ChatWebSocketEvent.StreamHosted && active.any {
+                    it.event is ChatWebSocketEvent.StreamHosted && it.event.event.message.id == event.event.message.id
+                }
+                if (duplicate) active else (active.takeLast(31) + timed)
+            }
+        }
+        _events.tryEmit(event)
+    }
 
     private val _connectionState = MutableStateFlow(ChatConnectionState.DISCONNECTED)
     val connectionState: StateFlow<ChatConnectionState> = _connectionState.asStateFlow()
@@ -169,6 +212,10 @@ class KickChatWebSocketClient(
             while (isActive) {
                 delay((if (_highTraffic.value) 250L else 100L).milliseconds)
                 flushMessages()
+                val now = SystemClock.elapsedRealtime()
+                if (_tickerEvents.value.any { it.expiresAtMillis <= now }) {
+                    _tickerEvents.update { events -> events.filter { it.expiresAtMillis > now } }
+                }
             }
         }
         _connectionState.value = ChatConnectionState.CONNECTING
@@ -326,7 +373,7 @@ class KickChatWebSocketClient(
                         webSocket.send("{}")
                         return@forEach
                     }
-                    handleFrame(frameText, channelId, chatroomId, clientId.toLongOrNull().takeIf { authenticated })
+                    handleFrame(webSocket, frameText, channelId, chatroomId, clientId.toLongOrNull().takeIf { authenticated })
                 }
         }
 
@@ -349,7 +396,15 @@ class KickChatWebSocketClient(
         }
     }
 
-    private fun handleFrame(frameText: String, channelId: Long, chatroomId: Long, authenticatedUserId: Long?) {
+    @Synchronized
+    private fun handleFrame(
+        socket: WebSocket,
+        frameText: String,
+        channelId: Long,
+        chatroomId: Long,
+        authenticatedUserId: Long?
+    ) {
+        if (socket !== webSocket || currentChannelId != channelId || currentChatroomId != chatroomId) return
         try {
             // Check for Centrifugo disconnect or unsubscribe frames (e.g., token expired)
             if (frameText.contains("\"disconnect\"") || frameText.contains("\"unsubscribe\"")) {
@@ -369,20 +424,23 @@ class KickChatWebSocketClient(
             val eventData = publication.data ?: return
             val rawData = eventData.data
             val eventType = publication.eventName ?: return
+            val publicationChannel = pushFrame.push?.channel ?: pushFrame.channel
+            val isChannelPublication = publicationChannel == "channel_$channelId" || publicationChannel == "channel.$channelId"
 
             when (eventType) {
                 "App\\Events\\ChatMoveToSupportedChannelEvent", "ChatMoveToSupportedChannelEvent" -> {
                     if ((pushFrame.push?.channel ?: pushFrame.channel) != "channel.$channelId") return
                     val event = rawData?.let { decodeEventPayload<com.lechixy.kick.data.chat.model.ChannelRaid>(it) } ?: return
                     if (event.channel.id != channelId || event.hosted.id == channelId || event.targetSlug.isBlank()) return
-                    _events.tryEmit(ChatWebSocketEvent.Raid(event))
+                    publishEvent(ChatWebSocketEvent.Raid(event))
                 }
 
                 "App\\Events\\StreamHostedEvent", "StreamHostedEvent" -> {
-                    if (pushFrame.push?.channel != "chatrooms.$chatroomId") return
+                    if (publicationChannel != "chatrooms.$chatroomId" && publicationChannel != "chatrooms.$chatroomId.v2" &&
+                        !isChannelPublication) return
                     val data = rawData ?: return
                     val event = decodeEventPayload<com.lechixy.kick.data.chat.model.StreamHostedEvent>(data) ?: return
-                    _events.tryEmit(ChatWebSocketEvent.StreamHosted(event))
+                    publishEvent(ChatWebSocketEvent.StreamHosted(event))
                 }
                 "App\\Events\\ChatroomUpdatedEvent", "ChatroomUpdatedEvent",
                 "App\\Events\\ChatSettingsChanged", "ChatSettingsChanged" -> {
@@ -391,7 +449,7 @@ class KickChatWebSocketClient(
                     if (eventChannel != null && (eventChannel as? JsonPrimitive)?.content != channelId.toString()) return
                     if (eventType.endsWith("ChatroomUpdatedEvent") &&
                         (payload["id"] as? JsonPrimitive)?.content != chatroomId.toString()) return
-                    _events.tryEmit(ChatWebSocketEvent.SettingsChanged(
+                    publishEvent(ChatWebSocketEvent.SettingsChanged(
                         com.lechixy.kick.data.chat.policy.ChatSettingsUpdates.normalize(payload)))
                 }
 
@@ -401,7 +459,7 @@ class KickChatWebSocketClient(
                     val chatMessage = decodeEventPayload<ChatMessage>(data)?.withSelectedBadgesOnly()
                     if (chatMessage != null && (chatMessage.content.isNotBlank() || chatMessage.isCelebration)) {
                         addMessage(chatMessage)
-                        _events.tryEmit(ChatWebSocketEvent.MessageReceived(chatMessage))
+                        publishEvent(ChatWebSocketEvent.MessageReceived(chatMessage))
                     }
                 }
 
@@ -416,7 +474,7 @@ class KickChatWebSocketClient(
                             chatMessage.copy(type = ChatMessageType.CELEBRATION)
                         }
                         addMessage(normalizedMsg)
-                        _events.tryEmit(ChatWebSocketEvent.MessageReceived(normalizedMsg))
+                        publishEvent(ChatWebSocketEvent.MessageReceived(normalizedMsg))
                     } else {
                         val celebration = decodeEventPayload<ChatCelebration>(data) ?: return
                         val eventMessage = ChatMessage(
@@ -426,7 +484,7 @@ class KickChatWebSocketClient(
                             metadata = ChatMessageMetadata(celebration = celebration)
                         )
                         addMessage(eventMessage)
-                        _events.tryEmit(ChatWebSocketEvent.Celebration(celebration))
+                        publishEvent(ChatWebSocketEvent.Celebration(celebration))
                     }
                 }
 
@@ -436,14 +494,14 @@ class KickChatWebSocketClient(
                     val pinnedInfo = decodeEventPayload<PinnedMessageInfo>(data)?.withSelectedBadgesOnly() ?: return
                     if (pinnedInfo.message != null) {
                         _pinnedMessage.value = pinnedInfo
-                        _events.tryEmit(ChatWebSocketEvent.PinnedMessageCreated(pinnedInfo))
+                        publishEvent(ChatWebSocketEvent.PinnedMessageCreated(pinnedInfo))
                     }
                 }
 
                 "App\\Events\\PinnedMessageDeletedEvent",
                 "PinnedMessageDeletedEvent" -> {
                     _pinnedMessage.value = null
-                    _events.tryEmit(ChatWebSocketEvent.PinnedMessageDeleted)
+                    publishEvent(ChatWebSocketEvent.PinnedMessageDeleted)
                 }
 
                 "RewardRedeemedEvent",
@@ -457,7 +515,7 @@ class KickChatWebSocketClient(
                         rewardRedeemed = event
                     )
                     addMessage(eventMessage)
-                    _events.tryEmit(ChatWebSocketEvent.RewardRedeemed(event))
+                    publishEvent(ChatWebSocketEvent.RewardRedeemed(event))
                 }
 
                 "GiftedSubscriptionsEvent",
@@ -466,7 +524,7 @@ class KickChatWebSocketClient(
                     val event = decodeEventPayload<GiftedSubscriptionsEvent>(data) ?: return
                     val recipientMessages = event.toRecipientMessages()
                     recipientMessages.forEach(::addMessage)
-                    _events.tryEmit(ChatWebSocketEvent.GiftedSubscriptions(event))
+                    publishEvent(ChatWebSocketEvent.GiftedSubscriptions(event))
                 }
 
                 "App\\Events\\ChannelSubscriptionEvent",
@@ -481,14 +539,47 @@ class KickChatWebSocketClient(
                         channelSubscription = event
                     )
                     addMessage(eventMessage)
-                    _events.tryEmit(ChatWebSocketEvent.ChannelSubscribed(event))
+                    publishEvent(ChatWebSocketEvent.ChannelSubscribed(event))
+                }
+
+                "KicksGifted", "App\\Events\\KicksGifted" -> {
+                    if (!isChannelPublication) return
+                    val event = rawData?.let { decodeEventPayload<KicksGiftedEvent>(it) } ?: return
+                    if (event.giftTransactionId.isBlank()) return
+                    addMessage(ChatMessage(
+                        id = "kicks_${event.giftTransactionId}",
+                        content = event.message,
+                        type = ChatMessageType.KICKS_GIFTED,
+                        createdAt = event.createdAt,
+                        sender = com.lechixy.kick.data.chat.model.ChatSender(
+                            id = event.sender.id, username = event.sender.username
+                        ),
+                        kicksGifted = event
+                    ))
+                    publishEvent(ChatWebSocketEvent.KicksGifted(event))
+                }
+                "GoalProgressUpdateEvent", "App\\Events\\GoalProgressUpdateEvent" -> {
+                    if (!isChannelPublication) return
+                    val goal = rawData?.let { decodeEventPayload<KickGoalDto>(it) } ?: return
+                    if (goal.type == "subscriptions") _subscriptionGoal.value = goal
+                    publishEvent(ChatWebSocketEvent.GoalProgressUpdated(goal))
+                }
+                "GiftsLeaderboardUpdated", "App\\Events\\GiftsLeaderboardUpdated" -> {
+                    if (!isChannelPublication) return
+                    val event = rawData?.let { decodeEventPayload<GiftsLeaderboardUpdatedEvent>(it) } ?: return
+                    publishEvent(ChatWebSocketEvent.GiftsLeaderboardUpdated(event))
+                }
+                "KicksLeaderboardUpdated", "App\\Events\\KicksLeaderboardUpdated" -> {
+                    if (!isChannelPublication) return
+                    val event = rawData?.let { decodeEventPayload<KicksLeaderboardUpdatedEvent>(it) } ?: return
+                    publishEvent(ChatWebSocketEvent.KicksLeaderboardUpdated(event))
                 }
 
                 "App\\Events\\UserBannedEvent",
                 "UserBannedEvent" -> {
                     val data = rawData ?: return
                     val event = decodeEventPayload<UserBannedEvent>(data) ?: return
-                    _events.tryEmit(ChatWebSocketEvent.UserBanned(event))
+                    publishEvent(ChatWebSocketEvent.UserBanned(event))
                 }
 
                 "App\\Events\\MessageDeletedEvent",
@@ -496,7 +587,7 @@ class KickChatWebSocketClient(
                     val data = rawData ?: return
                     val event = decodeEventPayload<MessageDeletedEvent>(data) ?: return
                     markMessageDeleted(event)
-                    _events.tryEmit(ChatWebSocketEvent.MessageDeleted(event))
+                    publishEvent(ChatWebSocketEvent.MessageDeleted(event))
                 }
 
                 "PointsUpdated",
@@ -506,22 +597,24 @@ class KickChatWebSocketClient(
                     val data = rawData ?: return
                     val event = decodeEventPayload<PointsUpdatedEvent>(data) ?: return
                     if (!com.lechixy.kick.data.channel.policy.ChannelPointsPolicy.accepts(event, channelId, authenticatedUserId)) return
-                    _pointsUpdated.value = event
-                    _events.tryEmit(ChatWebSocketEvent.PointsUpdated(event))
+                    val revision = presentationRevision.incrementAndGet()
+                    val now = java.time.Instant.now()
+                    _pointsUpdated.update { ChatPointsUpdate.receive(it, event.copy(userId = authenticatedUserId), now, revision) }
+                    publishEvent(ChatWebSocketEvent.PointsUpdated(event))
                 }
 
                 "App\\Events\\StreamerIsLive",
                 "StreamerIsLive" -> {
                     val data = rawData ?: return
                     val event = decodeEventPayload<StreamerIsLiveEvent>(data) ?: return
-                    _events.tryEmit(ChatWebSocketEvent.StreamerIsLive(event))
+                    publishEvent(ChatWebSocketEvent.StreamerIsLive(event))
                 }
 
                 "App\\Events\\StopStreamBroadcast",
                 "StopStreamBroadcast" -> {
                     val data = rawData ?: return
                     val event = decodeEventPayload<StopStreamBroadcastEvent>(data) ?: return
-                    _events.tryEmit(ChatWebSocketEvent.StopStreamBroadcast(event))
+                    publishEvent(ChatWebSocketEvent.StopStreamBroadcast(event))
                 }
             }
         } catch (_: Exception) {
@@ -658,6 +751,8 @@ class KickChatWebSocketClient(
             currentChatroomId = null
             _messages.value = emptyList()
             _pinnedMessage.value = null
+            _tickerEvents.value = emptyList()
+            _subscriptionGoal.value = null
             _userColors.value = emptyMap()
         }
         _connectionState.value = ChatConnectionState.DISCONNECTED

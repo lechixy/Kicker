@@ -94,6 +94,7 @@
     <string name="language_turkish">Turkish</string>
     <!-- Oynatıcı -->
     <string name="player_quality">Quality</string>
+    <string name="player_playback_speed">Playback speed</string>
     <string name="player_more">More</string>
     <string name="player_auto_network">According to network speed</string>
     <string name="player_off">Off</string>
@@ -218,8 +219,6 @@
     <string name="chat_channel_points">Channel points</string>
     <string name="chat_kicks_balance">Kicks balance</string>
     <string name="chat_rules">Chat rules</string>
-    <string name="chat_expand_rules">Expand rules</string>
-    <string name="chat_collapse_rules">Collapse rules</string>
     <string name="chat_slow_mode">Slow mode activated · %1$d s</string>
     <string name="chat_available">Chat is open</string>
     <string name="chat_emotes_only">Emote only</string>
@@ -285,4 +284,27 @@
     <string name="recording_download_failed">Could not download video</string>
     <string name="recording_download_cancel">Cancel</string>
     <string name="recording_download_fallback_name">Recording</string>
+    <string name="drops_and_rewards">Drops &amp; Rewards</string>
+    <string name="drops_eligibility">Earn the following rewards by watching %1$s while they are live in %2$s.</string>
+    <string name="drops_empty">There are no active drops for this livestream.</string>
+    <string name="drops_load_failed">Couldn’t load drops.</string>
+    <string name="drops_unlocked">Unlocked</string>
+    <string name="drops_unlock_minutes">%1$d min to unlock</string>
+    <string name="drops_unlock_hours">%1$d hr %2$d min to unlock</string>
+    <string name="drops_ends_on">Ends on %1$s</string>
+    <string name="drops_progress">Watch progress: %1$s</string>
+    <string name="chat_event_kicks_gifted">%1$s sent %2$s × %3$s</string>
+    <string name="chat_event_gifted_channel_total_single">%1$s! They’ve gifted %2$s subscription in the channel.</string>
+    <string name="chat_event_gifted_channel_total">%1$s! They’ve gifted %2$s subscriptions in the channel.</string>
+    <string name="drops_previous_campaign">Previous campaign</string>
+    <string name="drops_next_campaign">Next campaign</string>
+    <string name="drops_campaign_page">%1$d of %2$d</string>
+    <string name="chat_rules_accept">OK</string>
+    <string name="chat_rules_save_failed">Couldn’t save your acceptance. Try again.</string>
+    <string name="chat_event_celebrates_month">%1$s celebrates their subscription for %2$s month!</string>
+    <string name="chat_event_celebrates_months">%1$s celebrates their subscription for %2$s months!</string>
+    <string name="chat_event_celebration_milestone">%1$d-Month Subscriber</string>
+    <string name="chat_event_celebration_message">%1$s: %2$s</string>
+    <string name="player_reset_zoom">Reset zoom to 1×</string>
+    <string name="channel_open_failed">Couldn’t open the channel. Try again.</string>
 </resources>

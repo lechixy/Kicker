@@ -9,7 +9,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -18,9 +20,12 @@ import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SuggestionChip
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,17 +43,19 @@ import com.lechixy.kick.data.releases.ReleaseConfig
 import com.lechixy.kick.data.releases.ReleaseDialogMode
 import com.lechixy.kick.data.releases.ReleaseDialogRequest
 import com.lechixy.kick.data.releases.normalizeVersion
+import com.lechixy.kick.util.FormatUtils
 import io.noties.markwon.Markwon
 import io.noties.markwon.linkify.LinkifyPlugin
+import kotlinx.coroutines.delay
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.format.FormatStyle
 
 
 @Composable
 fun ReleaseDialog(request: ReleaseDialogRequest, onDismiss: () -> Unit) {
     val context = LocalContext.current
-    val locale = LocalConfiguration.current.locales[0]
     val release = request.release
     val update = request.mode == ReleaseDialogMode.UpdateAvailable
     fun open(url: String) {
@@ -57,12 +64,7 @@ fun ReleaseDialog(request: ReleaseDialogRequest, onDismiss: () -> Unit) {
             runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
     }
 
-    val date = remember(release.publishedAt, locale) {
-        runCatching {
-            DateTimeFormatter.ofPattern("d MMMM yyyy", locale).withZone(ZoneId.systemDefault())
-                .format(Instant.parse(release.publishedAt))
-        }.getOrNull()
-    }
+    val date = release.publicationTime?.let { releaseDateLabel(it) }
     com.lechixy.kick.components.PredictiveAlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(release.name?.takeIf { it.isNotBlank() } ?: release.tagName, maxLines = 3) },
@@ -79,6 +81,25 @@ fun ReleaseDialog(request: ReleaseDialogRequest, onDismiss: () -> Unit) {
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    date?.let { label ->
+                        Surface(
+                            shape = AssistChipDefaults.shape,
+                            border = AssistChipDefaults.assistChipBorder(enabled = true),
+                        ) {
+                            Row(
+                                modifier = Modifier.height(AssistChipDefaults.Height).padding(horizontal = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(
+                                    painterResource(R.drawable.calendar_month_24dp_e3e3e3_fill1_wght400_grad0_opsz24),
+                                    contentDescription = null,
+                                    modifier = Modifier.size(AssistChipDefaults.IconSize),
+                                )
+                                Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false)
+                            }
+                        }
+                    }
                     AssistChip(
                         onClick = {},
                         label = {
@@ -97,15 +118,6 @@ fun ReleaseDialog(request: ReleaseDialogRequest, onDismiss: () -> Unit) {
                             )
                         }
                     )
-                    date?.let {
-                        AssistChip(onClick = {}, label = { Text(it, maxLines = 1) }, leadingIcon = {
-                            Icon(
-                                painter = painterResource(R.drawable.calendar_month_24dp_e3e3e3_fill1_wght400_grad0_opsz24),
-                                contentDescription = null,
-                                modifier = Modifier.size(AssistChipDefaults.IconSize),
-                            )
-                        })
-                    }
                     if (update) {
                         SuggestionChip(onClick = {}, label = {
                             Text(
@@ -156,4 +168,27 @@ fun ReleaseDialog(request: ReleaseDialogRequest, onDismiss: () -> Unit) {
         }, dismissButton = {
             if (update) TextButton(onClick = onDismiss) { Text(stringResource(R.string.release_later)) }
         })
+}
+
+@Composable
+internal fun releaseDateLabel(publicationTime: Instant): String {
+    val locale = LocalConfiguration.current.locales[0]
+    val zone = ZoneId.systemDefault()
+    val date = remember(publicationTime, locale, zone) {
+        DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)
+            .withLocale(locale)
+            .withZone(zone)
+            .format(publicationTime)
+    }
+    val relativeTime by produceState(
+        initialValue = FormatUtils.formatRelativeTime(publicationTime, locale),
+        publicationTime,
+        locale,
+    ) {
+        while (true) {
+            value = FormatUtils.formatRelativeTime(publicationTime, locale)
+            delay(60_000)
+        }
+    }
+    return stringResource(R.string.release_publication_date, date, relativeTime)
 }

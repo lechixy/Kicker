@@ -186,9 +186,12 @@ class PlaybackService : MediaSessionService() {
                 val watching = player.playWhenReady && player.playerError == null &&
                     player.playbackState in listOf(Player.STATE_READY, Player.STATE_BUFFERING) &&
                     extras?.getBoolean(EXTRA_IS_LIVE) == true && channelId > 0 && livestreamId > 0
-                viewerTracking.setSession(if (watching) com.lechixy.kick.data.player.remote.ViewerSession(
+                val viewerSession = if (watching) com.lechixy.kick.data.player.remote.ViewerSession(
                     channelId, livestreamId, extras.getString(EXTRA_VIEWER_VOD_ID), extras.getString(EXTRA_VIEWER_CHANNEL_SLUG)
-                ) else null)
+                ) else null
+                com.lechixy.kick.data.player.remote.ViewerTrackingDiagnostics.mutablePlaying.value =
+                    viewerSession.takeIf { player.isPlaying }
+                viewerTracking.setSession(viewerSession)
                 if (events.containsAny(Player.EVENT_PLAYBACK_STATE_CHANGED, Player.EVENT_PLAY_WHEN_READY_CHANGED)) {
                     com.lechixy.kick.data.common.remote.NetworkMonitor.reportPlaybackBuffering(
                         player.playWhenReady && player.playbackState == Player.STATE_BUFFERING
@@ -210,6 +213,7 @@ class PlaybackService : MediaSessionService() {
     @OptIn(UnstableApi::class)
     override fun onDestroy() {
         SleepTimer.detach(this)
+        com.lechixy.kick.data.player.remote.ViewerTrackingDiagnostics.mutablePlaying.value = null
         viewerTracking.close()
         com.lechixy.kick.data.common.remote.NetworkMonitor.reportPlaybackBuffering(false)
         diagnosticTracker?.close()

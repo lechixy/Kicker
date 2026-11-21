@@ -25,16 +25,12 @@ import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.updateTransition
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
@@ -96,6 +92,7 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -110,6 +107,7 @@ import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
@@ -122,8 +120,10 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
@@ -141,6 +141,7 @@ import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.media3.common.C
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.Tracks
@@ -204,6 +205,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.text.NumberFormat
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
 import androidx.compose.ui.geometry.Rect as ComposeRect
@@ -292,6 +294,26 @@ fun KickPlayerView(
     var liveRetryTrigger by remember(stableId) { mutableIntStateOf(0) }
     var isSeeking by remember(stableId) { mutableStateOf(false) }
     var skipFeedback by remember(stableId, isMini, isInPipMode) { mutableStateOf<RecordingSkipFeedback?>(null) }
+    var videoZoom by remember(stableId) { mutableStateOf(PlayerVideoZoom()) }
+    var isPinching by remember(stableId) { mutableStateOf(false) }
+    var showZoomFeedback by remember(stableId, isMini, isInPipMode) { mutableStateOf(false) }
+    var playbackSpeed by remember(player, stableId) { mutableFloatStateOf(1f) }
+    var fastForwardFrom by remember(player, stableId) { mutableStateOf<PlaybackParameters?>(null) }
+    val multiplierFormat = remember(viewersLocale) {
+        NumberFormat.getNumberInstance(viewersLocale).apply { maximumFractionDigits = 2 }
+    }
+    fun multiplierLabel(value: Float) = "x${multiplierFormat.format(value.toDouble())}"
+    fun stopFastForward() {
+        val previous = fastForwardFrom ?: return
+        fastForwardFrom = null
+        player?.takeIf { it.currentMediaItem?.mediaId == stableId }?.playbackParameters = previous
+    }
+    LaunchedEffect(isPinching, showZoomFeedback) {
+        if (!isPinching && showZoomFeedback) {
+            delay(1_000)
+            showZoomFeedback = false
+        }
+    }
     var showControls by remember { mutableStateOf(false) }
     var isAdjustingVolume by remember { mutableStateOf(false) }
 
@@ -584,6 +606,10 @@ fun KickPlayerView(
                 val isCurrentMedia = p.currentMediaItem?.mediaId == stableId
                 isPlaying = isCurrentMedia && p.isPlaying
                 playRequested = if (isCurrentMedia) p.playWhenReady else playOnLoad
+                if (!isCurrentMedia || !p.playWhenReady || p.playbackState == Player.STATE_ENDED || p.playerError != null) {
+                    stopFastForward()
+                }
+                if (isCurrentMedia) playbackSpeed = fastForwardFrom?.speed ?: p.playbackParameters.speed
             }
 
             val listener = object : Player.Listener {
@@ -776,6 +802,9 @@ fun KickPlayerView(
         val mediaItem = baseMediaItem.buildUpon().setMediaMetadata(
             baseMediaItem.mediaMetadata.buildUpon().setExtras(extras).build()).build()
 
+        if (currentItem?.mediaId != stableId && p.playbackParameters != PlaybackParameters.DEFAULT) {
+            p.playbackParameters = PlaybackParameters.DEFAULT
+        }
         if (recording != null) {
             val resumePosition = PlaybackProgressStore.get(recording.progressId)?.let { saved ->
                 saved.resumePosition(recording.durationMs.takeIf { it > 0 } ?: saved.durationMs)
@@ -812,7 +841,8 @@ fun KickPlayerView(
         }
     }
 
-    val showPlaybackControls = !isInPipMode && showControls && playbackError == null && !isMini && !editingChatPosition
+    val gesturesEnabled = !isInPipMode && !isMini && !editingChatPosition
+    val showPlaybackControls = gesturesEnabled && showControls && playbackError == null
     val controlsTransition = updateTransition(showPlaybackControls, label = "playback controls")
     val controlsOpacity = controlsTransition.animateFloat(
         transitionSpec = { tween(if (targetState) 200 else 160) },
@@ -876,10 +906,32 @@ fun KickPlayerView(
                     onPlayerCoordinatesChanged(rect)
                 }
             }
-            .pointerInput(isInPipMode, isMini, editingChatPosition, stableId, recording != null) {
-                if (!isInPipMode && !isMini && !editingChatPosition) {
+            .pointerInput(gesturesEnabled, stableId) {
+                if (gesturesEnabled) detectPlayerPinch(
+                    onTransform = { centroid, pan, factor ->
+                        videoZoom = videoZoom.transform(size, centroid, pan, factor)
+                        isPinching = true
+                        showZoomFeedback = videoZoom.scale > 1f
+                    },
+                    onPinchEnd = { isPinching = false },
+                )
+            }
+            .pointerInput(gesturesEnabled, stableId, recording != null, player) {
+                if (gesturesEnabled) {
                     if (recording != null) {
-                        detectRecordingTaps(onTap = { showControls = !showControls }) { forward, continued ->
+                        detectRecordingTaps(
+                            onTap = { showControls = !showControls },
+                            onHoldStart = {
+                                val p = player
+                                if (p != null && p.currentMediaItem?.mediaId == stableId && p.isPlaying &&
+                                    p.isCommandAvailable(Player.COMMAND_SET_SPEED_AND_PITCH)
+                                ) {
+                                    fastForwardFrom = p.playbackParameters
+                                    p.setPlaybackSpeed(2f)
+                                }
+                            },
+                            onHoldEnd = ::stopFastForward,
+                        ) { forward, continued ->
                             onRecordingTap(forward, continued)
                         }
                     } else {
@@ -895,10 +947,26 @@ fun KickPlayerView(
         if (!isMini && !preserveBlackBars && !useHostBackdrop && ambientVisible && ambient.bounds?.hasLetterboxSpace == true) {
             PlayerAmbientBackdrop(ambient, modifier = Modifier.matchParentSize())
         }
-        PlayerVideoSurface(
-            player, isPlaying, Modifier.fillMaxSize().onSizeChanged { viewport = it },
-            onTextureChanged = { playerTexture = it },
-        )
+        Box(Modifier.fillMaxSize().onSizeChanged { viewport = it }.clipToBounds()) {
+            PlayerVideoSurface(
+                player, isPlaying,
+                Modifier.fillMaxSize().layout { measurable, constraints ->
+                    val zoom = if (isMini || isInPipMode) PlayerVideoZoom() else videoZoom
+                    val width = constraints.maxWidth
+                    val height = constraints.maxHeight
+                    val video = measurable.measure(Constraints.fixed(
+                        (width * zoom.scale).roundToInt(), (height * zoom.scale).roundToInt(),
+                    ))
+                    layout(width, height) {
+                        video.place(
+                            ((width - video.width) / 2f + zoom.normalizedTranslation.x * width).roundToInt(),
+                            ((height - video.height) / 2f + zoom.normalizedTranslation.y * height).roundToInt(),
+                        )
+                    }
+                },
+                onTextureChanged = { playerTexture = it },
+            )
+        }
 
         val overlayThumbnail = remember(previewThumbnailUrl, channel, recording?.id) {
             if (recording != null) recording.thumbnail ?: channel?.getBannerUrl()
@@ -1152,7 +1220,34 @@ fun KickPlayerView(
             )
         }
 
-        if (!isInPipMode && !isMini && !editingChatPosition) {
+        if (gesturesEnabled && playbackError == null) {
+            val fastForward = fastForwardFrom != null && playRequested
+            val feedbackPosition = Modifier.align(Alignment.TopCenter).padding(top = if (isFullScreen) 60.dp else 44.dp)
+            if (fastForward) {
+                PlayerFastForwardFeedback(
+                    label = multiplierLabel(2f),
+                    frame = legacyBackdrop,
+                    backdrop = controlBlur,
+                    videoReady = backdropTexture != null,
+                    modifier = feedbackPosition,
+                )
+            }
+            PlayerZoomResetButton(
+                label = if (!fastForward && videoZoom.scale > 1f && (showZoomFeedback || showPlaybackControls)) {
+                    multiplierLabel(videoZoom.scale).takeUnless { it == multiplierLabel(1f) }
+                } else null,
+                onReset = {
+                    videoZoom = PlayerVideoZoom()
+                    showZoomFeedback = false
+                },
+                frame = legacyBackdrop,
+                backdrop = controlBlur,
+                videoReady = backdropTexture != null,
+                modifier = feedbackPosition,
+            )
+        }
+
+        if (gesturesEnabled) {
             skipFeedback?.let { feedback ->
                 RecordingSkipOverlay(feedback, Modifier.matchParentSize()) { skipFeedback = null }
             }
@@ -1279,6 +1374,7 @@ fun KickPlayerView(
                                     Text(
                                         text = when (targetPage) {
                                             PlayerSettingsPage.QUALITY -> stringResource(R.string.player_quality)
+                                            PlayerSettingsPage.SPEED -> stringResource(R.string.player_playback_speed)
                                             PlayerSettingsPage.SLEEP_TIMER -> stringResource(R.string.player_sleep_timer)
                                             PlayerSettingsPage.CHAT_OVERLAY -> stringResource(R.string.fullscreen_chat_title)
                                             PlayerSettingsPage.MORE -> stringResource(R.string.player_more)
@@ -1305,6 +1401,14 @@ fun KickPlayerView(
                                             value = qualityLabel,
                                             onClick = { settingsPage = PlayerSettingsPage.QUALITY }
                                         )
+                                        if (recording != null) {
+                                            PlayerSettingsCategoryRow(
+                                                icon = R.drawable.speed_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+                                                title = stringResource(R.string.player_playback_speed),
+                                                value = multiplierLabel(playbackSpeed),
+                                                onClick = { settingsPage = PlayerSettingsPage.SPEED },
+                                            )
+                                        }
                                         PlayerSettingsCategoryRow(
                                             icon = R.drawable.timer_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
                                             title = stringResource(R.string.player_sleep_timer),
@@ -1389,6 +1493,30 @@ fun KickPlayerView(
                                                     }
                                                     dismissSettings()
                                                 }
+                                            )
+                                        }
+                                    }
+                                }
+
+                                PlayerSettingsPage.SPEED -> {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp)
+                                            .verticalScroll(rememberScrollState()),
+                                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                                    ) {
+                                        playbackSpeedOptions.forEach { speed ->
+                                            PlayerSettingsOptionRow(
+                                                title = multiplierLabel(speed),
+                                                selected = playbackSpeed == speed,
+                                                onClick = {
+                                                    player?.takeIf {
+                                                        it.currentMediaItem?.mediaId == stableId &&
+                                                            it.isCommandAvailable(Player.COMMAND_SET_SPEED_AND_PITCH)
+                                                    }?.setPlaybackSpeed(speed)
+                                                    dismissSettings()
+                                                },
                                             )
                                         }
                                     }
@@ -1602,7 +1730,9 @@ private fun Tracks.toQualityOptions(): List<VideoQualityOption> =
 /**
  * Player ayarları dialogundaki sayfalar (YouTube tarzı kategoriler).
  */
-private enum class PlayerSettingsPage { MAIN, QUALITY, SLEEP_TIMER, CHAT_OVERLAY, MORE, AMBIENT }
+private enum class PlayerSettingsPage { MAIN, QUALITY, SPEED, SLEEP_TIMER, CHAT_OVERLAY, MORE, AMBIENT }
+
+private val playbackSpeedOptions = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f)
 
 @Composable
 private fun PlayerSettingsCategoryRow(
@@ -1854,9 +1984,8 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
          */
         Row(
             modifier = Modifier.align(Alignment.Center).animateEnterExit(
-                enter = scaleIn(spring(dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessMedium), initialScale = 0.5f),
-                exit = scaleOut(tween(160), targetScale = 0.65f)
+                enter = playbackButtonEnter,
+                exit = playbackButtonExit
             ),
             horizontalArrangement = Arrangement.spacedBy(28.dp),
             verticalAlignment = Alignment.CenterVertically

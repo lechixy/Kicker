@@ -10,6 +10,7 @@
     <string name="notification_dismiss">Bildirimi kapat</string>
     <string name="release_whats_new">Yenilikler</string>
     <string name="release_update_available">Güncelleme mevcut</string>
+    <string name="release_publication_date">%1$s (%2$s)</string>
 
     <string name="release_no_notes">Sürüm notları şu anda kullanılamıyor, yayınlanan sürümleri GitHub’dan görüntüleyebilirsin</string>
     <string name="release_update">Güncelle</string>

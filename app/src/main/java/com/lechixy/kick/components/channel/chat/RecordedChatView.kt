@@ -39,11 +39,14 @@ internal fun RecordedChatView(
             onHideChat = onHideChat, onOpenChannel = onOpenChannel, modifier = modifier,
             autoHideHeader = autoHideHeader,
             playerControlsVisible = playerHost.isControlsVisible,
-            composer = {
-                if (chat.failed) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(stringResource(R.string.recorded_chat_failed), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                    TextButton(onClick = chat.retry) { Text(stringResource(R.string.chat_retry)) }
+            composer = { chatContent ->
+                Column(Modifier.fillMaxSize()) {
+                    Box(Modifier.weight(1f).fillMaxWidth()) { chatContent() }
+                    if (chat.failed) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(stringResource(R.string.recorded_chat_failed), Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                        TextButton(onClick = chat.retry) { Text(stringResource(R.string.chat_retry)) }
+                    }
                 }
             })
     }

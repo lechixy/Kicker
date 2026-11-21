@@ -5,6 +5,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedDispatcher
 import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -20,6 +22,9 @@ import androidx.navigation.compose.*
 import com.lechixy.kick.R
 import com.lechixy.kick.components.*
 import com.lechixy.kick.components.account.AdaptiveModalSheet
+import com.lechixy.kick.components.settings.SettingDropdown
+import com.lechixy.kick.components.settings.SettingSlider
+import com.lechixy.kick.components.settings.SettingSwitch
 import com.lechixy.kick.components.settings.SettingsTopBar
 import com.lechixy.kick.data.following.model.FollowedChannel
 import com.lechixy.kick.data.releases.GitHubRelease
@@ -31,6 +36,8 @@ import kotlinx.coroutines.flow.first
 import org.junit.*
 import org.junit.Assert.*
 import java.io.File
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 class NavigationUpdatesUiTest {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
@@ -163,12 +170,96 @@ class NavigationUpdatesUiTest {
         if (window.width > maxWidthPx + 20) assertTrue(back.left >= (window.width - maxWidthPx) / 2 - 1)
         compose.onNodeWithText("Header").assertIsDisplayed()
     }
-    @Test fun changelogOpensPublishedReleaseNotesAndCanDismissThem() {
+    @Test fun settingsSwitchRespondsToTrackDragsAndTapsOnTheTrackAndRow() {
+        val changes = mutableListOf<Boolean>()
         show {
-            SettingsAboutPage(ReleaseHistoryState(listOf(GitHubRelease("v2.0", name = "Release two", body = "# Actual notes\n\n- Change one")), loaded = true), {}, {})
+            var checked by remember { mutableStateOf(false) }
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                SettingSwitch("Switch row", checked, { checked = it; changes.add(it) })
+            }
         }
+        val row = compose.onNode(hasText("Switch row") and isToggleable())
+        row.assertIsOff().performTouchInput {
+            down(Offset(width - 49.dp.toPx(), centerY))
+            moveBy(Offset(38.dp.toPx(), 0f))
+        }
+        row.assertIsOff()
+        row.performTouchInput { up() }
+        row.assertIsOn().performTouchInput {
+            swipe(Offset(width - 29.dp.toPx(), centerY), Offset(width - 67.dp.toPx(), centerY))
+        }
+        row.assertIsOff().performTouchInput { click(Offset(width - 42.dp.toPx(), centerY)) }
+        row.assertIsOn().performTouchInput { click(Offset(32.dp.toPx(), centerY)) }
+        row.assertIsOff()
+        compose.runOnIdle { assertEquals(listOf(true, false, true, false), changes) }
+    }
+
+    @Test fun settingsDropdownOpensFromTheRowAndItsButton() {
+        val current = SettingsKeys.THEME.defaultValue
+        show { SettingDropdown(SettingsKeys.THEME, "Menu row", listOf(current to "Selected", "light" to "Other option")) }
+        compose.onNodeWithText("Menu row").performTouchInput { click() }
+        compose.onNodeWithText("Other option").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Other option").assertIsDisplayed().performTouchInput { click() }
+        compose.onNodeWithText("Selected").assertIsDisplayed()
+    }
+
+    @Test fun changedSettingsResetToTheirEffectiveDefaultsAndHideTheResetButton() {
+        val toggle = SettingsKeys.DYNAMIC_COLOR
+        val slider = SettingsKeys.chatFontSize(720)
+        val dropdown = SettingsKeys.THEME.copy(defaultProvider = { "dark" })
+        var dropdownChange: String? = null
+        runBlocking {
+            settings.set(toggle, !toggle.defaultValue)
+            settings.set(slider, 22)
+            settings.set(dropdown, "light")
+        }
+        show {
+            Column {
+                SettingSwitch(toggle, "Colors")
+                SettingSlider(slider, "Font", 10f..24f)
+                SettingDropdown(dropdown, "Theme", listOf("dark" to "Dark mode", "light" to "Light mode"),
+                    onValueChanged = { dropdownChange = it })
+            }
+        }
+        for (title in listOf("Colors", "Font", "Theme")) {
+            val description = compose.activity.getString(R.string.settings_reset_value, title)
+            compose.waitUntil(5_000) { compose.onAllNodesWithContentDescription(description).fetchSemanticsNodes().isNotEmpty() }
+            val button = compose.onNodeWithContentDescription(description)
+            button.performTouchInput { click() }
+            compose.waitUntil(5_000) { compose.onAllNodesWithContentDescription(description).fetchSemanticsNodes().isEmpty() }
+        }
+        compose.onNodeWithText("16").assertIsDisplayed()
+        compose.onNodeWithText("Dark mode").assertIsDisplayed()
+        compose.runOnIdle { assertEquals("dark", dropdownChange) }
+        val stored = runBlocking { settings.snapshot() }
+        assertNull(stored[toggle.key])
+        assertNull(stored[slider.key])
+        assertNull(stored[dropdown.key])
+    }
+
+    @Test fun changelogOpensPublishedReleaseNotesAndCanDismissThem() {
+        val latest = Instant.now().minus(5, ChronoUnit.DAYS)
+        val older = latest.minus(1, ChronoUnit.DAYS)
+        val relative = com.lechixy.kick.util.FormatUtils.formatRelativeTime(
+            latest,
+            compose.activity.resources.configuration.locales[0],
+        )
+        show {
+            val releases = listOf(
+                GitHubRelease("v3.0", publishedAt = older.toString()),
+                GitHubRelease("v2.0", name = "Release two", body = "# Actual notes\n\n- Change one", publishedAt = latest.toString()),
+            )
+            SettingsAboutPage(ReleaseHistoryState(releases, loaded = true), {}, {})
+        }
+        compose.onNodeWithText("($relative)", substring = true).assertIsDisplayed()
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Release two"))
         compose.onNodeWithText("Release two").performClick()
+        val publicationDate = hasText("($relative)", substring = true)
+        val github = hasText(label(R.string.github_label))
+        compose.onNode(hasAnyAncestor(isDialog()) and publicationDate).assertIsDisplayed()
+        val horizontallyScrollable = SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.HorizontalScrollAxisRange)
+        compose.onNode(horizontallyScrollable and hasAnyDescendant(publicationDate) and hasAnyDescendant(github)).assertExists()
+        compose.onNode(hasAnyAncestor(isDialog()) and github).performScrollTo().assertIsDisplayed()
         compose.onNodeWithText(label(android.R.string.ok)).assertIsDisplayed().performClick()
         compose.onNodeWithText("Release two").assertIsDisplayed()
     }

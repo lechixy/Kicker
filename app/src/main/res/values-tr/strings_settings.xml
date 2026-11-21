@@ -134,4 +134,5 @@
     <string name="you_download_link_failed">Bazı videolar eklenemedi</string>
     <string name="you_download_unlink">Listeden kaldır</string>
     <string name="you_download_unlink_message">%1$s listeden kaldırılsın mı? Video dosyası cihazda kalır.</string>
+    <string name="settings_reset_value">%1$s ayarını varsayılana döndür</string>
 </resources>

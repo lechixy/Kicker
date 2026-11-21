@@ -19,9 +19,9 @@ class MemorySessionStore : SessionStore {
 
 fun objectJson(value: String): JsonObject = Json.parseToJsonElement(value) as JsonObject
 
-fun signedInAuth(transport: suspend (Request) -> JsonElement): AuthRepository {
+fun signedInAuth(userId: Long = 42, transport: suspend (Request) -> JsonElement): AuthRepository {
     val store = MemorySessionStore()
-    store.write("website_account", Json.encodeToString(StoredWebSession(42, "session_token=access", "session_token=access", "test-agent",
-        "2020-01-01T00:00:00Z", AccountProfile(42, "tester", createdAt = "2020-01-01T00:00:00Z"))))
+    store.write("website_account", Json.encodeToString(StoredWebSession(userId, "session_token=access", "session_token=access", "test-agent",
+        "2020-01-01T00:00:00Z", AccountProfile(userId, "tester", createdAt = "2020-01-01T00:00:00Z"))))
     return AuthRepository(store, transport)
 }

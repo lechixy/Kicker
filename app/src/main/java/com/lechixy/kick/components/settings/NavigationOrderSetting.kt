@@ -51,6 +51,7 @@ import com.lechixy.kick.components.PredictiveAlertDialog
 import com.lechixy.kick.data.account.AccountGraph
 import com.lechixy.kick.data.settings.model.SettingKey
 import com.lechixy.kick.data.settings.model.SettingsKeys
+import com.lechixy.kick.data.settings.model.resolvedDefault
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 import com.lechixy.kick.orderedAppDestinations
 import com.lechixy.kick.screens.home.orderedHomeSections
@@ -103,11 +104,15 @@ private fun OrderSetting(
     warning: @Composable (List<OrderItem>) -> String,
 ) {
     val repository = LocalSettingsRepository.current
-    val saved by repository.get(setting).collectAsStateWithLifecycle(setting.defaultValue)
+    val default = setting.resolvedDefault
+    val saved by remember(repository, setting) { repository.get(setting) }.collectAsStateWithLifecycle(default)
     val scope = rememberCoroutineScope()
     var initialOrder by rememberSaveable { mutableStateOf<String?>(null) }
     val label = stringResource(title)
-    SettingCard(label, icon = icon, description = stringResource(description), onClick = { initialOrder = saved })
+    SettingCard(
+        label, icon = icon, description = stringResource(description), onClick = { initialOrder = saved },
+        onReset = if (items(saved) != items(default)) ({ scope.launch { repository.reset(setting) } }) else null
+    )
     initialOrder?.let { order ->
         OrderDialog(
             label = label,

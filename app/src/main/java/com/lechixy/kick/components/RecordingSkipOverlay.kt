@@ -26,7 +26,11 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.AwaitPointerEventScope
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.PointerInputChange
 import androidx.compose.ui.input.pointer.PointerInputScope
+import androidx.compose.ui.input.pointer.isOutOfBounds
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -46,6 +50,8 @@ internal class RecordingSkipFeedback(
 
 internal suspend fun PointerInputScope.detectRecordingTaps(
     onTap: () -> Unit,
+    onHoldStart: (() -> Unit)? = null,
+    onHoldEnd: () -> Unit = {},
     onSkip: (forward: Boolean, continued: Boolean) -> Unit,
 ) = coroutineScope {
     var singleTap: Job? = null
@@ -55,7 +61,31 @@ internal suspend fun PointerInputScope.detectRecordingTaps(
     awaitEachGesture {
         val down = awaitFirstDown()
         down.consume()
-        val up = waitForUpOrCancellation() ?: return@awaitEachGesture
+        val canHold = onHoldStart != null && (down.position.x < size.width / 3f || down.position.x > size.width * 2f / 3f)
+        val up = if (canHold) {
+            var timedOut = true
+            val release = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                awaitRecordingPressRelease(down).also { timedOut = false }
+            }
+            if (timedOut) {
+                singleTap?.cancel()
+                singleTap = null
+                skipping = false
+                try {
+                    onHoldStart()
+                    do {
+                        val event = awaitPointerEvent()
+                        if (event.changes.any { it.isConsumed }) break
+                        event.changes.forEach { it.consume() }
+                    } while (event.changes.any { it.pressed })
+                } finally {
+                    onHoldEnd()
+                }
+            }
+            release
+        } else {
+            waitForUpOrCancellation()
+        } ?: return@awaitEachGesture
         up.consume()
 
         val forward = up.position.x >= size.width / 2f
@@ -81,6 +111,19 @@ internal suspend fun PointerInputScope.detectRecordingTaps(
         }
         lastForward = forward
         lastUpMillis = up.uptimeMillis
+    }
+}
+
+private suspend fun AwaitPointerEventScope.awaitRecordingPressRelease(down: PointerInputChange): PointerInputChange? {
+    while (true) {
+        val event = awaitPointerEvent()
+        val pointer = event.changes.firstOrNull { it.id == down.id } ?: return null
+        if (event.changes.any { it.isConsumed || (it.id != down.id && it.pressed) } ||
+            pointer.isOutOfBounds(size, extendedTouchPadding) ||
+            (pointer.position - down.position).getDistance() > viewConfiguration.touchSlop
+        ) return null
+        if (!pointer.pressed) return pointer
+        if (awaitPointerEvent(PointerEventPass.Final).changes.any { it.isConsumed }) return null
     }
 }
 

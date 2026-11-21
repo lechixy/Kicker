@@ -37,6 +37,8 @@ fun SettingCard(
     descriptionColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     iconTint: Color = MaterialTheme.colorScheme.primary,
     onClick: (() -> Unit)? = null,
+    rowModifier: Modifier = Modifier,
+    onReset: (() -> Unit)? = null,
     action: @Composable (() -> Unit)? = null
 ) {
     val resolvedContainerColor = if (enabled) containerColor else containerColor.copy(alpha = containerColor.alpha * 0.5f)
@@ -50,6 +52,7 @@ fun SettingCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .then(rowModifier)
                 .then(
                     if (onClick != null && enabled) Modifier.clickable(onClick = onClick) else Modifier
                 )
@@ -57,42 +60,48 @@ fun SettingCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(
-                modifier = Modifier.weight(1f),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (icon != null) {
-                    SettingLeadingIcon(icon, enabled, iconTint)
-                }
+            Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (icon != null) {
+                        SettingLeadingIcon(icon, enabled, iconTint)
+                    }
 
-                if (image != null) {
-                    Image(
-                        painter = painterResource(id = image),
-                        contentDescription = null,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                }
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = title,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = if (enabled) titleColor else titleColor.copy(alpha = 0.38f)
-                    )
-                    if (description != null) {
-                        Text(
-                            text = description,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = if (enabled) descriptionColor else descriptionColor.copy(alpha = 0.38f)
+                    if (image != null) {
+                        Image(
+                            painter = painterResource(id = image),
+                            contentDescription = null,
+                            modifier = Modifier.size(22.dp)
                         )
+                        Spacer(modifier = Modifier.width(16.dp))
+                    }
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = title,
+                            style = MaterialTheme.typography.bodyLarge,
+                            color = if (enabled) titleColor else titleColor.copy(alpha = 0.38f)
+                        )
+                        if (description != null) {
+                            Text(
+                                text = description,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (enabled) descriptionColor else descriptionColor.copy(alpha = 0.38f)
+                            )
+                        }
                     }
                 }
-            }
 
-            if (action != null) {
-                Spacer(modifier = Modifier.width(16.dp))
-                action()
+                if (action != null) {
+                    Spacer(modifier = Modifier.width(16.dp))
+                    action()
+                }
+            }
+            if (onReset != null) {
+                Spacer(Modifier.width(4.dp))
+                SettingResetButton(title, onReset, enabled)
             }
         }
     }

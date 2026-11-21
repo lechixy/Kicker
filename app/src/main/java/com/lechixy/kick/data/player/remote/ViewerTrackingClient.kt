@@ -32,6 +32,9 @@ data class ViewerTrackingState(
 object ViewerTrackingDiagnostics {
     internal val mutableState = MutableStateFlow(ViewerTrackingState())
     val state = mutableState.asStateFlow()
+
+    internal val mutablePlaying = MutableStateFlow<ViewerSession?>(null)
+    val playing = mutablePlaying.asStateFlow()
 }
 
 object ViewerTrackingProtocol {

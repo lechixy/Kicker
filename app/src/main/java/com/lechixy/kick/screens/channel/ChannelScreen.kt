@@ -229,10 +229,11 @@ fun ChannelScreen(
         )
     }
 
-    LaunchedEffect(channelSlug) {
+    LaunchedEffect(channelSlug, playerHost?.preloadedChannelRevision) {
         viewModel.setRecordingChat(playerHost?.recording != null)
         val autoConnect = settingsRepository.get(SettingsKeys.AUTO_CONNECT_CHAT).first()
-        viewModel.loadChannel(channelSlug, autoConnectChat = autoConnect)
+        viewModel.loadChannel(channelSlug, autoConnectChat = autoConnect,
+            preloadedChannel = playerHost?.takePreloadedChannel(channelSlug))
     }
 
     LaunchedEffect(state.channel) {
@@ -255,6 +256,14 @@ fun ChannelScreen(
     val density = LocalDensity.current
 
     val channel = state.channel
+    val drops = viewModel<DropsViewModel> {
+        DropsViewModel(context.applicationContext as android.app.Application)
+    }
+    val dropsSession by com.lechixy.kick.data.account.AccountGraph.auth.session.collectAsStateWithLifecycle()
+    val dropsLocale = configuration.locales[0]
+    LaunchedEffect(channel, dropsSession.generation, dropsSession.signedIn, dropsLocale) {
+        drops.bind(channel, dropsSession.generation, dropsSession.signedIn, dropsLocale)
+    }
     LaunchedEffect(selectedTab, channel?.id, state.isLoading) {
         if (!state.isLoading && selectedTab == ChannelTab.ABOUT) viewModel.loadAbout()
     }
@@ -282,22 +291,24 @@ fun ChannelScreen(
         viewModel.setRecordingChat(replay)
         if (returningLive && settingsRepository.get(SettingsKeys.AUTO_CONNECT_CHAT).first()) viewModel.connectChat()
     }
+    val openChatChannel by androidx.compose.runtime.rememberUpdatedState(raidNavigation.channel)
     val sharedChat = remember(viewModel, channel?.id, playerHost?.recording?.id) {
         movableContentOf<ChannelDetail, (() -> Unit)?, Modifier, Boolean> { ch, onHide, chatMod, autoHideHeader ->
             if (playerHost?.recording != null) {
                 com.lechixy.kick.components.channel.chat.RecordedChatView(
                     ch, playerHost.recording!!, playerHost, modifier = chatMod,
-                    onHideChat = onHide, onOpenChannel = { slug -> playerHost.open(slug) },
+                    onHideChat = onHide, onOpenChannel = { slug -> openChatChannel(slug) },
                     autoHideHeader = autoHideHeader)
             } else {
                 ChannelChatSection(
                     viewModel = viewModel,
                     channel = ch,
+                    drops = drops,
                     onHideChat = onHide,
                     autoHideHeader = autoHideHeader,
                     playerControlsVisible = playerHost?.isControlsVisible == true,
                     modifier = chatMod,
-                    onOpenChannel = { slug -> playerHost?.open(slug) }
+                    onOpenChannel = { slug -> openChatChannel(slug) }
                 )
             }
         }
@@ -929,6 +940,7 @@ private fun ChannelTabSkeleton(tab: ChannelTab, onNavigate: (ChannelTab) -> Unit
 private fun ChannelChatSection(
     viewModel: ChannelViewModel,
     channel: ChannelDetail,
+    drops: DropsViewModel,
     onHideChat: (() -> Unit)?,
     autoHideHeader: Boolean,
     playerControlsVisible: Boolean,
@@ -944,6 +956,8 @@ private fun ChannelChatSection(
     val userColors by viewModel.userColors.collectAsChatState()
     val chatSettings by viewModel.chatSettings.collectAsChatState()
     val pointsUpdated by viewModel.pointsUpdated.collectAsChatState()
+    val tickerEvents by viewModel.tickerEvents.collectAsChatState()
+    val subscriptionGoal by viewModel.subscriptionGoal.collectAsChatState()
     val emotes by viewModel.emotes.collectAsChatState()
     val replySession by com.lechixy.kick.data.account.AccountGraph.auth.session.collectAsChatState()
     var replyTarget by remember(channel.id, replySession.generation) { mutableStateOf<com.lechixy.kick.data.chat.model.ChatMessage?>(null) }
@@ -959,7 +973,9 @@ private fun ChannelChatSection(
         subscriberBadges = channel.subscriberBadges,
         userColors = userColors,
         pinnedMessage = pinnedMessage,
-        chatEvents = viewModel.chatEvents,
+        tickerEvents = tickerEvents,
+        onDismissTickerEvents = viewModel::dismissTickerEvents,
+        subscriptionGoal = subscriptionGoal,
         streamerUsername = channel.user?.username,
         streamerSlug = channel.slug,
         channelId = channel.id,
@@ -969,10 +985,12 @@ private fun ChannelChatSection(
         autoHideHeader = autoHideHeader,
         playerControlsVisible = playerControlsVisible,
         onOpenChannel = onOpenChannel,
-        composer = { com.lechixy.kick.components.channel.chat.AccountChatComposer(
+        floatingComposer = LocalConfiguration.current.smallestScreenWidthDp < 600 && channel.livestream != null,
+        composer = { chatContent -> com.lechixy.kick.components.channel.chat.AccountChatComposer(
             channel, chatConnectionState, chatSettings, pointsUpdated,
-            rulesSeen = { generation -> viewModel.rulesSeen(generation, channel.id) },
-            markRulesSeen = { generation -> viewModel.markRulesSeen(generation, channel.id) },
+            onConsumePoints = viewModel::consumePoints,
+            drops = drops,
+            chatContent = chatContent,
             replyTo = replyTarget, onCancelReply = { replyTarget = null }, recentMessages = chatMessages, userColors = userColors,
             onUserCommand = { username -> community.openProfile(channel.slug,
                 com.lechixy.kick.data.chat.model.ActiveChatter(username = username), subscriberBadges = channel.subscriberBadges) },

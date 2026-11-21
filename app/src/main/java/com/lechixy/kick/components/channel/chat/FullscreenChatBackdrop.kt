@@ -101,6 +101,7 @@ internal data class FullscreenChatBackdropRegion(
     val shape: FullscreenChatShape = FullscreenChatShape.Rounded,
     val frostedControl: Boolean = false,
     val style: FullscreenChatBlurStyle = FullscreenChatBlurStyle.Soft,
+    val followsControlsOpacity: Boolean = true,
 )
 
 private val frostedRadius = 24.dp
@@ -369,7 +370,11 @@ internal fun VideoBackdropBlur(
             var frostedBounds: Rect? = null
             localRegions.forEachIndexed { index, region ->
                 val bounds = region.bounds
-                val alpha = if (region.frostedControl) visibleControlOpacity else visibleOpacity
+                val alpha = when {
+                    !region.frostedControl -> visibleOpacity
+                    region.followsControlsOpacity -> visibleControlOpacity
+                    else -> 1f
+                }
                 if (alpha > 0f && !bounds.isEmpty && bounds.overlaps(textureBounds)) {
                     val cornerRadius = region.shape.radius(bounds.width, bounds.height, roundedRadius)
                     if (region.style == FullscreenChatBlurStyle.FrostedGlass) {

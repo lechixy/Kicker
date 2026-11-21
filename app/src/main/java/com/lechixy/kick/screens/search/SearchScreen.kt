@@ -71,7 +71,7 @@ fun SearchScreen(viewModel: SearchViewModel = viewModel(), onCategoryClick: (Str
                 if (state.isLoading || data?.livestreams?.isNotEmpty() == true) {
                     cardSection("streams", streamsTitle, data?.livestreams.orEmpty(), columns, loading = state.isLoading,
                         itemKey = { it.slug }, skeleton = { StreamCardSkeleton() }) { stream ->
-                        StreamCard(Livestream(id = stream.slug, title = stream.title,
+                        StreamCard(Livestream(id = stream.slug, title = stream.title, isMature = stream.isMature,
                             thumbnail = Thumbnail(stream.thumbnail?.src), showViewCount = false,
                             channel = Channel(0, slug = stream.slug, username = stream.slug)),
                             onClick = { onChannelClick(stream.slug, null) },

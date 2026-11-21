@@ -10,6 +10,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lechixy.kick.R
 import com.lechixy.kick.data.settings.model.PlayerAmbientMode
 import com.lechixy.kick.data.settings.model.SettingsKeys
+import com.lechixy.kick.data.settings.model.resolvedDefault
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 import kotlinx.coroutines.launch
 
@@ -48,13 +49,23 @@ private fun ambientModeOptions() = PlayerAmbientMode.entries.map { it.value to s
 
 @Composable
 internal fun AmbientModeSettingsExpander(initiallyExpanded: Boolean) {
-    val mode = selectedAmbientMode()
+    val repository = LocalSettingsRepository.current
+    val scope = rememberCoroutineScope()
+    val key = SettingsKeys.AMBIENT_MODE
+    val default = key.resolvedDefault
+    val value by remember(repository) { repository.get(key) }.collectAsStateWithLifecycle(default)
+    val mode = PlayerAmbientMode.fromValue(value)
     SettingsExpander(
         title = stringResource(R.string.player_ambient_mode),
         description = stringResource(mode.descriptionResource),
         icon = R.drawable.palette_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
         initiallyExpanded = initiallyExpanded,
-        headerAction = { SettingDropdownAction(SettingsKeys.AMBIENT_MODE, ambientModeOptions()) },
+        headerAction = {
+            SettingDropdownAction(value, ambientModeOptions()) { selected ->
+                scope.launch { repository.set(key, selected) }
+            }
+        },
+        onReset = if (value != default) ({ scope.launch { repository.reset(key) } }) else null,
     ) {
         AmbientModeControls(mode)
     }

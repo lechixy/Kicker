@@ -337,7 +337,6 @@ fun KickApp(restorePending: Boolean = false) {
     val playerHost = rememberPlayerHostState(chatWidth.defaultValue)
     val playerAmbient = rememberPlayerAmbientState(playerHost)
     var activeClipId by rememberSaveable { mutableStateOf<String?>(null) }
-    val openClip: (String) -> Unit = remember { { activeClipId = it } }
     val settingsRepository = LocalSettingsRepository.current
     LaunchedEffect(settingsRepository, chatWidth) {
         settingsRepository.get(chatWidth).collect { savedFraction ->
@@ -374,8 +373,35 @@ fun KickApp(restorePending: Boolean = false) {
         { snowPlayerBounds = it }
     }
 
-    val openChannel: (String, ExpansionSource?) -> Unit =
-        { slug, source -> playerHost.open(slug, source) }
+    val channelEntryScope = rememberCoroutineScope()
+    val currentContext by rememberUpdatedState(context)
+    val channelEntry = remember(playerHost, settingsRepository, channelEntryScope) {
+        val repository = com.lechixy.kick.data.common.repository.KickRepository(
+            com.lechixy.kick.data.common.remote.KickNetwork.api,
+        )
+        com.lechixy.kick.components.ChannelEntry(playerHost, settingsRepository, channelEntryScope, repository::getChannel) {
+            android.widget.Toast.makeText(currentContext, R.string.channel_open_failed, android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+    DisposableEffect(navController, channelEntry) {
+        val listener = androidx.navigation.NavController.OnDestinationChangedListener { _, _, _ -> channelEntry.cancel() }
+        navController.addOnDestinationChangedListener(listener)
+        onDispose {
+            navController.removeOnDestinationChangedListener(listener)
+            channelEntry.cancel()
+        }
+    }
+    val openChannel: (String, ExpansionSource?) -> Unit = { slug, source -> channelEntry.open(slug, source) }
+    val openRecording: (String, com.lechixy.kick.data.player.model.RecordedPlayback, ExpansionSource?) -> Unit =
+        { slug, recording, source ->
+            channelEntry.cancel()
+            playerHost.open(slug, source)
+            playerHost.playRecording(recording)
+        }
+    val openClip: (String) -> Unit = { id ->
+        channelEntry.cancel()
+        activeClipId = id
+    }
     val openEvent: (String) -> Unit = { slug ->
         if (playerHost.isChannelVisible) playerHost.minimize()
         navController.navigate("events/${android.net.Uri.encode(slug)}") { launchSingleTop = true }
@@ -430,10 +456,7 @@ fun KickApp(restorePending: Boolean = false) {
                         navController.navigate("category/${android.net.Uri.encode(slug)}")
                     }
                 }, channel = { openChannel(it, null) },
-                recording = { slug, recording, source ->
-                    playerHost.open(slug, source)
-                    playerHost.playRecording(recording)
-                },
+                recording = openRecording,
                 event = openEvent,
             )
         ) {
@@ -712,6 +735,7 @@ fun KickApp(restorePending: Boolean = false) {
                     )
                 }
                 if (!isInPipMode) {
+                    channelEntry.Confirmation()
                     com.lechixy.kick.components.InAppNotificationHost(
                         modifier = Modifier.align(Alignment.TopCenter),
                         enabled = !restorePending && !challengesOpen && releaseDialogs.isEmpty(),
@@ -757,19 +781,19 @@ fun KickApp(restorePending: Boolean = false) {
                             onClose = { activeClipId = null },
                             onWatchLivestream = { clip ->
                                 activeClipId = null
-                                openChannel(clip.channel.slug, null)
-                                playerHost.requestLivePlayback()
+                                channelEntry.open(clip.channel.slug, null, watchLive = true)
                             },
                             onWatchFullVideo = { clip ->
                                 clip.video?.let { video ->
                                     activeClipId = null
-                                    openChannel(clip.channel.slug, null)
-                                    playerHost.playRecording(
+                                    openRecording(
+                                        clip.channel.slug,
                                         com.lechixy.kick.data.player.model.RecordedPlayback(
                                             id = video.id,
                                             title = video.title,
                                             durationMs = 0,
-                                        )
+                                        ),
+                                        null,
                                     )
                                 }
                             },

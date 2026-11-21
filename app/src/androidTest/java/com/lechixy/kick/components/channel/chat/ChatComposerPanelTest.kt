@@ -1,10 +1,13 @@
 package com.lechixy.kick.components.channel.chat
 
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.activity.ComponentActivity
@@ -47,14 +50,14 @@ class ChatComposerPanelTest {
             }
         }
         compose.onNodeWithText("Test input").assertDoesNotExist()
-        compose.onNodeWithText(label(R.string.chat_show_composer)).performClick()
+        compose.onNodeWithContentDescription(label(R.string.chat_show_composer)).performClick()
         compose.mainClock.advanceTimeBy(100)
         compose.onNodeWithText("Test input").assertIsDisplayed()
         compose.mainClock.advanceTimeBy(4_800)
         compose.onNodeWithText("Test input").assertIsDisplayed()
-        compose.mainClock.advanceTimeBy(400)
+        compose.mainClock.advanceTimeBy(650)
         compose.onNodeWithText("Test input").assertDoesNotExist()
-        compose.onNodeWithText(label(R.string.chat_show_composer)).assertIsDisplayed()
+        compose.onNodeWithContentDescription(label(R.string.chat_show_composer)).assertIsDisplayed()
     }
 
     @Test fun focusedInputAndDraftPreventAutomaticHidingAndManualHidingKeepsDraft() {
@@ -69,16 +72,16 @@ class ChatComposerPanelTest {
                 }
             }
         }
-        compose.onNodeWithText(label(R.string.chat_show_composer)).performClick()
+        compose.onNodeWithContentDescription(label(R.string.chat_show_composer)).performClick()
         compose.mainClock.advanceTimeBy(100)
         compose.onNode(hasSetTextAction()).performClick()
         compose.mainClock.advanceTimeBy(6_000)
         compose.onNode(hasSetTextAction()).assertIsDisplayed()
         compose.onNode(hasSetTextAction()).performTextInput("Saved draft")
-        compose.onNodeWithText(label(R.string.chat_hide_composer)).performClick()
-        compose.mainClock.advanceTimeBy(100)
+        compose.onNodeWithContentDescription(label(R.string.chat_hide_composer)).performClick()
+        compose.mainClock.advanceTimeBy(500)
         compose.onNode(hasSetTextAction()).assertDoesNotExist()
-        compose.onNodeWithText(label(R.string.chat_show_composer)).performClick()
+        compose.onNodeWithContentDescription(label(R.string.chat_show_composer)).performClick()
         compose.mainClock.advanceTimeBy(6_000)
         compose.onNodeWithText("Saved draft").assertIsDisplayed()
     }
@@ -104,6 +107,32 @@ class ChatComposerPanelTest {
         compose.onNodeWithText("Composer contents").assertDoesNotExist()
     }
 
+    @Test fun collapsedComposerFloatsInsideTheFullMessageArea() {
+        show {
+            var expanded by remember { mutableStateOf(false) }
+            MaterialTheme {
+                Box(Modifier.fillMaxSize().testTag("chat")) {
+                    ChatComposerPanel(true, expanded, false, { expanded = it }, {},
+                        chatContent = { Box(Modifier.fillMaxSize().testTag("messages")) }
+                    ) {
+                        OutlinedTextField("", {}, placeholder = { androidx.compose.material3.Text("Test input") })
+                    }
+                }
+            }
+        }
+        val chat = compose.onNodeWithTag("chat").getUnclippedBoundsInRoot()
+        val messages = compose.onNodeWithTag("messages")
+        val restore = compose.onNodeWithContentDescription(label(R.string.chat_show_composer))
+        messages.assertHeightIsEqualTo(chat.bottom - chat.top)
+        restore.assertIsDisplayed()
+        restore.performClick()
+        compose.onNodeWithText("Test input").assertIsDisplayed()
+        val expandedMessages = messages.getUnclippedBoundsInRoot()
+        org.junit.Assert.assertTrue(expandedMessages.bottom - expandedMessages.top < chat.bottom - chat.top)
+        compose.onNodeWithContentDescription(label(R.string.chat_hide_composer)).performClick()
+        messages.assertHeightIsEqualTo(chat.bottom - chat.top)
+    }
+
     @Test fun largerLayoutsKeepComposerVisible() {
         compose.mainClock.autoAdvance = false
         show {
@@ -115,6 +144,6 @@ class ChatComposerPanelTest {
         }
         compose.mainClock.advanceTimeBy(6_000)
         compose.onNodeWithText("Composer contents").assertIsDisplayed()
-        compose.onNodeWithText(label(R.string.chat_show_composer)).assertDoesNotExist()
+        compose.onNodeWithContentDescription(label(R.string.chat_show_composer)).assertDoesNotExist()
     }
 }

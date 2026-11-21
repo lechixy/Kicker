@@ -165,10 +165,11 @@ class AuthRepository(
             return result
         } catch (failure: AccountApiException) {
             if (failure.status == 401 && generation == session.value.generation) {
-                val followRequest = request.url.host == "kick.com" &&
-                    FOLLOW_SESSION_PATH.matches(request.url.encodedPath)
-                // A follow endpoint can reject the request while the Kick account is still valid.
-                if (!followRequest || profileRejectsSession(current)) synchronized(lock) {
+                val requiresProfileCheck =
+                    (request.url.host == "kick.com" && FOLLOW_SESSION_PATH.matches(request.url.encodedPath)) ||
+                    (request.url.host == "web.kick.com" && request.url.encodedPath == "/api/v1/realtime/auth/channel")
+                // Permissions on a resource can expire independently of the Kick account session.
+                if (!requiresProfileCheck || profileRejectsSession(current)) synchronized(lock) {
                     if (generation == session.value.generation) clear(SessionStatus.ReauthenticationRequired)
                 }
             }

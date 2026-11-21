@@ -135,4 +135,5 @@
     <string name="you_download_link_failed">Some videos could not be added</string>
     <string name="you_download_unlink">Remove from list</string>
     <string name="you_download_unlink_message">Remove %1$s from the list? The video file stays on your device.</string>
+    <string name="settings_reset_value">Reset %1$s to default</string>
 </resources>

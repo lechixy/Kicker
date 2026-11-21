@@ -8,6 +8,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -20,6 +21,7 @@ import kotlinx.coroutines.launch
 
 import com.lechixy.kick.R
 import com.lechixy.kick.data.settings.model.SettingKey
+import com.lechixy.kick.data.settings.model.resolvedDefault
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 
 @Composable
@@ -33,30 +35,43 @@ fun <T> SettingDropdown(
     enabled: Boolean = true,
     onValueChanged: ((T) -> Unit)? = null
 ) {
+    val expanded = remember(enabled) { mutableStateOf(false) }
+    val repository = LocalSettingsRepository.current
+    val scope = rememberCoroutineScope()
+    val default = key.resolvedDefault
+    val currentValue by remember(repository, key) { repository.get(key) }.collectAsStateWithLifecycle(default)
     SettingCard(
         title = title,
         modifier = modifier,
         description = description,
         icon = icon,
         enabled = enabled,
+        onClick = { expanded.value = true },
+        onReset = if (currentValue != default) ({
+            expanded.value = false
+            scope.launch {
+                repository.reset(key)
+                onValueChanged?.invoke(default)
+            }
+        }) else null,
         action = {
-            SettingDropdownAction(key, options, enabled, onValueChanged)
+            SettingDropdownAction(currentValue, options, enabled, expanded) { selected ->
+                scope.launch { repository.set(key, selected) }
+                onValueChanged?.invoke(selected)
+            }
         }
     )
 }
 
 @Composable
 internal fun <T> SettingDropdownAction(
-    key: SettingKey<T>,
+    currentValue: T,
     options: List<Pair<T, String>>,
     enabled: Boolean = true,
-    onValueChanged: ((T) -> Unit)? = null,
+    expandedState: MutableState<Boolean> = remember(enabled) { mutableStateOf(false) },
+    onValueChanged: (T) -> Unit,
 ) {
-    val repository = LocalSettingsRepository.current
-    val coroutineScope = rememberCoroutineScope()
-    val currentValue by remember(repository, key) { repository.get(key) }
-        .collectAsStateWithLifecycle(initialValue = key.defaultValue)
-    var expanded by remember(enabled) { mutableStateOf(false) }
+    var expanded by expandedState
     val currentLabel = options.firstOrNull { it.first == currentValue }?.second ?: currentValue.toString()
 
     Box {
@@ -73,8 +88,7 @@ internal fun <T> SettingDropdownAction(
                     text = { Text(label) },
                     onClick = {
                         expanded = false
-                        coroutineScope.launch { repository.set(key, optionValue) }
-                        onValueChanged?.invoke(optionValue)
+                        onValueChanged(optionValue)
                     },
                 )
             }
