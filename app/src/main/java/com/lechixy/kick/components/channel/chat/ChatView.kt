@@ -94,6 +94,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lechixy.kick.R
 import com.lechixy.kick.components.AppLoadingIndicator
+import com.lechixy.kick.components.LocalPlayerAmbientState
+import com.lechixy.kick.components.ambientUiVisible
 import com.lechixy.kick.components.settings.SettingCard
 import com.lechixy.kick.components.settings.SettingSlider
 import com.lechixy.kick.components.settings.SettingSwitch
@@ -142,6 +144,9 @@ fun ChatView(
     val repository = LocalSettingsRepository.current
     val chatActive = LocalChatContentActive.current
     val smallestWidth = androidx.compose.ui.platform.LocalConfiguration.current.smallestScreenWidthDp
+    val ambient = LocalPlayerAmbientState.current
+    val chatOpacity = if (ambientUiVisible(ambient)) ambient?.chatOpacity ?: 1f else 1f
+    val chatSurface = MaterialTheme.colorScheme.surface.copy(alpha = chatOpacity)
     val fontSetting = SettingsKeys.chatFontSize(smallestWidth)
     val spacingSetting = SettingsKeys.chatMessageSpacing(smallestWidth)
     val fontSize by repository
@@ -254,7 +259,7 @@ fun ChatView(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.surface)
+            .background(chatSurface)
             .then(if (autoHideHeader) Modifier.pointerInput(Unit) {
                 awaitEachGesture {
                     awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
@@ -284,7 +289,8 @@ fun ChatView(
                 showChatters = showChatters,
                 chatterCount = activeChatters?.totalCount,
                 onToggleChatters = { showChatters = !showChatters },
-                chattersEnabled = channelId != null && !isReplay
+                chattersEnabled = channelId != null && !isReplay,
+                ambientVisible = chatOpacity < 1f,
             )
         }
 
@@ -981,12 +987,13 @@ private fun ChatHeader(
     showChatters: Boolean = false,
     chatterCount: Int? = null,
     onToggleChatters: () -> Unit = {},
-    chattersEnabled: Boolean = false
+    chattersEnabled: Boolean = false,
+    ambientVisible: Boolean = false,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
+            .background(if (ambientVisible) Color.Transparent else MaterialTheme.colorScheme.background)
             .padding(horizontal = 12.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween

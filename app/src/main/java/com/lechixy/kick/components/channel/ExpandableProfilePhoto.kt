@@ -1,5 +1,6 @@
 package com.lechixy.kick.components.channel
 
+import android.view.View
 import android.view.WindowManager
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -8,8 +9,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.Color
@@ -37,8 +40,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.dismiss as dismissAction
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import coil3.compose.AsyncImage
@@ -55,30 +58,46 @@ import com.lechixy.kick.util.buildOptimizedImageRequest
 @Composable
 fun ExpandableProfilePhoto(
     url: String?, username: String?, modifier: Modifier = Modifier,
+    expandOnClick: Boolean = false,
+    placeholder: Painter? = null,
+    imagePadding: Dp = 0.dp,
+    onTapLabel: String? = null,
+    onTap: (() -> Unit)? = null,
     onExpandedChange: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
+    val view = LocalView.current
     var bounds by remember { mutableStateOf(Rect.Zero) }
     var thumbnailPainter by remember(url) { mutableStateOf<Painter?>(null) }
     var expanded by remember(url) { mutableStateOf(false) }
     DisposableEffect(url) { onDispose { onExpandedChange(false) } }
     val expandLabel = stringResource(R.string.expand_profile_photo)
+    val hasPhoto = !url.isNullOrBlank()
     val thumbnail = remember(url) {
         buildOptimizedImageRequest(context, url, targetWidthDp = 64, targetHeightDp = 64)
     }
+    val expand: () -> Unit = {
+        if (bounds.width > 0f && bounds.height > 0f) {
+            expanded = true
+            onExpandedChange(true)
+        }
+    }
     AsyncImage(
         model = thumbnail, contentDescription = username,
+        placeholder = placeholder, error = placeholder, fallback = placeholder,
         onSuccess = { thumbnailPainter = it.painter },
         contentScale = ContentScale.Crop,
-        modifier = modifier.onGloballyPositioned { bounds = it.boundsInWindow() }
+        modifier = modifier.clip(CircleShape)
+            .combinedClickable(
+                enabled = hasPhoto || onTap != null,
+                onClickLabel = onTapLabel ?: expandLabel.takeIf { expandOnClick },
+                onClick = onTap ?: if (expandOnClick) expand else ({}),
+                onLongClickLabel = expandLabel,
+                onLongClick = expand.takeIf { hasPhoto },
+            )
+            .padding(imagePadding)
+            .onGloballyPositioned { bounds = it.boundsInWindow().translate(view.windowOriginOnScreen()) }
             .clip(CircleShape)
-            .combinedClickable(enabled = !url.isNullOrBlank(), onClick = {},
-                onLongClickLabel = expandLabel, onLongClick = {
-                    if (bounds.width > 0) {
-                        expanded = true
-                        onExpandedChange(true)
-                    }
-                })
     )
     if (expanded && !url.isNullOrBlank()) {
         ProfilePhotoPreview(url, username, bounds, thumbnailPainter, onDismissed = {
@@ -89,7 +108,7 @@ fun ExpandableProfilePhoto(
 }
 
 @Composable
-private fun ProfilePhotoPreview(url: String, username: String?, source: Rect, placeholder: Painter?, onDismissed: () -> Unit) {
+private fun ProfilePhotoPreview(url: String, username: String?, sourceOnScreen: Rect, placeholder: Painter?, onDismissed: () -> Unit) {
     val context = LocalContext.current
     val progress = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
@@ -115,9 +134,12 @@ private fun ProfilePhotoPreview(url: String, username: String?, source: Rect, pl
             onDispose { }
         }
         val density = LocalDensity.current
+        var originOnScreen by remember { mutableStateOf<Offset?>(null) }
         BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.78f * progress.value))
+            .onGloballyPositioned { originOnScreen = it.boundsInWindow().topLeft + view.windowOriginOnScreen() }
             .clickable(interactionSource = null, indication = null, onClick = dismiss)
             .semantics { dismissAction { dismiss(); true } }) {
+            val source = originOnScreen?.let { sourceOnScreen.translate(-it.x, -it.y) } ?: return@BoxWithConstraints
             val windowWidth = constraints.maxWidth.toFloat()
             val windowHeight = constraints.maxHeight.toFloat()
             val targetSize = min(min(windowWidth * 0.86f, windowHeight * 0.70f), with(density) { 480.dp.toPx() })
@@ -134,7 +156,7 @@ private fun ProfilePhotoPreview(url: String, username: String?, source: Rect, pl
                 },
                 placeholder = placeholder, error = placeholder,
                 contentDescription = username, contentScale = ContentScale.Crop,
-                modifier = Modifier.offset { IntOffset(x.roundToInt(), y.roundToInt()) }
+                modifier = Modifier.absoluteOffset { IntOffset(x.roundToInt(), y.roundToInt()) }
                     .size(with(density) { widthPx.toDp() }, with(density) { heightPx.toDp() })
                     .clip(RoundedCornerShape(radius))
                     .clickable(interactionSource = null, indication = null, onClick = {})
@@ -142,4 +164,10 @@ private fun ProfilePhotoPreview(url: String, username: String?, source: Rect, pl
             NetworkInfoBar(Modifier.align(Alignment.BottomCenter))
         }
     }
+}
+
+private fun View.windowOriginOnScreen(): Offset {
+    val screen = IntArray(2).also(::getLocationOnScreen)
+    val window = IntArray(2).also(::getLocationInWindow)
+    return Offset((screen[0] - window[0]).toFloat(), (screen[1] - window[1]).toFloat())
 }

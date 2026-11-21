@@ -34,6 +34,7 @@ import com.lechixy.kick.components.settings.SettingSection
 import com.lechixy.kick.components.settings.SettingSlider
 import com.lechixy.kick.components.settings.SettingSwitch
 import com.lechixy.kick.components.settings.SettingsExpander
+import com.lechixy.kick.data.settings.model.FullscreenChatBlurStyle
 import com.lechixy.kick.data.settings.model.FullscreenChatShape
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
@@ -136,6 +137,18 @@ internal fun fullscreenChatOptions(
     add(FullscreenChatOption(R.string.fullscreen_chat_blur, appearance) { enabled ->
         SettingSwitch(SettingsKeys.FULLSCREEN_CHAT_BLUR, stringResource(R.string.fullscreen_chat_blur),
             icon = R.drawable.blur_on_24dp_e3e3e3_fill0_wght400_grad0_opsz24, enabled = enabled)
+    })
+    add(FullscreenChatOption(R.string.fullscreen_chat_blur_style, appearance) { enabled ->
+        val blurEnabled by fullscreenChatSetting(SettingsKeys.FULLSCREEN_CHAT_BLUR)
+        SettingDropdown(
+            key = SettingsKeys.FULLSCREEN_CHAT_BLUR_STYLE,
+            title = stringResource(R.string.fullscreen_chat_blur_style),
+            enabled = enabled && blurEnabled,
+            options = listOf(
+                FullscreenChatBlurStyle.Soft.value to stringResource(R.string.fullscreen_chat_blur_style_soft),
+                FullscreenChatBlurStyle.FrostedGlass.value to stringResource(R.string.fullscreen_chat_blur_style_frosted_glass),
+            ),
+        )
     })
     add(FullscreenChatOption(R.string.fullscreen_chat_badges, appearance, R.string.fullscreen_chat_badges_description) { enabled ->
         SettingSwitch(

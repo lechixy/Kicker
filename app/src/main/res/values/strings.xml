@@ -17,6 +17,14 @@
     <string name="sleep_timer_minutes">%1$d minutes</string>
     <string name="app_name" translatable="false">Kicker</string>
     <string name="app_name_debug" translatable="false">Kicker Debug</string>
+    <string name="channel_mature_badge" translatable="false">+18</string>
+    <string name="mature_live_title">18+ live stream</string>
+    <string name="mature_live_message">This stream may contain content intended for adults.</string>
+    <string name="mature_live_dont_ask">Don’t show this warning again</string>
+    <string name="mature_live_watch">Watch</string>
+    <string name="mature_live_cancel">Cancel</string>
+    <string name="settings_mature_live_confirmation">Ask before playing +18 streams</string>
+    <string name="settings_mature_live_confirmation_description">Show a confirmation before playing a live stream marked as mature.</string>
     <string name="live_badge">LIVE</string>
     <string name="home">Home</string>
     <string name="following">Following</string>
@@ -58,6 +66,9 @@
     <string name="fullscreen_chat_preview_stream">viewer2: Great stream!</string>
     <string name="fullscreen_chat_open_settings">Chat overlay settings</string>
     <string name="fullscreen_chat_blur">Blur video behind chat</string>
+    <string name="fullscreen_chat_blur_style">Blur style</string>
+    <string name="fullscreen_chat_blur_style_soft">Soft</string>
+    <string name="fullscreen_chat_blur_style_frosted_glass">Frosted glass</string>
     <string name="fullscreen_chat_badges">Show other badges</string>
     <string name="fullscreen_chat_lock_position">Lock position</string>
     <string name="fullscreen_chat_lock_position_description">Use Edit position and size to move or resize the chat while locked.</string>
@@ -93,6 +104,15 @@
     <string name="player_ambient_spread_description">Adjust how far the light reaches beyond the video.</string>
     <string name="player_ambient_fullscreen">Show in full screen</string>
     <string name="player_ambient_fullscreen_description">Light up the space around the video in full screen.</string>
+    <string name="player_ambient_through_ui">Show behind navigation and chat</string>
+    <string name="player_ambient_through_ui_description">Let ambient light show through the navigation and chat backgrounds.</string>
+    <string name="player_ambient_battery_saver">Use Dynamic mode in Battery Saver</string>
+    <string name="player_ambient_battery_saver_description">Switch from Live to Dynamic while Android Battery Saver is on.</string>
+    <string name="player_ambient_chat_opacity">Chat background opacity</string>
+    <string name="player_ambient_navigation_opacity">Navigation background opacity</string>
+    <string name="player_ambient_reset_levels">Reset intensity and spread to 100%</string>
+    <string name="player_ambient_preserve_black_bars">Preserve black bars</string>
+    <string name="player_ambient_preserve_black_bars_description">Keep player bars black and prevent light bleed from detected black video edges.</string>
     <string name="settings_backup_account_title">Kick sign-in stays on this device</string>
     <string name="settings_backup_account_description">Kick login details and sessions are never backed up. Signing out, clearing app data, or uninstalling removes the saved session. Sign in again after reinstalling, switching devices, or if your session expires.</string>
 </resources>

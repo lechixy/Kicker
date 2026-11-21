@@ -18,8 +18,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -29,10 +27,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
-import coil3.compose.AsyncImage
-
+import com.lechixy.kick.components.channel.ExpandableProfilePhoto
 import com.lechixy.kick.data.channel.model.ChannelDetail
-import com.lechixy.kick.util.buildOptimizedImageRequest
 
 @Composable
 fun ChannelCardSkeleton(modifier: Modifier = Modifier) {
@@ -57,7 +53,6 @@ fun ChannelCard(
     onChannelClick: (channelSlug: String) -> Unit = {},
     onChannelClickWithSource: ((channelSlug: String, source: ExpansionSource) -> Unit)? = null
 ) {
-    val context = LocalContext.current
     var cardCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     var avatarCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
 
@@ -95,22 +90,14 @@ fun ChannelCard(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            AsyncImage(
-                model = remember(channel.user?.profilePic) {
-                    buildOptimizedImageRequest(
-                        context = context,
-                        data = channel.user?.profilePic,
-                        targetWidthDp = 48,
-                        targetHeightDp = 48
-                    )
-                },
-                contentDescription = channel.user?.username,
+            ExpandableProfilePhoto(
+                url = channel.user?.profilePic,
+                username = channel.user?.username,
                 modifier = Modifier
                     .size(46.dp)
-                    .clip(CircleShape)
                     .onGloballyPositioned { avatarCoordinates = it }
                     .then(mediaZoom),
-                contentScale = ContentScale.Crop
+                expandOnClick = true,
             )
 
             Column(modifier = Modifier.weight(1f)) {

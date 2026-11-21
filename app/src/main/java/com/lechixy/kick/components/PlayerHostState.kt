@@ -27,6 +27,8 @@ import com.lechixy.kick.data.player.model.RecordedPlayback
  */
 enum class PlayerMode { Hidden, Expanded, Fullscreen, Mini }
 
+internal enum class LivePlaybackAccess { Ready, CheckingRating, NeedsConfirmation }
+
 internal data class RecordingChatSeek(val sequence: Int, val positionMs: Long)
 
 /**
@@ -56,6 +58,9 @@ class PlayerHostState(
 
     var recording by mutableStateOf<RecordedPlayback?>(null)
         private set
+    internal var livePlaybackRequested by mutableStateOf(false)
+        private set
+    private var approvedMatureLivestreamId by mutableStateOf<Long?>(null)
 
     var recordingPositionMs by androidx.compose.runtime.mutableLongStateOf(0L)
         private set
@@ -73,6 +78,7 @@ class PlayerHostState(
     }
 
     fun playRecording(recording: RecordedPlayback) {
+        livePlaybackRequested = false
         recordingPositionMs = 0L
         recordingChatSeek = null
         this.recording = recording
@@ -87,8 +93,37 @@ class PlayerHostState(
     }
 
     fun playLive() {
+        livePlaybackRequested = false
         recording = null
         activeLiveAnnouncementId = null
+    }
+
+    internal fun requestLivePlayback() {
+        if (recording == null) playLive() else livePlaybackRequested = true
+    }
+
+    internal fun livePlaybackAccess(askBeforeMatureLive: Boolean?): LivePlaybackAccess {
+        val stream = channel?.livestream ?: return LivePlaybackAccess.Ready
+        if (recording != null && !livePlaybackRequested ||
+            approvedMatureLivestreamId == stream.id || askBeforeMatureLive == false
+        ) return LivePlaybackAccess.Ready
+        if (!stream.isMaturityKnown || (stream.isMature && askBeforeMatureLive == null)) {
+            return LivePlaybackAccess.CheckingRating
+        }
+        return if (stream.isMature) LivePlaybackAccess.NeedsConfirmation else LivePlaybackAccess.Ready
+    }
+
+    internal fun approveMatureLivestream(id: Long): Boolean {
+        if (channel?.livestream?.id != id || isExiting || (recording != null && !livePlaybackRequested)) {
+            return false
+        }
+        approvedMatureLivestreamId = id
+        return true
+    }
+
+    internal fun declineMatureLivestream(id: Long) {
+        if (channel?.livestream?.id != id) return
+        if (recording == null) requestClose() else livePlaybackRequested = false
     }
 
     var isExiting by mutableStateOf(false)
@@ -276,6 +311,8 @@ class PlayerHostState(
         if (mode == PlayerMode.Fullscreen) setFullscreen(false)
         if (this.slug != slug) {
             recording = null
+            livePlaybackRequested = false
+            approvedMatureLivestreamId = null
             channel = null
             openingChannelIsLive = source?.isLive
             channelHeaderHeightPx = 0
@@ -299,6 +336,7 @@ class PlayerHostState(
         if (channel != detail) {
             channel = detail
         }
+        if (detail.livestream == null) livePlaybackRequested = false
         if (detail.livestream == null && recording == null) {            // Canlı veya kayıt yoksa player/mini olmasın
             pendingAutoFullscreen = false
             activeLiveAnnouncementId = null
@@ -382,6 +420,8 @@ class PlayerHostState(
         openingChannelIsLive = null
         channelHeaderHeightPx = 0
         recording = null
+        livePlaybackRequested = false
+        approvedMatureLivestreamId = null
         pageSlug = null
         isTheaterMode = false
         isFullscreenNavigationVisible = false
@@ -396,7 +436,8 @@ class PlayerHostState(
         val Saver = listSaver<PlayerHostState, Any?>(
             save = {
                 listOf(it.mode.name, it.slug, it.chatWidthFraction,
-                    it.recording?.let { recording -> Json.encodeToString(recording) })
+                    it.recording?.let { recording -> Json.encodeToString(recording) },
+                    it.approvedMatureLivestreamId, it.livePlaybackRequested)
             },
             restore = {
                 PlayerHostState(
@@ -407,6 +448,8 @@ class PlayerHostState(
                     recording = (it.getOrNull(3) as? String)?.let { saved ->
                         runCatching { Json.decodeFromString<RecordedPlayback>(saved) }.getOrNull()
                     }
+                    approvedMatureLivestreamId = it.getOrNull(4) as? Long
+                    livePlaybackRequested = recording != null && it.getOrNull(5) == true
                 }
             }
         )

@@ -1,6 +1,7 @@
 package com.lechixy.kick.screens.you
 
 import android.text.format.Formatter
+import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -44,6 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lechixy.kick.R
 import com.lechixy.kick.data.common.remote.ConnectionTransport
+import com.lechixy.kick.data.player.local.PlaybackContentType
 import com.lechixy.kick.util.FormatUtils
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
@@ -86,8 +88,16 @@ internal fun UsageOverviewCard(report: UsageReport, onOpen: () -> Unit) {
                 ChannelChevron()
             }
             if (report.total > 0) {
-                Text(usageValue(report.metric, report.total), style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold)
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(stringResource(R.string.you_usage_total), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                    Text(usageValue(report.metric, report.total), style = MaterialTheme.typography.headlineMedium,
+                        fontWeight = FontWeight.Bold)
+                }
+                UsageContentBreakdown(report)
                 HorizontalDivider(color = colors.onSurface.copy(alpha = 0.14f))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (watch) {
@@ -106,6 +116,29 @@ internal fun UsageOverviewCard(report: UsageReport, onOpen: () -> Unit) {
                 Text(stringResource(R.string.you_usage_period_empty), style = MaterialTheme.typography.bodyMedium)
             }
         }
+    }
+}
+
+@Composable
+internal fun UsageContentBreakdown(report: UsageReport) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        UsageContentRow(report, PlaybackContentType.LIVE, R.string.you_usage_live)
+        UsageContentRow(report, PlaybackContentType.RECORDING, R.string.you_usage_vod_clips)
+        if ((report.byContentType[PlaybackContentType.UNCLASSIFIED] ?: 0L) > 0) {
+            UsageContentRow(report, PlaybackContentType.UNCLASSIFIED, R.string.you_usage_unknown_content)
+        }
+    }
+}
+
+@Composable
+private fun UsageContentRow(report: UsageReport, type: PlaybackContentType, @StringRes label: Int) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(stringResource(label), Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+        Text(usageValue(report.metric, report.byContentType[type] ?: 0L), style = MaterialTheme.typography.titleSmall)
     }
 }
 

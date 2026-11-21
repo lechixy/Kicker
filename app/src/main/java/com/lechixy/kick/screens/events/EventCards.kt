@@ -37,6 +37,7 @@ import com.lechixy.kick.components.CardTagRow
 import com.lechixy.kick.components.ContentGrid
 import com.lechixy.kick.components.InteractiveCard
 import com.lechixy.kick.components.LocalContentNavigation
+import com.lechixy.kick.components.MediaCardViewCount
 import com.lechixy.kick.components.cardLineHeight
 import com.lechixy.kick.components.streamLanguageName
 import com.lechixy.kick.data.channel.model.ChannelEvent
@@ -73,7 +74,12 @@ internal fun EventBrandBadge(label: String) {
 }
 
 @Composable
-internal fun FeaturedEventHeroCard(event: ChannelEvent, modifier: Modifier = Modifier, onClick: () -> Unit) {
+internal fun FeaturedEventHeroCard(
+    event: ChannelEvent,
+    modifier: Modifier = Modifier,
+    bottomInset: Dp = 0.dp,
+    onClick: () -> Unit,
+) {
     val colors = MaterialTheme.colorScheme
     val surface = colors.surfaceContainer
     val date = eventDate(event, compact = false)
@@ -108,7 +114,8 @@ internal fun FeaturedEventHeroCard(event: ChannelEvent, modifier: Modifier = Mod
             )
         ))
         Column(
-            Modifier.fillMaxWidth(if (maxWidth < 420.dp) 0.68f else 0.56f).heightIn(min = cardHeight).padding(16.dp),
+            Modifier.fillMaxWidth(if (maxWidth < 420.dp) 0.68f else 0.56f)
+                .heightIn(min = cardHeight).padding(16.dp).padding(bottom = bottomInset),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -337,13 +344,7 @@ internal fun eventSurfaceColor(hex: String?): Color {
 @Composable
 internal fun EventViewerBadge(count: String) {
     Surface(shape = RoundedCornerShape(4.dp), color = Color.Black.copy(alpha = 0.72f), contentColor = Color.White) {
-        Row(
-            Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)
-        ) {
-            Box(Modifier.size(6.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
-            Text(stringResource(R.string.events_viewer_badge, count), style = MaterialTheme.typography.labelSmall)
-        }
+        MediaCardViewCount(count, stringResource(R.string.viewers))
     }
 }
 

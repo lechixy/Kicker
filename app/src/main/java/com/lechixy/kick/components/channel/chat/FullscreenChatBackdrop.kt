@@ -13,7 +13,9 @@ import android.graphics.RectF
 import android.graphics.RenderEffect
 import android.graphics.RuntimeShader
 import android.graphics.Shader
+import android.graphics.SurfaceTexture
 import android.os.Build
+import android.view.Choreographer
 import android.view.TextureView
 import android.view.View
 import androidx.annotation.RequiresApi
@@ -29,7 +31,7 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
@@ -61,20 +63,27 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import com.lechixy.kick.data.settings.model.FullscreenChatBlurStyle
 import com.lechixy.kick.data.settings.model.FullscreenChatShape
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlin.math.ceil
+import kotlin.math.floor
 import kotlin.math.roundToInt
 
 internal class FullscreenChatVideoFrame(
     val bitmap: ImageBitmap,
     val origin: IntOffset,
     val size: IntSize,
+    val frostedBitmap: ImageBitmap? = null,
 )
 
 internal data class FullscreenChatBlur(
     val onBoundsChanged: (FullscreenChatBackdropRegion?) -> Unit,
     val legacyFrame: State<FullscreenChatVideoFrame?>? = null,
+    val style: FullscreenChatBlurStyle = FullscreenChatBlurStyle.Soft,
 )
 
 internal data class FullscreenChatEdges(
@@ -91,7 +100,11 @@ internal data class FullscreenChatBackdropRegion(
     val edges: FullscreenChatEdges = FullscreenChatEdges(),
     val shape: FullscreenChatShape = FullscreenChatShape.Rounded,
     val frostedControl: Boolean = false,
+    val style: FullscreenChatBlurStyle = FullscreenChatBlurStyle.Soft,
 )
+
+private val frostedRadius = 24.dp
+private val frostedChatFeather = 4.dp
 
 internal data class FullscreenChatDock(val viewport: Rect, val edges: FullscreenChatEdges) {
     fun extend(bounds: Rect) = FullscreenChatBackdropRegion(
@@ -134,44 +147,77 @@ private fun FullscreenChatEdges.cornerRadii(radius: Float) = floatArrayOf(
 internal fun rememberLegacyFullscreenChatFrame(
     texture: TextureView?,
     playing: Boolean,
-): State<FullscreenChatVideoFrame?> = produceState<FullscreenChatVideoFrame?>(null, texture, playing) {
-    if (texture == null) {
-        value = null
-        return@produceState
-    }
-    // Keep video readback small and reuse both buffers.
-    val sampleLimit = 56
-    val location = IntArray(2)
-    var samples = emptyList<Bitmap>()
-    var next = 0
-    while (true) {
-        val width = texture.width
-        val height = texture.height
-        if (texture.isAvailable && width > 0 && height > 0) {
-            val scale = sampleLimit.toFloat() / maxOf(width, height)
-            val sampleWidth = (width * scale).roundToInt().coerceAtLeast(1)
-            val sampleHeight = (height * scale).roundToInt().coerceAtLeast(1)
-            if (samples.firstOrNull()?.let { it.width == sampleWidth && it.height == sampleHeight } != true) {
-                samples = List(2) { Bitmap.createBitmap(sampleWidth, sampleHeight, Bitmap.Config.ARGB_8888) }
-                next = 0
+    soft: Boolean = true,
+    frosted: Boolean = false,
+    mediaKey: Any? = null,
+): State<FullscreenChatVideoFrame?> {
+    val frame = remember(texture, soft, frosted, mediaKey) { mutableStateOf<FullscreenChatVideoFrame?>(null) }
+    val isPlaying by rememberUpdatedState(playing)
+    val radius = with(LocalDensity.current) { frostedRadius.toPx() }
+    LaunchedEffect(frame, radius) {
+        if (texture == null || (!soft && !frosted)) return@LaunchedEffect
+        // Read the texture once and reuse two buffers so drawing can retain the previous sample.
+        val location = IntArray(2)
+        val sampleLimit = if (frosted) 160 else 56
+        var buffers: LegacyBackdropBuffers? = null
+        var next = 0
+        var lastTimestamp: Long? = null
+        var lastSurface: SurfaceTexture? = null
+        while (true) {
+            val width = texture.width
+            val height = texture.height
+            val surface = texture.surfaceTexture
+            if (surface !== lastSurface) {
+                lastSurface = surface
+                lastTimestamp = null
+                frame.value = null
             }
-            val sample = try {
-                texture.getBitmap(samples[next])
-            } catch (_: IllegalStateException) {
-                null
-            }
-            if (sample != null) {
+            val timestamp = surface?.timestamp
+            if (texture.isAvailable && width > 0 && height > 0) {
+                val size = IntSize(width, height)
                 texture.getLocationInWindow(location)
-                value = FullscreenChatVideoFrame(sample.asImageBitmap(), IntOffset(location[0], location[1]), IntSize(width, height))
-                next = 1 - next
+                val origin = IntOffset(location[0], location[1])
+                val current = frame.value
+                if (current == null || current.size != size || current.origin != origin ||
+                    timestamp == null || timestamp == 0L || timestamp != lastTimestamp
+                ) {
+                    val scale = (sampleLimit.toFloat() / maxOf(width, height)).coerceAtMost(1f)
+                    val sampled = IntSize(
+                        (width * scale).roundToInt().coerceAtLeast(1),
+                        (height * scale).roundToInt().coerceAtLeast(1),
+                    )
+                    val activeBuffers = buffers?.takeIf { it.size == sampled } ?: LegacyBackdropBuffers(
+                        sampled, downsample = soft && frosted, frosted = frosted,
+                    ).also { buffers = it }
+                    val sample = try {
+                        texture.getBitmap(activeBuffers.raw[next])
+                    } catch (_: IllegalStateException) {
+                        null
+                    }
+                    if (sample != null) {
+                        val images = if (frosted) withContext(Dispatchers.Default) {
+                            activeBuffers.prepare(sample, next, radius * scale)
+                        } else sample to null
+                        if (texture.surfaceTexture === surface) {
+                            frame.value = FullscreenChatVideoFrame(
+                                images.first.asImageBitmap(), origin, size, images.second?.asImageBitmap(),
+                            )
+                        } else {
+                            frame.value = null
+                        }
+                        lastTimestamp = timestamp
+                        next = 1 - next
+                    } else {
+                        frame.value = null
+                    }
+                }
             } else {
-                value = null
+                frame.value = null
             }
-        } else {
-            value = null
+            delay(if (isPlaying) 33L else 150L)
         }
-        delay(if (playing) 33L else 150L)
     }
+    return frame
 }
 
 @Composable
@@ -193,7 +239,7 @@ internal fun BoxScope.FullscreenChatBackdrop(
             dock != null -> dock.extend(it)
             else -> FullscreenChatBackdropRegion(it)
         }
-        bounds.copy(shape = shape)
+        bounds.copy(shape = shape, style = blur?.style ?: FullscreenChatBlurStyle.Soft)
     }
     val onBoundsChanged = blur?.onBoundsChanged
     DisposableEffect(onBoundsChanged) {
@@ -215,8 +261,10 @@ internal fun BoxScope.FullscreenChatBackdrop(
                     ))
                     layout(constraints.maxWidth, constraints.maxHeight) { child.place(-left, -top) }
                 }.graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }.drawWithCache {
+                    val frosted = region.style == FullscreenChatBlurStyle.FrostedGlass
+                    val feather = if (frosted) frostedChatFeather else 28.dp
                     val mask = if (size.width > 0f && size.height > 0f) {
-                        ShaderBrush(featherMask(Rect(0f, 0f, size.width, size.height), 28.dp.toPx(), region.edges))
+                        ShaderBrush(featherMask(Rect(0f, 0f, size.width, size.height), feather.toPx(), region.edges))
                     } else null
                     val corners = region.edges.cornerRadii(shape.radius(size.width, size.height, 8.dp.toPx()))
                     val outline = if (corners.any { it > 0f }) Path().apply {
@@ -225,9 +273,10 @@ internal fun BoxScope.FullscreenChatBackdrop(
                     } else null
                     fun DrawScope.drawBackdrop() {
                         val frame = blur?.legacyFrame?.value
-                        if (frame != null) {
+                        val bitmap = if (frosted) frame?.frostedBitmap else frame?.bitmap
+                        if (frame != null && bitmap != null) {
                             drawImage(
-                                frame.bitmap,
+                                bitmap,
                                 dstOffset = IntOffset(
                                     (frame.origin.x - bounds.left).roundToInt(),
                                     (frame.origin.y - bounds.top).roundToInt(),
@@ -258,24 +307,46 @@ internal fun VideoBackdropBlur(
     if (Build.VERSION.SDK_INT < 31 || texture == null || regions.isEmpty()) return
     val radius = with(LocalDensity.current) { 15.dp.toPx() }
     val maxFeather = with(LocalDensity.current) { 28.dp.toPx() }
+    val glassRadius = with(LocalDensity.current) { frostedRadius.toPx() }
+    val glassFeather = with(LocalDensity.current) { frostedChatFeather.toPx() }
     val controlFeather = with(LocalDensity.current) { 1.dp.toPx() }
     val roundedRadius = with(LocalDensity.current) { 8.dp.toPx() }
-    val effects = remember(texture, regions.size) {
-        List(regions.size) {
-            if (Build.VERSION.SDK_INT >= 33) ProgressiveBlurShader()::effect
-            else MaskedVideoBlur()::effect
-        }
+    val masks = remember(texture, regions.size) { List(regions.size) { VideoBlurMask() } }
+    val opaquePixel = remember(texture) {
+        Bitmap.createBitmap(1, 1, Bitmap.Config.ALPHA_8).apply { eraseColor(android.graphics.Color.WHITE) }
+    }
+    val progressiveEffects = remember(texture, regions.size) {
+        arrayOfNulls<ProgressiveBlurShader>(regions.size)
     }
     val currentRegions by rememberUpdatedState(regions)
     val currentControlOpacity by rememberUpdatedState(controlOpacity)
     val currentOpacity by rememberUpdatedState(opacity)
     val scope = rememberCoroutineScope()
-    DisposableEffect(texture, radius, maxFeather, controlFeather, roundedRadius, effects) {
+    DisposableEffect(texture, radius, maxFeather, glassRadius, glassFeather, controlFeather, roundedRadius, masks) {
         val location = IntArray(2)
         var lastRegions = emptyList<FullscreenChatBackdropRegion>()
         var lastOpacity = 0f
         var lastControlOpacity = 0f
         var lastTextureSize = IntSize.Zero
+        var appliedEffect: RenderEffect? = null
+        val choreographer = if (Build.VERSION.SDK_INT < 33) Choreographer.getInstance() else null
+        val refreshTexture = object : Choreographer.FrameCallback {
+            private var lastSurface: SurfaceTexture? = null
+            private var lastTimestamp: Long? = null
+
+            override fun doFrame(frameTimeNanos: Long) {
+                val effect = appliedEffect ?: return
+                val surface = texture.surfaceTexture
+                val timestamp = surface?.timestamp
+                if (surface != null && (surface !== lastSurface || timestamp != lastTimestamp)) {
+                    // Android 12 can reuse a filtered TextureView layer after its texture changes.
+                    texture.setRenderEffect(RenderEffect.createOffsetEffect(0f, 0f, effect))
+                }
+                lastSurface = surface
+                lastTimestamp = timestamp
+                choreographer?.postFrameCallback(this)
+            }
+        }
         fun updateEffect() {
             texture.getLocationInWindow(location)
             val textureSize = IntSize(texture.width, texture.height)
@@ -292,18 +363,63 @@ internal fun VideoBackdropBlur(
             lastOpacity = visibleOpacity
             lastControlOpacity = visibleControlOpacity
             lastTextureSize = textureSize
-            var effect: RenderEffect? = null
+            var softEffect: RenderEffect? = null
+            var softMask: RenderEffect? = null
+            var frostedMask: RenderEffect? = null
+            var frostedBounds: Rect? = null
             localRegions.forEachIndexed { index, region ->
                 val bounds = region.bounds
                 val alpha = if (region.frostedControl) visibleControlOpacity else visibleOpacity
                 if (alpha > 0f && !bounds.isEmpty && bounds.overlaps(textureBounds)) {
                     val cornerRadius = region.shape.radius(bounds.width, bounds.height, roundedRadius)
-                    val feather = if (region.frostedControl) controlFeather else maxFeather
-                    val next = effects[index](region, textureSize, radius, feather, alpha, cornerRadius)
-                    effect = effect?.let { RenderEffect.createChainEffect(next, it) } ?: next
+                    if (region.style == FullscreenChatBlurStyle.FrostedGlass) {
+                        val feather = if (region.frostedControl) controlFeather else glassFeather
+                        val mask = masks[index].effect(region, feather, alpha, cornerRadius)
+                        frostedMask = composite(frostedMask, mask)
+                        frostedBounds = frostedBounds?.let {
+                            Rect(minOf(it.left, bounds.left), minOf(it.top, bounds.top),
+                                maxOf(it.right, bounds.right), maxOf(it.bottom, bounds.bottom))
+                        } ?: bounds
+                    } else if (Build.VERSION.SDK_INT >= 33) {
+                        val shader = progressiveEffects[index] ?: ProgressiveBlurShader().also {
+                            progressiveEffects[index] = it
+                        }
+                        val next = shader.effect(region, textureSize, radius, maxFeather, alpha, cornerRadius)
+                        softEffect = softEffect?.let { RenderEffect.createChainEffect(next, it) } ?: next
+                    } else {
+                        val mask = masks[index].effect(region, maxFeather, alpha, cornerRadius)
+                        softMask = composite(softMask, mask)
+                    }
                 }
             }
+            var effect = softEffect
+            softMask?.let {
+                effect = composite(
+                    RenderEffect.createOffsetEffect(0f, 0f),
+                    blurredOverlay(it, textureSize, radius, Shader.TileMode.CLAMP),
+                )
+            }
+            frostedMask?.let {
+                // Each blur branch samples the texture itself, even where two masks overlap.
+                val source = RenderEffect.createOffsetEffect(0f, 0f)
+                val crop = checkNotNull(frostedBounds).inflate(3f * glassRadius).intersect(textureBounds)
+                val blurSource = if (crop == textureBounds) source else {
+                    val cropMask = RenderEffect.createBitmapEffect(opaquePixel, null, AndroidRect(
+                        floor(crop.left).toInt(), floor(crop.top).toInt(),
+                        ceil(crop.right).toInt(), ceil(crop.bottom).toInt(),
+                    ))
+                    RenderEffect.createBlendModeEffect(source, cropMask, AndroidBlendMode.DST_IN)
+                }
+                effect = composite(
+                    effect ?: source,
+                    blurredOverlay(it, textureSize, glassRadius, Shader.TileMode.MIRROR, blurSource),
+                )
+            }
+            val hadEffect = appliedEffect != null
+            appliedEffect = effect
             texture.setRenderEffect(effect)
+            if (!hadEffect && effect != null) choreographer?.postFrameCallback(refreshTexture)
+            if (effect == null) choreographer?.removeFrameCallback(refreshTexture)
         }
         val listener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updateEffect() }
         texture.addOnLayoutChangeListener(listener)
@@ -313,6 +429,7 @@ internal fun VideoBackdropBlur(
         }
         onDispose {
             updates.cancel()
+            choreographer?.removeFrameCallback(refreshTexture)
             texture.removeOnLayoutChangeListener(listener)
             texture.setRenderEffect(null)
         }
@@ -320,21 +437,38 @@ internal fun VideoBackdropBlur(
 }
 
 @RequiresApi(31)
-private class MaskedVideoBlur {
+private fun composite(background: RenderEffect?, foreground: RenderEffect): RenderEffect =
+    if (background == null) foreground
+    else RenderEffect.createBlendModeEffect(background, foreground, AndroidBlendMode.SRC_OVER)
+
+@RequiresApi(31)
+private fun blurredOverlay(
+    mask: RenderEffect,
+    textureSize: IntSize,
+    radius: Float,
+    edge: Shader.TileMode,
+    input: RenderEffect = RenderEffect.createOffsetEffect(0f, 0f),
+): RenderEffect {
+    val blurred = RenderEffect.createBlurEffect(
+        radius.coerceAtMost(textureSize.width.toFloat()),
+        radius.coerceAtMost(textureSize.height.toFloat()),
+        input,
+        edge,
+    )
+    return RenderEffect.createBlendModeEffect(blurred, mask, AndroidBlendMode.DST_IN)
+}
+
+@RequiresApi(31)
+private class VideoBlurMask {
     private data class MaskKey(val width: Int, val height: Int, val radius: Float, val edges: FullscreenChatEdges)
     private var maskKey: MaskKey? = null
     private var maskBitmap: Bitmap? = null
 
-    fun effect(region: FullscreenChatBackdropRegion, textureSize: IntSize, radius: Float, maxFeather: Float, opacity: Float, cornerRadius: Float): RenderEffect {
-        val source = RenderEffect.createOffsetEffect(0f, 0f)
-        val blurred = RenderEffect.createBlurEffect(radius.coerceAtMost(textureSize.width.toFloat()),
-            radius.coerceAtMost(textureSize.height.toFloat()), Shader.TileMode.CLAMP)
+    fun effect(region: FullscreenChatBackdropRegion, maxFeather: Float, opacity: Float, cornerRadius: Float): RenderEffect {
         val mask = RenderEffect.createShaderEffect(featherMask(region.bounds, maxFeather, region.edges, opacity))
-        val feathered = RenderEffect.createBlendModeEffect(blurred, mask, AndroidBlendMode.DST_IN)
         val roundedMask = cornerMask(region, cornerRadius)
-        val overlay = if (roundedMask == null) feathered
-            else RenderEffect.createBlendModeEffect(feathered, roundedMask, AndroidBlendMode.DST_IN)
-        return RenderEffect.createBlendModeEffect(source, overlay, AndroidBlendMode.SRC_OVER)
+        return if (roundedMask == null) mask
+        else RenderEffect.createBlendModeEffect(mask, roundedMask, AndroidBlendMode.DST_IN)
     }
 
     private fun cornerMask(region: FullscreenChatBackdropRegion, radius: Float): RenderEffect? {

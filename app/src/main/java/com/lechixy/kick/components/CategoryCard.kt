@@ -5,7 +5,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -16,11 +15,13 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.lechixy.kick.R
 import coil3.compose.AsyncImage
 import coil3.request.CachePolicy
 import coil3.request.ImageRequest
@@ -62,12 +63,12 @@ fun CategoryCard(category: BrowseCategory, onClick: () -> Unit, modifier: Modifi
                     contentScale = ContentScale.Crop)
                 Box(Modifier.fillMaxSize().background(CategoryScrim))
                 if (showViewers) CategoryPill(Modifier.align(Alignment.TopStart).padding(10.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                        Box(Modifier.size(6.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
-                        Text(FormatUtils.formatFollowersCount(category.viewers.toString(), LocalConfiguration.current.locales[0]),
-                            style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Medium,
-                            color = Color.White.copy(alpha = .9f))
-                    }
+                    MediaCardViewCount(
+                        count = FormatUtils.formatFollowersCount(category.viewers.toString(), LocalConfiguration.current.locales[0]),
+                        description = stringResource(R.string.viewers),
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier,
+                    )
                 }
                 Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)) {

@@ -1,9 +1,14 @@
 package com.lechixy.kick.components
 
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Bitmap
 import android.graphics.SurfaceTexture
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.view.PixelCopy
 import android.view.Surface
 import android.view.TextureView
@@ -11,14 +16,19 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
@@ -40,6 +50,27 @@ internal data class AmbientSeek(val sequence: Int, val previousTimestamp: Long)
 private data class AmbientDemand(val playing: Boolean, val seek: AmbientSeek?, val firstFrame: Int)
 
 @Composable
+internal fun rememberAmbientPowerSaveMode(): Boolean {
+    val context = LocalContext.current.applicationContext
+    val powerManager = remember(context) { context.getSystemService(PowerManager::class.java) }
+    var enabled by remember(powerManager) { mutableStateOf(powerManager?.isPowerSaveMode == true) }
+    DisposableEffect(context, powerManager) {
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                enabled = powerManager?.isPowerSaveMode == true
+            }
+        }
+        ContextCompat.registerReceiver(
+            context, receiver, IntentFilter(PowerManager.ACTION_POWER_SAVE_MODE_CHANGED),
+            ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        enabled = powerManager?.isPowerSaveMode == true
+        onDispose { context.unregisterReceiver(receiver) }
+    }
+    return enabled
+}
+
+@Composable
 internal fun CapturePlayerAmbient(
     state: PlayerAmbientState,
     texture: TextureView?,
@@ -52,6 +83,7 @@ internal fun CapturePlayerAmbient(
     firstFrame: Int,
     seek: AmbientSeek?,
     keepFrameWhenHidden: Boolean = false,
+    preserveBlackBars: Boolean = true,
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val currentPlaying by rememberUpdatedState(playing)
@@ -59,7 +91,7 @@ internal fun CapturePlayerAmbient(
     val currentFirstFrame by rememberUpdatedState(firstFrame)
     val currentFps by rememberUpdatedState(liveFps)
     val keepCurrentFrame by rememberUpdatedState(keepFrameWhenHidden)
-    val source = remember(texture, mode, mediaId, mediaUrl) { Any() }
+    val source = remember(texture, mode, mediaId, mediaUrl, preserveBlackBars) { Any() }
     LaunchedEffect(state, source, visible, keepFrameWhenHidden, lifecycle) {
         val owner = Any()
         state.captureOwner = owner
@@ -68,7 +100,7 @@ internal fun CapturePlayerAmbient(
         if (!visible || mode == PlayerAmbientMode.Off || texture == null) return@LaunchedEffect
 
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            val capture = AmbientCapture(state, texture)
+            val capture = AmbientCapture(state, texture, preserveBlackBars)
             var completedSeek: AmbientSeek? = null
             try {
                 snapshotFlow {
@@ -96,10 +128,15 @@ internal fun CapturePlayerAmbient(
     }
 }
 
-private class AmbientCapture(private val state: PlayerAmbientState, private val texture: TextureView) {
+private class AmbientCapture(
+    private val state: PlayerAmbientState,
+    private val texture: TextureView,
+    private val preserveBlackBars: Boolean,
+) {
     private var surfaceTexture: SurfaceTexture? = null
     private var liveCopy: AmbientLiveCopy? = null
     private var dynamicBitmap: Bitmap? = null
+    private val dynamicPixels by lazy { IntArray(32 * 32) }
 
     private fun currentSurface(): SurfaceTexture? {
         val surface = texture.surfaceTexture?.takeIf { texture.isAvailable && !it.isReleased }
@@ -116,14 +153,16 @@ private class AmbientCapture(private val state: PlayerAmbientState, private val 
         while (true) {
             val previous = state.frame as? AmbientFrame.Palette
             val next = currentSurface()?.takeIf { it.timestamp != 0L }?.let { readPalette() }
-            if (previous == null || next == null || state.frame == null || previous.colors == next.colors) {
+            if (previous == null || next == null || state.frame == null ||
+                previous.colors == next.colors || previous.bars != next.bars
+            ) {
                 state.frame = next
                 delay(DYNAMIC_INTERVAL_MS.toLong())
             } else {
                 animate(0f, 1f, animationSpec = tween(DYNAMIC_INTERVAL_MS, easing = LinearEasing)) { fraction, _ ->
                     state.frame = AmbientFrame.Palette(previous.colors.zip(next.colors) { start, end ->
                         lerp(start, end, fraction)
-                    })
+                    }, next.bars)
                 }
             }
         }
@@ -180,17 +219,28 @@ private class AmbientCapture(private val state: PlayerAmbientState, private val 
         val right = 0.85f..1f
         val first = 0f..0.3f
         val last = 0.7f..1f
+        val bars = if (preserveBlackBars) {
+            bitmap.getPixels(dynamicPixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+            detectAmbientBlackBars(dynamicPixels, bitmap.width, bitmap.height)
+        } else {
+            AmbientBlackBars()
+        }
         return AmbientFrame.Palette(listOf(
-            bitmap.average(first, left), bitmap.average(center, left), bitmap.average(last, left),
-            bitmap.average(left, center), bitmap.average(right, center),
-            bitmap.average(first, right), bitmap.average(center, right), bitmap.average(last, right),
-        ))
+            if (bars.top > 0) Color.Black else bitmap.average(first, left),
+            if (bars.top > 0) Color.Black else bitmap.average(center, left),
+            if (bars.top > 0) Color.Black else bitmap.average(last, left),
+            if (bars.left > 0) Color.Black else bitmap.average(left, center),
+            if (bars.right > 0) Color.Black else bitmap.average(right, center),
+            if (bars.bottom > 0) Color.Black else bitmap.average(first, right),
+            if (bars.bottom > 0) Color.Black else bitmap.average(center, right),
+            if (bars.bottom > 0) Color.Black else bitmap.average(last, right),
+        ), bars)
     }
 
     private suspend fun readProjection(surface: SurfaceTexture) {
         val size = sampleSize(texture.width, texture.height, 96) ?: return
         val copy = liveCopy ?: AmbientLiveCopy(surface).also { liveCopy = it }
-        val bitmap = state.liveCopyLock.withLock { copy.read(size) }
+        val bitmap = state.liveCopyLock.withLock { copy.read(size, preserveBlackBars) }
         if (currentSurface() === surface) state.frame = bitmap?.let { AmbientFrame.Projection(it) }
     }
 
@@ -258,7 +308,7 @@ private class AmbientLiveCopy(texture: SurfaceTexture) : AutoCloseable {
     private var pixels = IntArray(0)
     private var scratch = IntArray(0)
 
-    suspend fun read(size: AmbientSampleSize): Bitmap? = withContext(Dispatchers.Default) {
+    suspend fun read(size: AmbientSampleSize, preserveBlackBars: Boolean): Bitmap? = withContext(Dispatchers.Default) {
         val (width, height) = size
         val bitmap = buffer?.takeIf { it.width == width && it.height == height }
             ?: Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also {
@@ -277,14 +327,67 @@ private class AmbientLiveCopy(texture: SurfaceTexture) : AutoCloseable {
         if (result != PixelCopy.SUCCESS) return@withContext null
 
         bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+        val bars = if (preserveBlackBars) detectAmbientBlackBars(pixels, width, height) else AmbientBlackBars()
         val radius = (maxOf(width, height) / 12).coerceAtLeast(1)
         blurAmbientLines(pixels, scratch, height, width, width, 1, radius)
         blurAmbientLines(scratch, pixels, width, height, 1, width, radius)
+        for (y in 0 until height) {
+            val row = y * width
+            if (y < bars.top || y >= height - bars.bottom) {
+                pixels.fill(android.graphics.Color.BLACK, row, row + width)
+            } else {
+                pixels.fill(android.graphics.Color.BLACK, row, row + bars.left)
+                pixels.fill(android.graphics.Color.BLACK, row + width - bars.right, row + width)
+            }
+        }
         // Canvas may retain the image in its display list after the next capture starts.
         Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
     }
 
     override fun close() = surface.release()
+}
+
+internal data class AmbientBlackBars(
+    val top: Int = 0,
+    val bottom: Int = 0,
+    val left: Int = 0,
+    val right: Int = 0,
+)
+
+internal fun detectAmbientBlackBars(pixels: IntArray, width: Int, height: Int): AmbientBlackBars {
+    fun edge(start: Int, lineStride: Int, pixelStride: Int, length: Int, depth: Int): Int {
+        val maxBar = depth / 3
+        val minBar = (depth + 31) / 32
+        var darkLines = 0
+        for (line in 0..maxBar) {
+            var dark = 0
+            var bright = 0
+            val base = start + line * lineStride
+            for (position in 0 until length) {
+                val pixel = pixels[base + position * pixelStride]
+                val peak = maxOf(pixel shr 16 and 255, pixel shr 8 and 255, pixel and 255)
+                if (peak <= 20) dark++
+                if (peak >= 42) bright++
+            }
+            if (dark * 20 < length * 19) {
+                // A distinct boundary keeps dark scenes from being treated as letterboxing.
+                if (darkLines >= minBar && bright * 4 >= length) return darkLines
+                if (line - darkLines >= 1 || darkLines < minBar) return 0
+            } else if (line == darkLines) {
+                darkLines++
+            } else {
+                return 0
+            }
+        }
+        return 0
+    }
+    if (width < 4 || height < 4) return AmbientBlackBars()
+    return AmbientBlackBars(
+        top = edge(0, width, 1, width, height),
+        bottom = edge((height - 1) * width, -width, 1, width, height),
+        left = edge(0, 1, width, height, width),
+        right = edge(width - 1, -1, width, height, width),
+    )
 }
 
 private fun blurAmbientLines(

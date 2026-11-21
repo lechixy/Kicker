@@ -172,7 +172,8 @@ private fun ClipVideoPane(
 
     Box(modifier.background(Color.Black), contentAlignment = Alignment.Center) {
         val backdrop = remember { FrostedPlayerRegions() }
-        VideoBackdropBlur(videoTexture.takeIf { playback.renderedFrame }, backdrop.regions.values.toList())
+        val backdropTexture = videoTexture.takeIf { clip != null && playback.renderedFrame && !playback.failed }
+        VideoBackdropBlur(backdropTexture, backdrop.regions.values.toList())
         video()
         if (clip != null && !playback.renderedFrame) {
             val context = LocalContext.current
@@ -200,20 +201,23 @@ private fun ClipVideoPane(
             if (controlsVisible || !playback.playing) {
                 ClipTitleOverlay(clip, fullscreen, onCloseClick)
                 if (!playback.failed) {
-                    val frame = if (Build.VERSION.SDK_INT < 31 && videoTexture != null && playback.renderedFrame) {
-                        rememberLegacyFullscreenChatFrame(videoTexture, playback.playing)
+                    val frame = if (Build.VERSION.SDK_INT < 31) {
+                        rememberLegacyFullscreenChatFrame(
+                            backdropTexture, playback.playing, soft = false, frosted = true, mediaKey = clip.id,
+                        )
                     } else null
+                    val videoReady = backdropTexture != null
                     Row(
                         Modifier.align(Alignment.Center),
                         horizontalArrangement = Arrangement.spacedBy(28.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        FrostedPlaybackButton({ skip(false) }, frame, Modifier.size(48.dp), backdrop) {
+                        FrostedPlaybackButton({ skip(false) }, frame, Modifier.size(48.dp), backdrop, videoReady) {
                             Icon(painterResource(R.drawable.replay_10_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
                                 stringResource(R.string.player_skip_back), tint = Color.White)
                         }
                         FrostedPlaybackButton({ interaction++; controlsVisible = true; onPlayPauseToggle() },
-                            frame, Modifier.size(60.dp), backdrop) {
+                            frame, Modifier.size(60.dp), backdrop, videoReady) {
                             Icon(
                                 painterResource(if (playback.playRequested) R.drawable.pause_24dp_e3e3e3_fill1_wght400_grad0_opsz24
                                     else R.drawable.play_arrow_24dp_e3e3e3_fill1_wght400_grad0_opsz24),
@@ -221,7 +225,7 @@ private fun ClipVideoPane(
                                 Modifier.size(32.dp), tint = Color.White,
                             )
                         }
-                        FrostedPlaybackButton({ skip(true) }, frame, Modifier.size(48.dp), backdrop) {
+                        FrostedPlaybackButton({ skip(true) }, frame, Modifier.size(48.dp), backdrop, videoReady) {
                             Icon(painterResource(R.drawable.forward_10_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
                                 stringResource(R.string.player_skip_forward), tint = Color.White)
                         }

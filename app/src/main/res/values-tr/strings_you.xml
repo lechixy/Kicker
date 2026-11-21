@@ -69,4 +69,10 @@
     <string name="you_usage_date_value">%1$s · %2$s</string>
     <string name="you_usage_undated">Toplama, tarih bilgisi olmadan kaydedilen eski etkinlikler de dahil.</string>
     <string name="you_channel_handle">@%1$s</string>
+    <string name="you_usage_total">Toplam</string>
+    <string name="you_usage_total_watch_time">Toplam izleme süresi</string>
+    <string name="you_usage_total_transferred">Toplam aktarılan veri</string>
+    <string name="you_usage_live">Canlı yayınlar</string>
+    <string name="you_usage_vod_clips">VOD ve klipler</string>
+    <string name="you_usage_unknown_content">Eski kayıtlar (tür bilinmiyor)</string>
 </resources>

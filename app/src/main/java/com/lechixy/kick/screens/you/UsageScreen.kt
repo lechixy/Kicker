@@ -71,11 +71,12 @@ internal fun UsageScreen(
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Icon(painterResource(report.metric.icon), null, tint = MaterialTheme.colorScheme.primary)
-                                Text(stringResource(if (watch) R.string.you_data_usage_watch_time else R.string.you_data_usage_transferred),
+                                Text(stringResource(if (watch) R.string.you_usage_total_watch_time else R.string.you_usage_total_transferred),
                                     style = MaterialTheme.typography.titleMedium)
                             }
                             Text(usageValue(report.metric, report.total), style = MaterialTheme.typography.headlineLarge,
                                 fontWeight = FontWeight.Bold)
+                            UsageContentBreakdown(report)
                             if (report.byDay.isNotEmpty()) {
                                 HorizontalDivider(color = settingsOutlineColor)
                                 DailyUsageChart(report)

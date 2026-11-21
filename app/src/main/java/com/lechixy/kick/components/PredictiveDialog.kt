@@ -6,6 +6,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -69,18 +70,27 @@ internal fun PredictiveAlertDialog(
     confirmButton: @Composable () -> Unit,
     title: @Composable () -> Unit,
     text: @Composable () -> Unit,
-    dismissButton: (@Composable () -> Unit)? = null
+    dismissButton: (@Composable () -> Unit)? = null,
+    icon: (@Composable () -> Unit)? = null,
 ) {
     PredictiveDialog(onDismissRequest, DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.padding(24.dp).widthIn(min = 280.dp, max = 560.dp).fillMaxWidth(),
             shape = AlertDialogDefaults.shape, color = AlertDialogDefaults.containerColor,
             tonalElevation = AlertDialogDefaults.TonalElevation) {
             Column(Modifier.padding(24.dp)) {
-                ProvideTextStyle(MaterialTheme.typography.headlineSmall) { title() }
-                Box(Modifier.weight(1f, fill = false).padding(top = 16.dp, bottom = 20.dp)) {
+                if (icon != null) {
+                    Box(Modifier.align(Alignment.CenterHorizontally).padding(bottom = 16.dp)) { icon() }
+                }
+                Box(Modifier.align(if (icon == null) Alignment.Start else Alignment.CenterHorizontally)) {
+                    ProvideTextStyle(MaterialTheme.typography.headlineSmall) { title() }
+                }
+                Box(Modifier.weight(1f, fill = false).padding(top = 16.dp, bottom = if (icon == null) 20.dp else 24.dp)) {
                     ProvideTextStyle(MaterialTheme.typography.bodyMedium) { text() }
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(if (icon == null) 0.dp else 8.dp, Alignment.End),
+                ) {
                     dismissButton?.invoke()
                     confirmButton()
                 }

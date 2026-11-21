@@ -12,10 +12,12 @@ import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,9 +35,12 @@ import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.unit.IntRect
 import androidx.compose.ui.unit.dp
 import androidx.media3.ui.PlayerView
+import com.lechixy.kick.data.settings.model.SettingsKeys
 import kotlin.math.max
 import kotlin.math.min
 import kotlinx.coroutines.sync.Mutex
@@ -46,6 +51,9 @@ internal class PlayerAmbientState {
     var intensity by mutableFloatStateOf(1f)
     var spread by mutableFloatStateOf(1f)
     var fullscreenEnabled by mutableStateOf(true)
+    var throughUi by mutableStateOf(true)
+    var chatOpacity by mutableFloatStateOf(SettingsKeys.AMBIENT_CHAT_OPACITY.defaultValue / 100f)
+    var navigationOpacity by mutableFloatStateOf(SettingsKeys.AMBIENT_NAVIGATION_OPACITY.defaultValue / 100f)
     var videoAspectRatio by mutableFloatStateOf(16f / 9f)
     val liveCopyLock = Mutex()
     var captureOwner: Any? = null
@@ -59,11 +67,37 @@ internal data class AmbientVideoBounds(
 )
 
 internal sealed interface AmbientFrame {
-    class Palette(val colors: List<Color>) : AmbientFrame
+    class Palette(val colors: List<Color>, val bars: AmbientBlackBars = AmbientBlackBars()) : AmbientFrame
     class Projection(val bitmap: Bitmap) : AmbientFrame
 }
 
 internal val LocalPlayerAmbientState = staticCompositionLocalOf<PlayerAmbientState?> { null }
+
+@Composable
+internal fun rememberPlayerAmbientState(host: PlayerHostState): PlayerAmbientState =
+    remember(host.slug, host.recording?.id, host.channel?.livestream?.id) { PlayerAmbientState() }
+
+@Composable
+internal fun ambientUiVisible(state: PlayerAmbientState?): Boolean {
+    val visible by remember(state) {
+        derivedStateOf { state != null && state.throughUi && state.frame != null }
+    }
+    return visible
+}
+
+@Composable
+internal fun BoxScope.NavigationAmbientBackdrop(state: PlayerAmbientState) {
+    var origin by remember { mutableStateOf<Offset?>(null) }
+    val background = MaterialTheme.colorScheme.background
+    PlayerAmbientBackdrop(
+        state = state,
+        modifier = Modifier.matchParentSize().onGloballyPositioned { origin = it.positionInWindow() },
+        videoBounds = {
+            origin?.let { state.bounds?.videoInWindow?.translate(-it) }
+        },
+        backdropColor = { background },
+    )
+}
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 internal fun PlayerAmbientState.updateBounds(texture: TextureView?, coordinates: LayoutCoordinates?) {

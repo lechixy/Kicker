@@ -48,6 +48,7 @@ internal fun ChannelMediaTags(
     tags: List<String>,
     event: ChannelEvent?,
     language: String?,
+    isMature: Boolean,
     modifier: Modifier = Modifier,
     contentColor: Color = MaterialTheme.colorScheme.primary,
 ) {
@@ -58,6 +59,13 @@ internal fun ChannelMediaTags(
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
+        if (isMature) {
+            TagChip(
+                tag = stringResource(R.string.channel_mature_badge),
+                containerColor = containerColor,
+                contentColor = contentColor,
+            )
+        }
         categories.forEach { (name, slug) ->
             val title = if (name == "Just Chatting") stringResource(R.string.category_just_chatting) else name
             TagChip(title, containerColor = containerColor, contentColor = contentColor, onClick = { navigation.category(slug) })
@@ -72,6 +80,9 @@ internal fun ChannelMediaTags(
                 icon = R.drawable.local_activity_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
                 containerColor = eventBackground.copy(alpha = eventBackground.alpha.coerceAtMost(0.8f)),
                 contentColor = eventForeground,
+                onClick = (event.slug?.takeIf(String::isNotBlank) ?: event.id?.takeIf(String::isNotBlank))?.let { slug ->
+                    { navigation.event(slug) }
+                },
             )
         }
         tags.filter(String::isNotBlank).distinct().forEach {

@@ -2,6 +2,9 @@ package com.lechixy.kick.screens.you
 
 import com.lechixy.kick.data.common.remote.ConnectionTransport.MOBILE
 import com.lechixy.kick.data.common.remote.ConnectionTransport.WIFI
+import com.lechixy.kick.data.player.local.PlaybackContentType.LIVE
+import com.lechixy.kick.data.player.local.PlaybackContentType.RECORDING
+import com.lechixy.kick.data.player.local.PlaybackContentType.UNCLASSIFIED
 import com.lechixy.kick.data.player.local.PlaybackUsage
 import com.lechixy.kick.data.player.local.PlaybackUsageMinute
 import com.lechixy.kick.data.player.local.WatchMinute
@@ -90,15 +93,40 @@ class UsageReportTest {
     }
 
     @Test
+    fun totalsIncludeBothPlaybackTypesAndOlderRecordsForTheSelectedPeriod() {
+        val now = ZonedDateTime.parse("2026-04-06T16:00:00+03:00[Europe/Istanbul]")
+        val today = now.toLocalDate().toEpochDay()
+        val minute = usageMinute(now.toInstant().toEpochMilli())
+        val live = PlaybackUsage("alpha", "Alpha", WIFI, 12_000, 600, epochDay = today,
+            recentMinutes = mapOf(minute to PlaybackUsageMinute(2_000, 100)), contentType = LIVE)
+        val recording = live.copy(watchedMs = 8_000, bytes = 300,
+            recentMinutes = mapOf(minute to PlaybackUsageMinute(3_000, 200)), contentType = RECORDING)
+        val older = live.copy(watchedMs = 5_000, bytes = 250, recentMinutes = emptyMap(), contentType = UNCLASSIFIED)
+        val entries = listOf(live, recording, older)
+        assertEquals(3, entries.map { it.key }.distinct().size)
+
+        val week = UsageReport(entries, UsageMetric.WATCH_TIME, UsagePeriod.WEEK, now)
+        assertEquals(mapOf(LIVE to 12_000L, RECORDING to 8_000L, UNCLASSIFIED to 5_000L), week.byContentType)
+        assertEquals(25_000L, week.total)
+        assertEquals(week.total, week.channels.single().total)
+
+        val recent = UsageReport(entries, UsageMetric.DATA, UsagePeriod.LAST_24_HOURS, now)
+        assertEquals(mapOf(LIVE to 100L, RECORDING to 200L), recent.byContentType)
+        assertEquals(300L, recent.total)
+        assertEquals(mapOf(WIFI to 300L), recent.networks)
+    }
+
+    @Test
     fun settingsBackupStoresDayAndAcceptsLegacyUsage() {
         val legacy = Json.decodeFromString<PlaybackBackupData>(
             """{"usage":[{"channelSlug":"alpha","channelName":"Alpha","transport":"WIFI","watchedMs":1000}]}""",
         )
         assertNull(legacy.usage.single().epochDay)
+        assertEquals(UNCLASSIFIED, legacy.usage.single().contentType)
 
         val dated = legacy.usage.single().copy(epochDay = LocalDate.parse("2026-04-06").toEpochDay(), bytes = 250)
         val minute = usageMinute(Instant.parse("2026-04-06T08:00:00Z").toEpochMilli())
-        val recent = dated.copy(recentMinutes = mapOf(minute to PlaybackUsageMinute(1_000, 250)))
+        val recent = dated.copy(recentMinutes = mapOf(minute to PlaybackUsageMinute(1_000, 250)), contentType = LIVE)
         val backup = legacy.copy(usage = legacy.usage + recent)
         val restored = Json.decodeFromString<PlaybackBackupData>(Json.encodeToString(backup))
         assertEquals(backup, restored)

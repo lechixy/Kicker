@@ -162,7 +162,7 @@ fun PlayerHost(
     onVideoBoundsChanged: ((Rect?) -> Unit)? = null,
 ) {
     if (host.slug == null || host.mode == PlayerMode.Hidden) return
-    val ambient = remember(host.slug, host.recording?.id, host.channel?.livestream?.id) { PlayerAmbientState() }
+    val ambient = LocalPlayerAmbientState.current ?: rememberPlayerAmbientState(host)
 
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
@@ -252,6 +252,30 @@ fun PlayerHost(
 
     // Mini pencere: konum, hareket aralığının oranı olarak tutulur (0..1) => boyut/rotasyon değişse de köşede kalır.
     val settingsRepository = LocalSettingsRepository.current
+    val askBeforeMatureLive by remember(settingsRepository) {
+        settingsRepository.get(SettingsKeys.ASK_BEFORE_MATURE_LIVE)
+    }.collectAsStateWithLifecycle<Boolean?>(initialValue = null)
+    val livePlaybackAccess = host.livePlaybackAccess(askBeforeMatureLive)
+    val livestream = loaded?.livestream
+    LaunchedEffect(livestream?.id, livestream?.isMature, livePlaybackAccess, host.livePlaybackRequested, askBeforeMatureLive) {
+        if (livestream == null || livePlaybackAccess != LivePlaybackAccess.Ready) return@LaunchedEffect
+        if (askBeforeMatureLive == false && livestream.isMature) host.approveMatureLivestream(livestream.id)
+        if (host.livePlaybackRequested) host.playLive()
+    }
+    if (!pipVideoOnly && !host.isExiting &&
+        livePlaybackAccess == LivePlaybackAccess.NeedsConfirmation && livestream != null
+    ) {
+        key(host.slug, livestream.id) {
+            MatureLiveConfirmationDialog(
+                onDismiss = { host.declineMatureLivestream(livestream.id) },
+                onConfirm = { dontAskAgain ->
+                    if (host.approveMatureLivestream(livestream.id) && dontAskAgain) {
+                        scope.launch { settingsRepository.set(SettingsKeys.ASK_BEFORE_MATURE_LIVE, false) }
+                    }
+                },
+            )
+        }
+    }
     val fullscreenChatOverlayEnabled by remember(settingsRepository) {
         settingsRepository.get(SettingsKeys.FULLSCREEN_CHAT_ENABLED)
     }.collectAsStateWithLifecycle(initialValue = SettingsKeys.FULLSCREEN_CHAT_ENABLED.defaultValue)
@@ -1243,6 +1267,7 @@ fun PlayerHost(
                     PlayerSurface(
                         host = host,
                         mode = mode,
+                        livePlaybackAccess = livePlaybackAccess,
                         previewThumbnailUrl = previewThumbnailUrl,
                         isInPipMode = pipVideoOnly,
                         liveChatViewModel = liveChatViewModel,
@@ -1269,6 +1294,7 @@ fun PlayerHost(
 private fun PlayerSurface(
     host: PlayerHostState,
     mode: PlayerMode,
+    livePlaybackAccess: LivePlaybackAccess,
     previewThumbnailUrl: String? = null,
     isInPipMode: Boolean,
     liveChatViewModel: com.lechixy.kick.screens.channel.ChannelViewModel?,
@@ -1308,7 +1334,8 @@ private fun PlayerSurface(
     }
     val playbackUrl = if (recording != null) resolvedUrl else channel?.playbackUrl
     val announcementId = host.activeLiveAnnouncementId
-    val hasVideo = channel != null && (isLive || recording != null) && !playbackUrl.isNullOrBlank()
+    val canPlayLive = livePlaybackAccess == LivePlaybackAccess.Ready
+    val hasVideo = channel != null && ((isLive && canPlayLive) || recording != null) && !playbackUrl.isNullOrBlank()
 
     Box(
         Modifier
@@ -1349,7 +1376,7 @@ private fun PlayerSurface(
             )
         } else {
             val bannerUrl = remember(channel) { channel?.getBannerUrl(targetWidthPx = 1080) }
-            val displayImage = previewThumbnailUrl ?: bannerUrl
+            val displayImage = (previewThumbnailUrl ?: bannerUrl).takeIf { !isLive || canPlayLive }
             if (!displayImage.isNullOrEmpty()) {
                 AsyncImage(
                     model = remember(displayImage) {
@@ -1364,7 +1391,9 @@ private fun PlayerSurface(
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
                 )
-            } else if (channel != null) {
+            } else if (isLive && livePlaybackAccess == LivePlaybackAccess.CheckingRating) {
+                AppLoadingIndicator()
+            } else if (channel != null && (!isLive || canPlayLive)) {
                 Text(
                     stringResource(R.string.channel_offline),
                     color = Color.Gray,
@@ -1382,7 +1411,7 @@ private fun PlayerSurface(
             }
         }
 
-        if (announcementId != null && isLive && !isInPipMode) {
+        if (announcementId != null && isLive && canPlayLive && !isInPipMode) {
             val streamerName = channel.user?.username?.takeIf { it.isNotBlank() } ?: channel.slug
             StreamerIsLiveOverlay(
                 username = streamerName,

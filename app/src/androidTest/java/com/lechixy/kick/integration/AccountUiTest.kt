@@ -75,6 +75,8 @@ class AccountUiTest {
         val allTime = context.getString(R.string.you_usage_all)
         val watchTime = context.getString(R.string.you_data_usage_watch_time)
         val dataUsage = context.getString(R.string.you_data_usage)
+        val live = context.getString(R.string.you_usage_live)
+        val recordings = context.getString(R.string.you_usage_vod_clips)
         compose.setContent { MaterialTheme { YouHost(onExit = {}, onChannelClick = {}) } }
 
         compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(month))
@@ -82,6 +84,9 @@ class AccountUiTest {
         compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(watchTime))
         compose.onNode(hasText(watchTime) and hasClickAction()).performClick()
         compose.onNodeWithText(month).assertIsSelected()
+        compose.onNodeWithText(context.getString(R.string.you_usage_total_watch_time)).assertIsDisplayed()
+        compose.onNodeWithText(live).assertIsDisplayed()
+        compose.onNodeWithText(recordings).assertIsDisplayed()
         val account = compose.onNodeWithText(context.getString(R.string.account_title))
         if (context.resources.configuration.screenWidthDp >= 640) account.assertIsDisplayed()
         else account.assertDoesNotExist()
@@ -91,6 +96,9 @@ class AccountUiTest {
         compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(dataUsage))
         compose.onNode(hasText(dataUsage) and hasClickAction()).performClick()
         compose.onNodeWithText(allTime).assertIsSelected()
+        compose.onNodeWithText(context.getString(R.string.you_usage_total_transferred)).assertIsDisplayed()
+        compose.onNodeWithText(live).assertIsDisplayed()
+        compose.onNodeWithText(recordings).assertIsDisplayed()
     }
 
     @OptIn(ExperimentalMaterial3Api::class)

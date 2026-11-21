@@ -56,6 +56,7 @@ import com.lechixy.kick.data.channel.model.ClipDetail
 import com.lechixy.kick.service.ClipAudioHandoff
 import com.lechixy.kick.service.kickPlaybackAudioAttributes
 import com.lechixy.kick.service.playbackHttpDataSourceFactory
+import com.lechixy.kick.data.player.local.PlaybackContentType
 import com.lechixy.kick.data.player.local.PlaybackUsageChannel
 import com.lechixy.kick.data.player.local.PlaybackUsageStore
 import com.lechixy.kick.service.player.PlaybackUsageTracker
@@ -207,7 +208,9 @@ private fun rememberClipPlayback(clip: ClipDetail): ClipPlayback {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val scope = rememberCoroutineScope()
     val playback = remember(context, clip.id, clip.playbackUrl) {
-        val source = playbackHttpDataSourceFactory().trackUsage(PlaybackUsageChannel(clip.channel.slug, clip.channel.username))
+        val source = playbackHttpDataSourceFactory().trackUsage(
+            PlaybackUsageChannel(clip.channel.slug, clip.channel.username, PlaybackContentType.RECORDING, clip.channel.profilePicture)
+        )
         val allocator = DefaultAllocator(true, C.DEFAULT_BUFFER_SEGMENT_SIZE)
         val player = ExoPlayer.Builder(context)
             .setMediaSourceFactory(DefaultMediaSourceFactory(source))

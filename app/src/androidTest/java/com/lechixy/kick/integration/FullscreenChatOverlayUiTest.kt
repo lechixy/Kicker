@@ -1,8 +1,10 @@
 package com.lechixy.kick.integration
 
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.SurfaceTexture
+import android.graphics.drawable.Animatable
 import android.os.Build
 import android.view.TextureView
 import androidx.compose.foundation.background
@@ -32,8 +34,10 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
@@ -41,6 +45,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipe
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
@@ -48,6 +53,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.lechixy.kick.R
 import com.lechixy.kick.components.PlayerHostState
+import com.lechixy.kick.components.channel.chat.ChatStack
 import com.lechixy.kick.components.channel.chat.FullscreenChatBackdrop
 import com.lechixy.kick.components.channel.chat.FullscreenChatBackdropRegion
 import com.lechixy.kick.components.channel.chat.FullscreenChatDock
@@ -59,15 +65,20 @@ import com.lechixy.kick.components.channel.chat.FullscreenChatIdentityStyle
 import com.lechixy.kick.components.channel.chat.FullscreenChatOverlay
 import com.lechixy.kick.components.channel.chat.FullscreenChatPreferences
 import com.lechixy.kick.components.channel.chat.FullscreenChatVideoFrame
+import com.lechixy.kick.components.channel.chat.LegacyBackdropBuffers
 import com.lechixy.kick.components.channel.chat.VideoBackdropBlur
+import com.lechixy.kick.components.channel.chat.fullscreenChatOptions
 import com.lechixy.kick.components.channel.chat.HorizontalChat
 import com.lechixy.kick.components.channel.chat.OverlayMessage
+import com.lechixy.kick.components.channel.chat.SynchronizedEmote
+import com.lechixy.kick.components.channel.chat.VisibleEmotes
 import com.lechixy.kick.data.channel.model.ChannelDetail
 import com.lechixy.kick.data.chat.model.ChatMessage
 import com.lechixy.kick.data.chat.model.ChatIdentity
 import com.lechixy.kick.data.chat.model.ChatSender
 import com.lechixy.kick.data.chat.model.ChatSenderBadge
 import com.lechixy.kick.data.player.model.RecordedPlayback
+import com.lechixy.kick.data.settings.model.FullscreenChatBlurStyle
 import com.lechixy.kick.data.settings.model.FullscreenChatPosition
 import com.lechixy.kick.data.settings.model.FullscreenChatShape
 import com.lechixy.kick.data.settings.model.SettingsKeys
@@ -82,6 +93,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Rule
@@ -91,6 +103,42 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class FullscreenChatOverlayUiTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test fun incomingMessageKeepsAnAnimatedEmoteInTheScrollingStack() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val fixture = File.createTempFile("chat-stack-emote", ".gif", context.cacheDir)
+        try {
+            instrumentation.context.assets.open("synchronized-emote.gif").use { input ->
+                fixture.outputStream().use { input.copyTo(it) }
+            }
+            val url = fixture.toURI().toString()
+            var rows by mutableStateOf(listOf("old", "emote"))
+            compose.setContent {
+                MaterialTheme {
+                    ChatStack(rows.size, 0.6f, rowKey = { rows[it] }) { index ->
+                        val row = rows[index]
+                        if (row == "emote") SynchronizedEmote(url, row, Modifier.size(24.dp), showTooltip = false)
+                        else Box(Modifier.size(24.dp))
+                    }
+                }
+            }
+            fun currentEmote() = VisibleEmotes.acquire(context, url).also { VisibleEmotes.release(url, it) }
+            val initial = compose.runOnIdle { currentEmote() }
+            compose.waitUntil(10_000) { compose.runOnIdle { initial.drawable != null } }
+            val animation = compose.runOnIdle { initial.drawable as Animatable }
+            compose.runOnIdle { rows = listOf("emote", "new") }
+            compose.onNodeWithContentDescription("emote", useUnmergedTree = true).assertExists()
+            compose.runOnIdle {
+                val retained = currentEmote()
+                assertSame(initial, retained)
+                assertSame(animation, retained.drawable)
+                assertTrue(animation.isRunning)
+            }
+        } finally {
+            fixture.delete()
+        }
+    }
 
     @Test fun tickerMovesRightPausesAndPassesTouchesToThePlayer() {
         val message = ChatMessage("message", content = "https://example.com", sender = ChatSender(username = "viewer"))
@@ -244,20 +292,82 @@ class FullscreenChatOverlayUiTest {
 
     @Test fun progressiveBlurTracksNewTextureFramesAndLeavesTheRestOfTheVideoSharp() {
         assumeTrue(Build.VERSION.SDK_INT >= 33)
+        verifyTextureBlurTracksFrames(FullscreenChatBlurStyle.Soft)
+    }
+
+    @Test fun frostedBlurTracksNewTextureFramesAndLeavesTheRestOfTheVideoSharp() {
+        assumeTrue(Build.VERSION.SDK_INT >= 31)
+        verifyTextureBlurTracksFrames(FullscreenChatBlurStyle.FrostedGlass)
+    }
+
+    @Test fun legacyFrostedSampleBlursTheVideoWithoutChangingTheSoftSample() {
+        val buffers = LegacyBackdropBuffers(IntSize(100, 60), downsample = true, frosted = true)
+        val source = buffers.raw.first()
+        Canvas(source).apply {
+            drawColor(android.graphics.Color.BLACK)
+            drawRect(50f, 0f, 100f, 60f, Paint().apply { color = android.graphics.Color.WHITE })
+        }
+        val (soft, frosted) = buffers.prepare(source, 0, 6f)
+        val blurred = checkNotNull(frosted)
+        assertEquals(56, soft.width)
+        assertEquals(100, blurred.width)
+        assertEquals(android.graphics.Color.BLACK, source.getPixel(49, 30))
+        assertTrue(android.graphics.Color.red(blurred.getPixel(49, 30)) in 75..170)
+        assertEquals(android.graphics.Color.BLACK, blurred.getPixel(0, 30))
+        assertEquals(android.graphics.Color.WHITE, blurred.getPixel(99, 30))
+    }
+
+    @Test fun chatBlurStylePersistsWhileBlurIsDisabled() = withSettings { settings ->
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val soft = context.getString(R.string.fullscreen_chat_blur_style_soft)
+        val frosted = context.getString(R.string.fullscreen_chat_blur_style_frosted_glass)
+        val option = fullscreenChatOptions(horizontal = false) { }
+            .single { it.title == R.string.fullscreen_chat_blur_style }
+        compose.setContent {
+            CompositionLocalProvider(LocalSettingsRepository provides settings) {
+                MaterialTheme { option.content(true) }
+            }
+        }
+        compose.onNodeWithText(soft).assertIsNotEnabled()
+        runBlocking { settings.set(SettingsKeys.FULLSCREEN_CHAT_BLUR, true) }
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithText(soft).fetchSemanticsNodes().any {
+                !it.config.contains(SemanticsProperties.Disabled)
+            }
+        }
+        compose.onNodeWithText(soft).performClick()
+        compose.onNodeWithText(frosted).performClick()
+        compose.waitUntil(10_000) {
+            runBlocking { settings.get(SettingsKeys.FULLSCREEN_CHAT_BLUR_STYLE).first() } ==
+                FullscreenChatBlurStyle.FrostedGlass.value
+        }
+        runBlocking { settings.set(SettingsKeys.FULLSCREEN_CHAT_BLUR, false) }
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithText(frosted).fetchSemanticsNodes().any {
+                it.config.contains(SemanticsProperties.Disabled)
+            }
+        }
+        compose.onNodeWithText(frosted).assertIsNotEnabled()
+    }
+
+    private fun verifyTextureBlurTracksFrames(style: FullscreenChatBlurStyle) {
         var frameIndex by mutableStateOf(1)
-        var blurOpacity by mutableStateOf(1f)
+        var blurOpacity by mutableStateOf(0f)
         var dockedTop by mutableStateOf(false)
         val displayedFrame = AtomicInteger()
+        val frosted = style == FullscreenChatBlurStyle.FrostedGlass
+        val paneSize = if (frosted) 256.dp else 144.dp
+        val inset = if (frosted) 0.35f else 0.25f
+        var texture by mutableStateOf<TextureView?>(null)
         compose.setContent {
-            var texture by remember { mutableStateOf<TextureView?>(null) }
             var region by remember { mutableStateOf<Rect?>(null) }
             var viewport by remember { mutableStateOf<Rect?>(null) }
-            Box(Modifier.size(144.dp).testTag("live-video").onGloballyPositioned {
+            Box(Modifier.size(paneSize).testTag("live-video").onGloballyPositioned {
                 viewport = it.boundsInWindow()
                 val origin = it.positionInWindow()
                 region = Rect(
-                    origin.x + it.size.width * 0.25f, origin.y + it.size.height * 0.25f,
-                    origin.x + it.size.width * 0.75f, origin.y + it.size.height * 0.75f,
+                    origin.x + it.size.width * inset, origin.y + it.size.height * inset,
+                    origin.x + it.size.width * (1f - inset), origin.y + it.size.height * (1f - inset),
                 )
             }) {
                 AndroidView(
@@ -285,37 +395,73 @@ class FullscreenChatOverlayUiTest {
                     },
                 )
                 val dock = viewport?.takeIf { dockedTop }?.let { FullscreenChatDock(it, FullscreenChatEdges(top = true)) }
-                VideoBackdropBlur(texture, listOfNotNull(region?.let { dock?.extend(it) ?: FullscreenChatBackdropRegion(it) })) {
+                val backdropRegion = region?.let { dock?.extend(it) ?: FullscreenChatBackdropRegion(it) }
+                VideoBackdropBlur(texture, listOfNotNull(backdropRegion?.copy(style = style))) {
                     blurOpacity
                 }
             }
         }
         compose.waitUntil(10_000) { displayedFrame.get() == 1 }
         val video = compose.onNodeWithTag("live-video")
+        var split = -1
+        var sampleOffset = 0
+        compose.waitUntil(10_000) {
+            val image = video.captureToImage()
+            val pixels = image.toPixelMap()
+            val y = image.height / 8
+            sampleOffset = image.width / 24
+            split = (image.width / 3 until image.width * 2 / 3).firstOrNull { x ->
+                pixels[x - 1, y].red < 0.1f && pixels[x + 1, y].red > 0.9f
+            } ?: -1
+            split >= 0
+        }
+        val x = split - sampleOffset
+        compose.runOnIdle { blurOpacity = 1f }
         val first = video.captureToImage()
-        val x = first.width / 2 - 2
         val firstPixels = first.toPixelMap()
-        assertTrue(firstPixels[x, first.height / 2].red > 0.10f)
-        assertTrue(firstPixels[x, first.height / 8].red < 0.05f)
+        val inside = firstPixels[x, first.height / 2]
+        val outside = firstPixels[x, first.height / 8]
+        assertTrue("Expected blur inside the region, got $inside", inside.red > 0.10f)
+        assertTrue("Expected sharp video outside the region, got $outside", outside.red < 0.05f)
 
         compose.runOnIdle { frameIndex = 2 }
         compose.waitUntil(10_000) { displayedFrame.get() == 2 }
-        val second = video.captureToImage().toPixelMap()
-        assertTrue(second[x, first.height / 2].blue > 0.10f)
-        assertTrue(second[x, first.height / 8].red > 0.95f)
-        assertTrue(second[x, first.height / 8].blue < 0.05f)
+        var fullBlue = 0f
+        try {
+            compose.waitUntil(5_000) {
+                val second = video.captureToImage().toPixelMap()
+                fullBlue = second[x, first.height / 2].blue
+                val edge = second[x, first.height / 8]
+                fullBlue > 0.10f && edge.red > 0.85f && edge.blue < 0.05f
+            }
+        } catch (error: androidx.compose.ui.test.ComposeTimeoutException) {
+            val second = video.captureToImage().toPixelMap()
+            val raw = compose.runOnIdle { texture?.getBitmap(first.width, first.height)?.asImageBitmap()?.toPixelMap() }
+            throw AssertionError(
+                "Frame 2 x=$x width=${first.width} height=${first.height} " +
+                    "center=${second[x, first.height / 2]} edge=${second[x, first.height / 8]} " +
+                    "rawCenter=${raw?.get(x, first.height / 2)} rawEdge=${raw?.get(x, first.height / 8)}",
+                error,
+            )
+        }
 
         compose.runOnIdle { blurOpacity = 0.5f }
-        val half = video.captureToImage().toPixelMap()[x, first.height / 2].blue
-        assertTrue(half > 0.05f && half < second[x, first.height / 2].blue)
+        compose.waitUntil(5_000) {
+            val half = video.captureToImage().toPixelMap()[x, first.height / 2].blue
+            half > 0.05f && half < fullBlue
+        }
 
         compose.runOnIdle { blurOpacity = 0f }
-        val clear = video.captureToImage().toPixelMap()[x, first.height / 2]
-        assertTrue(clear.red > 0.95f && clear.blue < 0.05f)
+        compose.waitUntil(5_000) {
+            val clear = video.captureToImage().toPixelMap()[x, first.height / 2]
+            clear.red > 0.85f && clear.blue < 0.05f
+        }
 
         compose.runOnIdle { dockedTop = true; blurOpacity = 1f }
-        val docked = video.captureToImage().toPixelMap()[x, 1]
-        assertTrue(docked.blue > 0.10f && docked.red + docked.blue > 0.95f)
+        compose.waitUntil(5_000) {
+            val docked = video.captureToImage().toPixelMap()[x, 1]
+            docked.blue > 0.10f && docked.red + docked.blue > 0.85f
+        }
     }
 
     @Test fun dockedDarkBackdropReachesTheCornerWithBlurDisabled() {

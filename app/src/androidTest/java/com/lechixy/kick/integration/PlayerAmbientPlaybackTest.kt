@@ -3,6 +3,7 @@ package com.lechixy.kick.integration
 import android.graphics.Color as AndroidColor
 import android.graphics.Bitmap
 import android.graphics.Rect
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -16,18 +17,27 @@ import androidx.activity.compose.setContent
 import androidx.annotation.OptIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.State
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.unit.dp
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -38,10 +48,15 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.lechixy.kick.components.AmbientFrame
 import com.lechixy.kick.components.AmbientSeek
 import com.lechixy.kick.components.CapturePlayerAmbient
+import com.lechixy.kick.components.FrostedPlaybackButton
+import com.lechixy.kick.components.FrostedPlayerRegions
 import com.lechixy.kick.components.PlayerAmbientBackdrop
 import com.lechixy.kick.components.PlayerAmbientState
 import com.lechixy.kick.components.PlayerVideoSurface
 import com.lechixy.kick.components.TrackAmbientVideoLayout
+import com.lechixy.kick.components.channel.chat.FullscreenChatVideoFrame
+import com.lechixy.kick.components.channel.chat.VideoBackdropBlur
+import com.lechixy.kick.components.channel.chat.rememberLegacyFullscreenChatFrame
 import com.lechixy.kick.components.updateBounds
 import com.lechixy.kick.data.settings.model.PlayerAmbientMode
 import java.io.File
@@ -51,6 +66,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
@@ -171,6 +187,63 @@ class PlayerAmbientPlaybackTest {
         }
     }
 
+    @Test
+    fun comparesPlaybackFramesWithAndWithoutFrostedControls() {
+        assumeTrue(Build.VERSION.SDK_INT >= 31)
+        withVideo { playback ->
+            playback.onMain { showControls = true }
+            playback.await("first fixture frame") { firstFrame > 0 }
+            for (frosted in listOf(false, true)) {
+                val uiFrames = mutableListOf<Long>()
+                val listener = Window.OnFrameMetricsAvailableListener { _, metrics, _ ->
+                    if (metrics.getMetric(FrameMetrics.FIRST_DRAW_FRAME) == 0L) {
+                        val duration = metrics.getMetric(FrameMetrics.TOTAL_DURATION)
+                        if (duration > 0) uiFrames += duration
+                    }
+                }
+                playback.onMain {
+                    frostedControls = frosted
+                    player.seekTo(0L)
+                    window.addOnFrameMetricsAvailableListener(listener, Handler(Looper.getMainLooper()))
+                    player.play()
+                }
+                try {
+                    playback.await("end of the fixture with frostedControls=$frosted") {
+                        player.playbackState == Player.STATE_ENDED
+                    }
+                    val sorted = playback.onMain { uiFrames.sorted() }
+                    assertTrue("Expected window frame samples", sorted.isNotEmpty())
+                    val p50 = sorted[((sorted.size - 1) * 0.50).toInt()] / 1_000_000.0
+                    val p95 = sorted[((sorted.size - 1) * 0.95).toInt()] / 1_000_000.0
+                    Log.i("BackdropPlaybackTest", "frosted=$frosted frames=${sorted.size} p50Ms=$p50 p95Ms=$p95")
+                } finally {
+                    playback.onMain { window.removeOnFrameMetricsAvailableListener(listener) }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun legacyFrostedControlsFollowARealPausedSeek() {
+        assumeTrue(Build.VERSION.SDK_INT == 30)
+        withVideo { playback ->
+            playback.onMain {
+                showControls = true
+                frostedControls = true
+            }
+            playback.await("first frosted sample") { legacyControlsReady() }
+            val bounds = playback.onMain { checkNotNull(state.bounds) }
+            val x = bounds.videoInWindow.center.x.toInt() - 4
+            val y = bounds.videoInWindow.center.y.toInt()
+            val first = playback.readWindowPixel(x, y)
+            playback.onMain { seekWhilePaused(2_500L) }
+            playback.await("new blue video under the controls") { legacyControlsReady(blueScene = true) }
+            val second = playback.readWindowPixel(x, y)
+            assertTrue(AndroidColor.red(first) > AndroidColor.blue(first))
+            assertTrue(AndroidColor.blue(second) > AndroidColor.blue(first) + 20)
+        }
+    }
+
     private fun withVideo(test: (Playback) -> Unit) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val fixture = File.createTempFile("ambient-edges", ".mp4", instrumentation.targetContext.cacheDir)
@@ -200,10 +273,14 @@ class PlayerAmbientPlaybackTest {
         var fps by mutableIntStateOf(30)
         var darkTheme by mutableStateOf(false)
         private var playing by mutableStateOf(false)
-        private var firstFrame by mutableIntStateOf(0)
+        var firstFrame by mutableIntStateOf(0)
+            private set
         private var seek by mutableStateOf<AmbientSeek?>(null)
         private var texture by mutableStateOf<TextureView?>(null)
         private var coordinates: LayoutCoordinates? = null
+        var showControls by mutableStateOf(false)
+        var frostedControls by mutableStateOf(false)
+        private var legacyControlFrame: State<FullscreenChatVideoFrame?>? = null
 
         init {
             player.addListener(object : Player.Listener {
@@ -229,9 +306,29 @@ class PlayerAmbientPlaybackTest {
                     }) {
                         PlayerAmbientBackdrop(state, modifier = Modifier.matchParentSize())
                         PlayerVideoSurface(player, playing, Modifier.fillMaxSize(), onTextureChanged = { texture = it })
+                        if (showControls) {
+                            val regions = remember { FrostedPlayerRegions() }
+                            val backdropTexture = texture.takeIf { frostedControls && firstFrame > 0 }
+                            VideoBackdropBlur(backdropTexture, regions.regions.values.toList())
+                            val frame = if (Build.VERSION.SDK_INT == 30) {
+                                rememberLegacyFullscreenChatFrame(backdropTexture, playing, soft = false, frosted = true)
+                            } else null
+                            SideEffect { legacyControlFrame = frame }
+                            Row(Modifier.align(Alignment.Center), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+                                for (size in listOf(48.dp, 60.dp, 48.dp)) {
+                                    FrostedPlaybackButton({}, frame, Modifier.size(size), regions, videoReady = firstFrame > 0) {}
+                                }
+                            }
+                        }
                     }
                 }
             }
+        }
+
+        fun legacyControlsReady(blueScene: Boolean = false): Boolean {
+            val bitmap = legacyControlFrame?.value?.frostedBitmap ?: return false
+            val pixel = bitmap.toPixelMap()[bitmap.width / 4, bitmap.height / 2]
+            return if (blueScene) pixel.blue > 0.7f else pixel.red > 0.7f
         }
 
         fun seekWhilePaused(positionMs: Long) {

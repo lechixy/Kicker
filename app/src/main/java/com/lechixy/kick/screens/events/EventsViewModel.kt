@@ -24,13 +24,13 @@ import okhttp3.HttpUrl
 internal data class EventsScreenUiState(
     val isLoading: Boolean = true,
     val failedFeeds: Int = 0,
-    val featuredEvent: ChannelEvent? = null,
+    val featuredEvents: List<ChannelEvent> = emptyList(),
     val liveEvents: List<ChannelEvent> = emptyList(),
     val upcomingEvents: List<ChannelEvent> = emptyList(),
     val reminderIds: Set<String> = emptySet(),
     val pendingReminderIds: Set<String> = emptySet()
 ) {
-    val hasEvents get() = featuredEvent != null || liveEvents.isNotEmpty() || upcomingEvents.isNotEmpty()
+    val hasEvents get() = featuredEvents.isNotEmpty() || liveEvents.isNotEmpty() || upcomingEvents.isNotEmpty()
 }
 
 @HiltViewModel
@@ -64,7 +64,7 @@ internal class EventsViewModel @Inject constructor(private val repository: KickR
                     it.copy(
                         isLoading = false,
                         failedFeeds = listOf(featuredEvents, liveEvents, upcomingEvents).count { feed -> feed == null },
-                        featuredEvent = if (featuredEvents == null) it.featuredEvent else featuredEvents.firstOrNull(),
+                        featuredEvents = featuredEvents ?: it.featuredEvents,
                         liveEvents = liveEvents ?: it.liveEvents,
                         upcomingEvents = upcomingEvents ?: it.upcomingEvents
                     )

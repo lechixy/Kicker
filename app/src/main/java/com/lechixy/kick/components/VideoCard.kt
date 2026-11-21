@@ -3,6 +3,7 @@ package com.lechixy.kick.components
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -142,11 +143,9 @@ fun VideoCard(
                         .align(Alignment.BottomStart)
                         .padding(8.dp)
                 ) {
-                    Text(
-                        text = stringResource(R.string.views_count, FormatUtils.formatCompactCount(video.views, locale)),
-                        color = Color.White,
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    MediaCardViewCount(
+                        count = FormatUtils.formatCompactCount(video.views, locale),
+                        description = stringResource(R.string.views),
                     )
                 }
                 PlaybackProgressBar(progressId, Modifier.align(Alignment.BottomCenter))
@@ -183,5 +182,27 @@ fun VideoCard(
                 )
             }
         }
+    }
+}
+
+@Composable
+internal fun MediaCardViewCount(
+    count: String,
+    description: String,
+    fontWeight: FontWeight? = null,
+    modifier: Modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            painterResource(R.drawable.visibility_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
+            contentDescription = description,
+            modifier = Modifier.size(12.dp),
+            tint = Color.White,
+        )
+        Text(count, color = Color.White, style = MaterialTheme.typography.labelSmall, fontWeight = fontWeight)
     }
 }

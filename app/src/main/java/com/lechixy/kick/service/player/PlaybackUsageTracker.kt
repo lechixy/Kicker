@@ -12,8 +12,10 @@ import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.TransferListener
 import com.lechixy.kick.data.common.remote.NetworkMonitor
 import com.lechixy.kick.data.common.remote.ConnectionTransport
+import com.lechixy.kick.data.player.local.PlaybackContentType
 import com.lechixy.kick.data.player.local.PlaybackUsageChannel
 import com.lechixy.kick.data.player.local.PlaybackUsageStore
+import com.lechixy.kick.service.EXTRA_IS_LIVE
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -31,7 +33,10 @@ internal fun Bundle.setPlaybackUsageChannel(slug: String, name: String, avatar: 
 internal fun MediaItem?.usageChannel(): PlaybackUsageChannel? {
     val extras = this?.mediaMetadata?.extras ?: return null
     val slug = extras.getString(CHANNEL_SLUG)?.takeIf(String::isNotBlank) ?: return null
-    return PlaybackUsageChannel(slug, extras.getString(CHANNEL_NAME).orEmpty().ifBlank { slug }, extras.getString(CHANNEL_AVATAR))
+    val contentType = if (extras.getBoolean(EXTRA_IS_LIVE)) PlaybackContentType.LIVE else PlaybackContentType.RECORDING
+    return PlaybackUsageChannel(
+        slug, extras.getString(CHANNEL_NAME).orEmpty().ifBlank { slug }, contentType, extras.getString(CHANNEL_AVATAR),
+    )
 }
 
 @OptIn(UnstableApi::class)

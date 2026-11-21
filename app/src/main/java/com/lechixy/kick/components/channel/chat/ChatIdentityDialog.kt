@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import coil3.compose.AsyncImage
 import com.lechixy.kick.R
+import com.lechixy.kick.components.channel.ExpandableProfilePhoto
 import com.lechixy.kick.components.dialogEntrance
 import com.lechixy.kick.data.channel.model.SubscriberBadge
 import com.lechixy.kick.data.chat.model.ChatIdentity
@@ -50,6 +51,7 @@ internal fun ChatIdentityDialog(
     initialIdentity: ChatIdentity?,
     username: String,
     subscriberBadges: List<SubscriberBadge>,
+    avatarUrl: String? = null,
     onPreviewClick: ((ChatIdentity) -> Unit)? = null,
     isLoading: Boolean = false,
     loadFailed: Boolean = false,
@@ -81,8 +83,14 @@ internal fun ChatIdentityDialog(
         Surface(Modifier.padding(16.dp).widthIn(max = 560.dp).fillMaxWidth().heightIn(max = 640.dp).dialogEntrance(),
             shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surface) {
             Column(Modifier.verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Text(stringResource(R.string.chat_identity), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                    if (!avatarUrl.isNullOrBlank()) {
+                        ExpandableProfilePhoto(avatarUrl, username, Modifier.size(32.dp), expandOnClick = true)
+                    }
                 }
                 Surface(modifier = Modifier.clickable(enabled = onPreviewClick != null,
                     onClickLabel = stringResource(R.string.identity_open_profile)) {
@@ -179,6 +187,7 @@ internal fun LoadingChatIdentityDialog(
     channelId: Long,
     username: String,
     subscriberBadges: List<SubscriberBadge>,
+    avatarUrl: String? = null,
     onPreviewClick: ((ChatIdentity) -> Unit)? = null,
     onDismiss: (ChatIdentity?, ChatIdentity?) -> Unit
 ) {
@@ -191,7 +200,7 @@ internal fun LoadingChatIdentityDialog(
         catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
         catch (_: Exception) { failed = true }
     }
-    ChatIdentityDialog(identity, username, subscriberBadges, onPreviewClick,
+    ChatIdentityDialog(identity, username, subscriberBadges, avatarUrl, onPreviewClick,
         isLoading = identity == null && !failed, loadFailed = failed, onRetry = { retry++ }) {
         onDismiss(identity, it)
     }

@@ -152,24 +152,16 @@ fun StreamCard(
                             color = Color.Black.copy(alpha = if (compact) 0.75f else 0.7f),
                             shape = RoundedCornerShape(4.dp)
                         ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                if (compact) Box(Modifier.size(6.dp).background(MaterialTheme.colorScheme.primary, CircleShape))
-                                val count = if (compactViewerCount) {
-                                    FormatUtils.formatCompactCount(stream.viewerCount.toLong(), locale)
-                                } else {
-                                    FormatUtils.formatViewersCount(stream.viewerCount, locale)
-                                }
-                                Text(
-                                    text = if (compact) count else stringResource(R.string.viewers_count, count),
-                                    color = Color.White,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    fontWeight = if (compact) FontWeight.Bold else null,
-                                )
+                            val count = if (compactViewerCount) {
+                                FormatUtils.formatCompactCount(stream.viewerCount.toLong(), locale)
+                            } else {
+                                FormatUtils.formatViewersCount(stream.viewerCount, locale)
                             }
+                            MediaCardViewCount(
+                                count = count,
+                                description = stringResource(R.string.viewers),
+                                fontWeight = if (compact) FontWeight.Bold else null,
+                            )
                         }
                     }
                 }

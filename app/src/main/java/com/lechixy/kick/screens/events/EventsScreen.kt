@@ -84,13 +84,15 @@ internal fun EventsScreen(onEventClick: (String) -> Unit, viewModel: EventsViewM
                         val liveTitle = stringResource(R.string.events_live_now)
                         val upcomingTitle = stringResource(R.string.events_upcoming)
                         ContentGrid(minCardWidth = 200.dp) { columns ->
-                            if (expanded == null && (initialLoading || state.featuredEvent != null)) {
+                            if (expanded == null && (initialLoading || state.featuredEvents.isNotEmpty())) {
                                 item(key = "featured-event", span = { GridItemSpan(maxLineSpan) }) {
                                     Box(Modifier.fillMaxWidth().padding(bottom = 8.dp), contentAlignment = Alignment.Center) {
                                         val width = Modifier.widthIn(max = 960.dp).fillMaxWidth()
-                                        val featured = state.featuredEvent
-                                        if (featured != null) FeaturedEventHeroCard(featured, width) { openEvent(featured) }
-                                        else SkeletonBlock(width.height(288.dp), RoundedCornerShape(12.dp))
+                                        if (state.featuredEvents.isNotEmpty()) {
+                                            FeaturedEventsCarousel(state.featuredEvents, width, openEvent)
+                                        } else {
+                                            SkeletonBlock(width.height(288.dp), RoundedCornerShape(12.dp))
+                                        }
                                     }
                                 }
                             }

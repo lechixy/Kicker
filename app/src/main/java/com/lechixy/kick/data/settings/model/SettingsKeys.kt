@@ -71,6 +71,11 @@ object SettingsKeys {
         defaultValue = true,
         type = SettingType.BooleanType
     )
+    val ASK_BEFORE_MATURE_LIVE = SettingKey(
+        key = booleanPreferencesKey("ask_before_mature_live"),
+        defaultValue = true,
+        type = SettingType.BooleanType
+    )
     val LAST_SLEEP_TIMER_MINUTES = SettingKey(
         key = intPreferencesKey("last_sleep_timer_minutes"),
         defaultValue = 30,
@@ -109,11 +114,20 @@ object SettingsKeys {
         type = SettingType.IntType,
         validator = { it == 30 || it == 60 }
     )
+    val AMBIENT_INTENSITY_RANGE = 10..200
+    val AMBIENT_SPREAD_RANGE = 25..200
     val AMBIENT_INTENSITY = SettingKey(intPreferencesKey("player_ambient_intensity"), 100, SettingType.IntType,
-        validator = { it in 25..150 })
+        validator = { it in AMBIENT_INTENSITY_RANGE })
     val AMBIENT_SPREAD = SettingKey(intPreferencesKey("player_ambient_spread"), 100, SettingType.IntType,
-        validator = { it in 50..150 })
+        validator = { it in AMBIENT_SPREAD_RANGE })
     val AMBIENT_FULLSCREEN = SettingKey(booleanPreferencesKey("player_ambient_fullscreen"), true, SettingType.BooleanType)
+    val AMBIENT_THROUGH_UI = SettingKey(booleanPreferencesKey("player_ambient_through_ui"), true, SettingType.BooleanType)
+    val AMBIENT_CHAT_OPACITY = SettingKey(intPreferencesKey("player_ambient_chat_opacity"), 35, SettingType.IntType,
+        validator = { it in 0..100 })
+    val AMBIENT_NAVIGATION_OPACITY = SettingKey(intPreferencesKey("player_ambient_navigation_opacity"), 35, SettingType.IntType,
+        validator = { it in 0..100 })
+    val AMBIENT_BATTERY_SAVER = SettingKey(booleanPreferencesKey("player_ambient_battery_saver"), true, SettingType.BooleanType)
+    val AMBIENT_PRESERVE_BLACK_BARS = SettingKey(booleanPreferencesKey("player_ambient_preserve_black_bars"), false, SettingType.BooleanType)
     val VIDEO_QUALITY = SettingKey(
         key = intPreferencesKey("video_quality"),
         defaultValue = 720,
@@ -188,6 +202,11 @@ object SettingsKeys {
     val FULLSCREEN_CHAT_BLUR = SettingKey(
         booleanPreferencesKey("fullscreen_chat_blur"), false, SettingType.BooleanType
     )
+    val FULLSCREEN_CHAT_BLUR_STYLE = SettingKey(
+        stringPreferencesKey("fullscreen_chat_blur_style"), FullscreenChatBlurStyle.Soft.value,
+        SettingType.StringType,
+        validator = { value -> FullscreenChatBlurStyle.entries.any { it.value == value } },
+    )
     val FULLSCREEN_CHAT_BADGES = SettingKey(
         booleanPreferencesKey("fullscreen_chat_badges"), true, SettingType.BooleanType
     )
@@ -241,6 +260,7 @@ object SettingsKeys {
             HOME_SECTION_ORDER,
             TOP_BAR_LOGO_ANIMATION,
             AUTOPLAY,
+            ASK_BEFORE_MATURE_LIVE,
             LAST_SLEEP_TIMER_MINUTES,
             PIP_ENABLED,
             SYNC_PLAYER_VOLUME_WITH_DEVICE,
@@ -251,6 +271,11 @@ object SettingsKeys {
             AMBIENT_INTENSITY,
             AMBIENT_SPREAD,
             AMBIENT_FULLSCREEN,
+            AMBIENT_THROUGH_UI,
+            AMBIENT_CHAT_OPACITY,
+            AMBIENT_NAVIGATION_OPACITY,
+            AMBIENT_BATTERY_SAVER,
+            AMBIENT_PRESERVE_BLACK_BARS,
             VIDEO_QUALITY,
             RECOMMENDED_LIVESTREAM_LANGUAGE,
             CHAT_TIMESTAMPS,
@@ -266,6 +291,7 @@ object SettingsKeys {
             FULLSCREEN_CHAT_SHAPE,
             FULLSCREEN_CHAT_OPACITY,
             FULLSCREEN_CHAT_BLUR,
+            FULLSCREEN_CHAT_BLUR_STYLE,
             FULLSCREEN_CHAT_BADGES,
             FULLSCREEN_CHAT_POSITION_LOCKED,
             FULLSCREEN_CHAT_VERTICAL_POSITION,

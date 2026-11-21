@@ -90,6 +90,7 @@ import com.lechixy.kick.data.chat.model.ChatIdentity
 import com.lechixy.kick.data.chat.model.ChatMessage
 import com.lechixy.kick.data.chat.model.ChatMessageType
 import com.lechixy.kick.data.chat.remote.ChatConnectionState
+import com.lechixy.kick.data.settings.model.FullscreenChatBlurStyle
 import com.lechixy.kick.data.settings.model.FullscreenChatPosition
 import com.lechixy.kick.data.settings.model.FullscreenChatShape
 import com.lechixy.kick.data.settings.model.SettingKey
@@ -112,6 +113,7 @@ internal data class FullscreenChatPreferences(
     val lanes: Int = 1,
     val scale: Int = 100,
     val shape: FullscreenChatShape = FullscreenChatShape.Rounded,
+    val blurStyle: FullscreenChatBlurStyle = FullscreenChatBlurStyle.Soft,
 )
 
 internal const val FULLSCREEN_CHAT_EDIT_IDLE_MS = 4_000L
@@ -123,6 +125,7 @@ internal fun rememberFullscreenChatPreferences(): FullscreenChatPreferences {
     val verticalPosition by fullscreenChatSetting(SettingsKeys.FULLSCREEN_CHAT_VERTICAL_POSITION)
     val horizontalPosition by fullscreenChatSetting(SettingsKeys.FULLSCREEN_CHAT_HORIZONTAL_POSITION)
     val blur by fullscreenChatSetting(SettingsKeys.FULLSCREEN_CHAT_BLUR)
+    val blurStyle by fullscreenChatSetting(SettingsKeys.FULLSCREEN_CHAT_BLUR_STYLE)
     val badges by fullscreenChatSetting(SettingsKeys.FULLSCREEN_CHAT_BADGES)
     val positionLocked by fullscreenChatSetting(SettingsKeys.FULLSCREEN_CHAT_POSITION_LOCKED)
     val lanes by fullscreenChatSetting(SettingsKeys.FULLSCREEN_CHAT_LANES)
@@ -133,6 +136,7 @@ internal fun rememberFullscreenChatPreferences(): FullscreenChatPreferences {
         FullscreenChatPosition.decode(verticalPosition) ?: FullscreenChatPosition.VerticalDefault,
         FullscreenChatPosition.decode(horizontalPosition) ?: FullscreenChatPosition.HorizontalDefault,
         blur, badges, positionLocked, lanes.coerceIn(1, 4), scale.coerceIn(70, 150), FullscreenChatShape.fromValue(shape),
+        FullscreenChatBlurStyle.fromValue(blurStyle),
     )
 }
 
@@ -144,7 +148,7 @@ internal fun rememberFullscreenChatFontSizeSetting(): SettingKey<Int> {
 }
 
 @Composable
-private fun <T> fullscreenChatSetting(setting: SettingKey<T>): androidx.compose.runtime.State<T> {
+internal fun <T> fullscreenChatSetting(setting: SettingKey<T>): androidx.compose.runtime.State<T> {
     val repository = LocalSettingsRepository.current
     val flow = remember(repository, setting) { repository.get(setting) }
     return flow.collectAsStateWithLifecycle(initialValue = setting.defaultValue)
@@ -571,12 +575,9 @@ private fun FullscreenChatMessages(
         }
     } else if (visible.isNotEmpty()) {
         val recent = visible.takeLast(if (preferences.verticalPosition.heightFraction == null) 12 else 32)
-        ChatStack(recent.size, preferences.opacity, gestures, blur, rowHeight) { index ->
-            val message = recent[index]
-            key(message.id) {
-                Box(contentAlignment = Alignment.CenterStart) {
-                    OverlayMessage(message, fontSize, lines = 1, identity)
-                }
+        ChatStack(recent.size, preferences.opacity, gestures, blur, rowHeight, rowKey = { recent[it].id }) { index ->
+            Box(contentAlignment = Alignment.CenterStart) {
+                OverlayMessage(recent[index], fontSize, lines = 1, identity)
             }
         }
     }
@@ -585,19 +586,24 @@ private fun FullscreenChatMessages(
 private val LocalFullscreenChatAlignRight = androidx.compose.runtime.compositionLocalOf { false }
 
 @Composable
-private fun ChatStack(
+internal fun ChatStack(
     count: Int,
     opacity: Float,
     modifier: Modifier = Modifier,
     blur: FullscreenChatBlur? = null,
     rowHeight: Dp? = null,
+    rowKey: (Int) -> Any = { it },
     content: @Composable (Int) -> Unit,
 ) {
     val alignRight = LocalFullscreenChatAlignRight.current
     Box(modifier.fillMaxWidth()) {
         FullscreenChatBackdrop(opacity, blur)
         Layout(
-            content = { repeat(count) { content(it) } },
+            content = {
+                repeat(count) { index ->
+                    key(rowKey(index)) { content(index) }
+                }
+            },
             modifier = Modifier.fillMaxWidth(),
         ) { measurables, constraints ->
             val fixedHeight = rowHeight?.roundToPx()?.coerceAtMost(constraints.maxHeight)

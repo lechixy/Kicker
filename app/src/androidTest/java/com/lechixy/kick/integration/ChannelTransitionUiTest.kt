@@ -27,6 +27,7 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.*
 import org.junit.Assume.assumeTrue
 import org.junit.Before
@@ -41,6 +42,7 @@ import kotlin.coroutines.intrinsics.COROUTINE_SUSPENDED
 import kotlin.coroutines.resume
 
 import com.lechixy.kick.components.ExpansionSource
+import com.lechixy.kick.R
 import com.lechixy.kick.components.AmbientFrame
 import com.lechixy.kick.components.LocalPlayerAmbientState
 import com.lechixy.kick.components.LocalPlayerFullscreenProgress
@@ -289,6 +291,51 @@ class ChannelTransitionUiTest {
         }
         assertEquals(width, compose.onNodeWithTag("page").fetchSemanticsNode().boundsInRoot.width, 1f)
         compose.mainClock.autoAdvance = true
+    }
+
+    @Test fun matureLiveDialogOnlyPersistsOptOutOnConfirmation() {
+        val host = PlayerHostState()
+        val channel = ChannelDetail(1, slug = "test", livestream = ChannelLivestream(1, isMature = true))
+        host.open(channel.slug)
+        host.onChannelLoaded(channel.slug, channel)
+        compose.setContent {
+            CompositionLocalProvider(LocalSettingsRepository provides settings) {
+                MaterialTheme {
+                    PlayerHost(host, false, host::minimize, host::expand, host::close, pageContent = {})
+                }
+            }
+        }
+        fun label(res: Int) = compose.activity.getString(res)
+        val prompt = compose.onNodeWithText(label(R.string.mature_live_title))
+        val dontAskAgain = compose.onNodeWithText(label(R.string.mature_live_dont_ask))
+        val cancel = compose.onNodeWithText(label(R.string.mature_live_cancel))
+        val watch = compose.onNodeWithText(label(R.string.mature_live_watch))
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithText(label(R.string.mature_live_title)).fetchSemanticsNodes().isNotEmpty()
+        }
+        prompt.assertIsDisplayed()
+        compose.onNodeWithText(label(R.string.mature_live_message)).assertIsDisplayed()
+        assertTrue(cancel.fetchSemanticsNode().boundsInRoot.right <= watch.fetchSemanticsNode().boundsInRoot.left)
+        dontAskAgain.performClick()
+        cancel.performClick()
+        compose.waitUntil(5_000) { host.mode == PlayerMode.Hidden }
+        assertTrue(runBlocking { settings.get(SettingsKeys.ASK_BEFORE_MATURE_LIVE).first() })
+
+        compose.runOnIdle {
+            host.open(channel.slug)
+            host.onChannelLoaded(channel.slug, channel)
+        }
+        compose.waitUntil(5_000) {
+            compose.onAllNodesWithText(label(R.string.mature_live_title)).fetchSemanticsNodes().isNotEmpty()
+        }
+        dontAskAgain.performClick()
+        watch.performClick()
+        compose.waitUntil(5_000) { !runBlocking { settings.get(SettingsKeys.ASK_BEFORE_MATURE_LIVE).first() } }
+        prompt.assertDoesNotExist()
+        compose.runOnIdle {
+            host.onChannelLoaded(channel.slug, channel.copy(livestream = ChannelLivestream(2, isMature = true)))
+        }
+        prompt.assertDoesNotExist()
     }
 
     @Test fun pictureInPictureResizeKeepsTheChannelPageOffscreenAndRestoresIt() {

@@ -5,7 +5,6 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.doubleClick
 import androidx.compose.ui.test.junit4.v2.createComposeRule
-import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.platform.app.InstrumentationRegistry
@@ -32,7 +31,7 @@ class ContinueWatchingCardUiTest {
 
         compose.onNodeWithContentDescription(entry.title).performTouchInput { click() }
         val play = label(R.string.home_continue_watching)
-        compose.waitUntil(5_000) { compose.onAllNodesWithContentDescription(play).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithContentDescription(play).assertIsDisplayed()
         compose.runOnIdle { assertEquals(0, resumed) }
         compose.onNodeWithContentDescription(label(R.string.home_remove_history)).assertIsDisplayed()
         compose.onNodeWithContentDescription(play).performTouchInput { click() }

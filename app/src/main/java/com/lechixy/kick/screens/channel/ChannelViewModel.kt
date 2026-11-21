@@ -182,6 +182,7 @@ class ChannelViewModel(
             ?.substringBefore('.')
             ?.trimEnd('Z')
             ?.takeIf { it.isNotBlank() }
+        val previousBroadcast = currentChannel.livestream?.takeIf { it.id == liveInfo.id }
 
         val optimisticLivestream = ChannelLivestream(
             id = liveInfo.id,
@@ -194,7 +195,8 @@ class ChannelViewModel(
             viewerCount = currentChannel.livestream?.viewerCount ?: 0,
             language = currentChannel.livestream?.language,
             langIso = currentChannel.livestream?.langIso,
-            isMature = currentChannel.livestream?.isMature ?: false,
+            isMature = previousBroadcast?.isMature ?: false,
+            isMaturityKnown = previousBroadcast?.isMaturityKnown == true,
             thumbnail = currentChannel.livestream?.thumbnail,
             tags = currentChannel.livestream?.tags.orEmpty(),
             categories = currentChannel.livestream?.categories?.ifEmpty { currentChannel.recentCategories }
@@ -228,11 +230,12 @@ class ChannelViewModel(
                         // StopStreamBroadcast geldiyse canlı yayını tekrar açma
                         if (currentCh.livestream == null) return@update current
 
-                        val mergedLivestream = freshChannel.livestream?.copy(
-                            sessionTitle = freshChannel.livestream.sessionTitle
+                        val freshLivestream = freshChannel.livestream?.takeIf { it.id == liveInfo.id }
+                        val mergedLivestream = freshLivestream?.copy(
+                            sessionTitle = freshLivestream.sessionTitle
                                 ?: liveInfo.sessionTitle
                                 ?: currentCh.livestream.sessionTitle,
-                            startTime = freshChannel.livestream.startTime
+                            startTime = freshLivestream.startTime
                                 ?: normalizedStartTime
                                 ?: currentCh.livestream.startTime
                         ) ?: currentCh.livestream.copy(
@@ -240,7 +243,7 @@ class ChannelViewModel(
                         )
 
                         hasCompleteLiveMetadata =
-                            freshChannel.livestream != null && !freshChannel.playbackUrl.isNullOrBlank()
+                            freshLivestream != null && !freshChannel.playbackUrl.isNullOrBlank()
 
                         current.copy(
                             channel = freshChannel.copy(

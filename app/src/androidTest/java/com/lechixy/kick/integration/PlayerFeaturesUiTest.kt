@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
@@ -28,10 +29,12 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.unit.dp
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Rule
@@ -50,22 +53,83 @@ import com.lechixy.kick.components.channel.ChannelMediaTags
 import com.lechixy.kick.components.channel.ChannelMediaTitle
 import com.lechixy.kick.data.channel.model.ChannelEvent
 import com.lechixy.kick.data.common.remote.ConnectionNotice
+import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
+import com.lechixy.kick.data.settings.repository.SettingsRepository
 import com.lechixy.kick.service.player.SleepTimerState
+import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 
 @RunWith(AndroidJUnit4::class)
 class PlayerFeaturesUiTest {
     @get:Rule val compose = createComposeRule()
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
-    @Test fun fullscreenShowsChannelMetadataAndQualityImmediatelyBeforeCast() {
+    @Test fun liveDurationSitsAboveProgressAndFullscreenViewerCountFollowsLiveBadge() {
+        var fullscreen by mutableStateOf(false)
+        val streamDuration = "01:23:45"
+        compose.setContent {
+            MaterialTheme {
+                AnimatedVisibility(visible = true, modifier = Modifier.size(640.dp, 380.dp)) {
+                    PlayerControlsOverlay(
+                        isFullScreen = fullscreen,
+                        isChatVisible = true,
+                        isLive = true,
+                        liveViewerCount = 42,
+                        isPlaying = false,
+                        isMuted = false,
+                        volume = 0.5f,
+                        isSettingsDialogVisible = false,
+                        isCastDialogVisible = false,
+                        qualityLabel = "720p",
+                        sleepRemainingSeconds = 0,
+                        streamDuration = streamDuration,
+                        positionMs = 25_000L,
+                        durationMs = 60_000L,
+                        onTogglePlay = {},
+                        onToggleMute = {},
+                        onVolumeChange = {},
+                        onOpenSettings = {},
+                        onOpenQuality = {},
+                        onToggleFullScreen = {},
+                        onMinimize = {},
+                    )
+                }
+            }
+        }
+
+        val duration = compose.onNodeWithText(streamDuration)
+        val viewers = compose.onNodeWithContentDescription(context.getString(R.string.viewers))
+        val liveBadge = compose.onNodeWithText(context.getString(R.string.live_badge))
+        val sliders = compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsActions.SetProgress))
+        viewers.assertDoesNotExist()
+        for (mode in listOf(false, true)) {
+            compose.runOnIdle { fullscreen = mode }
+            val progress = sliders.fetchSemanticsNodes().minBy { it.boundsInRoot.top }.boundsInRoot
+            val timestamp = duration.assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+            assertTrue(timestamp.bottom <= progress.top)
+            assertTrue(timestamp.left in progress.left..progress.center.x)
+        }
+        compose.onNodeWithContentDescription("42").performScrollTo().assertIsDisplayed()
+        val badgeBounds = liveBadge.assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val viewerBounds = viewers.assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        assertTrue(badgeBounds.right <= viewerBounds.left)
+        assertEquals(badgeBounds.center.y, viewerBounds.center.y, 1f)
+    }
+
+    @Test fun qualityAppearsImmediatelyBeforeCastInFullscreenAndInline() {
         var width by mutableStateOf(640.dp)
+        var fullscreen by mutableStateOf(true)
+        var isMature by mutableStateOf(true)
         var qualityOpens = 0
         var castOpens = 0
         compose.setContent {
             MaterialTheme {
                 AnimatedVisibility(visible = true, modifier = Modifier.size(width, 380.dp)) {
                     PlayerControlsOverlay(
-                        isFullScreen = true,
+                        isFullScreen = fullscreen,
                         mediaInfo = { modifier ->
                             Column(modifier) {
                                 ChannelMediaTitle("Stream title")
@@ -74,6 +138,7 @@ class PlayerFeaturesUiTest {
                                     tags = listOf("Ranked"),
                                     event = ChannelEvent(title = "Tournament"),
                                     language = "English",
+                                    isMature = isMature,
                                 )
                             }
                         },
@@ -98,6 +163,8 @@ class PlayerFeaturesUiTest {
             }
         }
         val title = compose.onNodeWithText("Stream title")
+        val matureBadge = compose.onNodeWithText("+18")
+        val category = compose.onNodeWithText("Game")
         val quality = compose.onNodeWithText("720p")
         val cast = compose.onNodeWithContentDescription(context.getString(R.string.player_cast))
         for (layoutWidth in listOf(640.dp, 340.dp)) {
@@ -106,6 +173,8 @@ class PlayerFeaturesUiTest {
             listOf("Game", "Ranked", "Tournament", context.getString(R.string.language_english)).forEach {
                 compose.onNodeWithText(it).assertIsDisplayed()
             }
+            matureBadge.assertIsDisplayed()
+            assertTrue(matureBadge.fetchSemanticsNode().boundsInRoot.right <= category.fetchSemanticsNode().boundsInRoot.left)
             val qualityBounds = quality.fetchSemanticsNode().boundsInRoot
             val castBounds = cast.fetchSemanticsNode().boundsInRoot
             assertTrue(qualityBounds.right <= castBounds.left)
@@ -114,9 +183,18 @@ class PlayerFeaturesUiTest {
             quality.performClick()
             cast.performClick()
         }
+        compose.runOnIdle { isMature = false }
+        matureBadge.assertDoesNotExist()
+        compose.runOnIdle { fullscreen = false }
+        val inlineQuality = quality.fetchSemanticsNode().boundsInRoot
+        val inlineCast = cast.fetchSemanticsNode().boundsInRoot
+        assertTrue(inlineQuality.right <= inlineCast.left)
+        assertEquals(inlineQuality.center.y, inlineCast.center.y, 1f)
+        quality.performClick()
+        cast.performClick()
         compose.runOnIdle {
-            assertEquals(2, qualityOpens)
-            assertEquals(2, castOpens)
+            assertEquals(3, qualityOpens)
+            assertEquals(3, castOpens)
         }
     }
 
@@ -169,32 +247,46 @@ class PlayerFeaturesUiTest {
         var hidden by mutableStateOf(false)
         var revision by mutableStateOf(0)
         val disposals = AtomicInteger()
-        compose.setContent {
-            MaterialTheme {
-                KickNavScaffold(hidden = hidden, currentRoute = "home", onNavigate = {}) {
-                    DisposableEffect(Unit) { onDispose { disposals.incrementAndGet() } }
-                    Text("Player revision $revision")
+        val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        val file = File(context.cacheDir, "player-scaffold-${System.nanoTime()}.preferences_pb")
+        val settings = SettingsRepository(PreferenceDataStoreFactory.create(scope = scope) { file })
+        try {
+            compose.setContent {
+                CompositionLocalProvider(LocalSettingsRepository provides settings) {
+                    MaterialTheme {
+                        KickNavScaffold(hidden = hidden, currentRoute = "home", onNavigate = {}) {
+                            DisposableEffect(Unit) { onDispose { disposals.incrementAndGet() } }
+                            Text("Player revision $revision")
+                        }
+                    }
                 }
             }
-        }
-        repeat(3) { index ->
-            compose.runOnIdle { hidden = !hidden; revision++ }
-            compose.onNodeWithText("Player revision ${index + 1}").assertIsDisplayed()
-            compose.runOnIdle { assertEquals(0, disposals.get()) }
+            repeat(3) { index ->
+                compose.runOnIdle { hidden = !hidden; revision++ }
+                compose.onNodeWithText("Player revision ${index + 1}").assertIsDisplayed()
+                compose.runOnIdle { assertEquals(0, disposals.get()) }
+            }
+        } finally {
+            scope.cancel()
+            file.delete()
         }
     }
 
-    @Test fun avatarLongPressOpensAndClosesConnectedPreview() {
+    @Test fun avatarTapRunsItsActionAndLongPressOpensConnectedPreview() {
+        var taps = 0
         compose.setContent {
             MaterialTheme {
                 Box(Modifier.fillMaxSize()) {
                     ExpandableProfilePhoto("android.resource://com.lechixy.kick/drawable/ic_launcher_foreground",
-                        "Test avatar", Modifier.size(56.dp))
+                        "Test avatar", Modifier.size(56.dp), imagePadding = 4.dp, onTap = { taps++ })
                 }
             }
         }
+        compose.onNodeWithContentDescription("Test avatar").performTouchInput { click() }
+        compose.runOnIdle { assertEquals(1, taps) }
         compose.onNodeWithContentDescription("Test avatar").performTouchInput { longClick() }
         compose.waitForIdle()
+        compose.runOnIdle { assertEquals(1, taps) }
         val close = context.getString(R.string.close_profile_photo)
         compose.onNodeWithText(close).assertDoesNotExist()
         compose.onNode(isDialog()).performTouchInput { click(Offset(4f, center.y)) }

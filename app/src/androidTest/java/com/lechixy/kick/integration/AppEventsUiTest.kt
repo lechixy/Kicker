@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
@@ -16,11 +17,13 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.lechixy.kick.R
 import com.lechixy.kick.components.*
 import com.lechixy.kick.data.account.AccountGraph
+import com.lechixy.kick.data.channel.model.ChannelEvent
 import com.lechixy.kick.data.notifications.*
 import com.lechixy.kick.data.releases.*
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.*
 import com.lechixy.kick.screens.settings.*
+import com.lechixy.kick.screens.events.FeaturedEventsCarousel
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import org.junit.*
@@ -58,6 +61,25 @@ class AppEventsUiTest {
         }
         compose.mainClock.advanceTimeByFrame()
         compose.waitUntil(20_000) { runCatching { compose.onAllNodes(isRoot()).fetchSemanticsNodes().isNotEmpty() }.getOrDefault(false) }
+    }
+    @Test fun featuredEventsAdvanceSwipeAndWrap() {
+        compose.mainClock.autoAdvance = false
+        val events = (1..3).map { ChannelEvent(id = it.toString(), title = "Featured event $it") }
+        show { FeaturedEventsCarousel(events, Modifier.fillMaxWidth().testTag("featured")) {} }
+
+        fun activeEvent(number: Int) {
+            compose.onNode(hasContentDescription("Featured event $number") and isSelected()).assertIsDisplayed()
+        }
+
+        compose.mainClock.advanceTimeBy(9_900)
+        activeEvent(1)
+        compose.mainClock.advanceTimeBy(1_000)
+        activeEvent(2)
+        compose.onNodeWithTag("featured").performTouchInput { swipeLeft() }
+        compose.mainClock.advanceTimeBy(800)
+        activeEvent(3)
+        compose.mainClock.advanceTimeBy(11_000)
+        activeEvent(1)
     }
     @Test fun turkishSearchFindsEditableChatSettingsAndClearRestoresCategories() {
         val localized = context("tr")

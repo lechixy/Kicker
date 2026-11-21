@@ -43,8 +43,10 @@ import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarDefaults
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Surface
+import androidx.compose.material3.contentColorFor
 import androidx.compose.material3.Text
 import androidx.compose.material3.adaptive.currentWindowAdaptiveInfoV2
 import androidx.compose.material3.adaptive.navigationsuite.NavigationSuiteScaffoldDefaults
@@ -96,6 +98,11 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.lechixy.kick.components.ExpansionSource
 import com.lechixy.kick.components.PlayerHost
+import com.lechixy.kick.components.LocalPlayerAmbientState
+import com.lechixy.kick.components.NavigationAmbientBackdrop
+import com.lechixy.kick.components.PlayerAmbientState
+import com.lechixy.kick.components.ambientUiVisible
+import com.lechixy.kick.components.rememberPlayerAmbientState
 import com.lechixy.kick.components.PlayerMode
 import com.lechixy.kick.components.account.AccountAvatar
 import com.lechixy.kick.components.rememberPlayerHostState
@@ -328,6 +335,7 @@ fun KickApp(restorePending: Boolean = false) {
     // Tek yerde tutulan player oturumu; ChannelScreen, mini player ve nav bar buradan beslenir.
     val chatWidth = SettingsKeys.chatWidth(androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp)
     val playerHost = rememberPlayerHostState(chatWidth.defaultValue)
+    val playerAmbient = rememberPlayerAmbientState(playerHost)
     var activeClipId by rememberSaveable { mutableStateOf<String?>(null) }
     val openClip: (String) -> Unit = remember { { activeClipId = it } }
     val settingsRepository = LocalSettingsRepository.current
@@ -369,6 +377,7 @@ fun KickApp(restorePending: Boolean = false) {
     val openChannel: (String, ExpansionSource?) -> Unit =
         { slug, source -> playerHost.open(slug, source) }
     val openEvent: (String) -> Unit = { slug ->
+        if (playerHost.isChannelVisible) playerHost.minimize()
         navController.navigate("events/${android.net.Uri.encode(slug)}") { launchSingleTop = true }
     }
     val navType =
@@ -424,13 +433,15 @@ fun KickApp(restorePending: Boolean = false) {
                 recording = { slug, recording, source ->
                     playerHost.open(slug, source)
                     playerHost.playRecording(recording)
-                }
+                },
+                event = openEvent,
             )
         ) {
             val trackSnowScroll = showSnow && snowFollowsScroll && !playerHost.isChannelVisible
             Box(Modifier.fillMaxSize().then(if (trackSnowScroll) Modifier.nestedScroll(snowScrollConnection) else Modifier)) {
                 KickNavScaffold(
                     hidden = isScaffoldHidden,
+                    ambient = playerAmbient.takeIf { !isInPipMode && playerHost.isChannelVisible },
                     navigationProgress = { playerHost.navigationOpenProgress.value },
                     onNavigationWidthChanged = { playerHost.navigationWidthPx = it },
                     currentRoute = currentRoute,
@@ -663,30 +674,32 @@ fun KickApp(restorePending: Boolean = false) {
                             }
                         }
 
-                        PlayerHost(
-                            host = playerHost,
-                            onVideoBoundsChanged = updateSnowPlayerBounds.takeIf { showSnow },
-                            navigationRailAvailable = !useBottomBar,
-                            isInPipMode = pipActive,
-                            enteringPip = enteringPip,
-                            onMinimize = playerHost::minimize,
-                            onExpand = playerHost::expand,
-                            onClose = playerHost::close,
-                            liveChatViewModel = activeChannelVm,
-                            pageContent = { slug ->
-                                if (channelOwner != null && activeChannelVm != null) {
-                                    CompositionLocalProvider(LocalViewModelStoreOwner provides channelOwner) {
-                                        ChannelScreen(
-                                            channelSlug = slug,
-                                            playerHost = playerHost,
-                                            viewModel = activeChannelVm,
-                                            onChannelLoaded = { playerHost.onChannelLoaded(slug, it) },
-                                            onBackClick = playerHost::minimize,
-                                        )
+                        CompositionLocalProvider(LocalPlayerAmbientState provides playerAmbient) {
+                            PlayerHost(
+                                host = playerHost,
+                                onVideoBoundsChanged = updateSnowPlayerBounds.takeIf { showSnow },
+                                navigationRailAvailable = !useBottomBar,
+                                isInPipMode = pipActive,
+                                enteringPip = enteringPip,
+                                onMinimize = playerHost::minimize,
+                                onExpand = playerHost::expand,
+                                onClose = playerHost::close,
+                                liveChatViewModel = activeChannelVm,
+                                pageContent = { slug ->
+                                    if (channelOwner != null && activeChannelVm != null) {
+                                        CompositionLocalProvider(LocalViewModelStoreOwner provides channelOwner) {
+                                            ChannelScreen(
+                                                channelSlug = slug,
+                                                playerHost = playerHost,
+                                                viewModel = activeChannelVm,
+                                                onChannelLoaded = { playerHost.onChannelLoaded(slug, it) },
+                                                onBackClick = playerHost::minimize,
+                                            )
+                                        }
                                     }
                                 }
-                            }
-                        )
+                            )
+                        }
 
                     }
                 }
@@ -745,7 +758,7 @@ fun KickApp(restorePending: Boolean = false) {
                             onWatchLivestream = { clip ->
                                 activeClipId = null
                                 openChannel(clip.channel.slug, null)
-                                playerHost.playLive()
+                                playerHost.requestLivePlayback()
                             },
                             onWatchFullVideo = { clip ->
                                 clip.video?.let { video ->
@@ -787,6 +800,7 @@ internal fun KickNavScaffold(
     onChannelClick: (String) -> Unit = {},
     navigationProgress: (() -> Float)? = null,
     onNavigationWidthChanged: (Int) -> Unit = {},
+    ambient: PlayerAmbientState? = null,
     content: @Composable () -> Unit
 ) {
     val type =
@@ -794,6 +808,8 @@ internal fun KickNavScaffold(
     val useBottomBar = type.toString().contains("NavigationBar", ignoreCase = true)
     val latestContent by rememberUpdatedState(content)
     val sharedContent = remember { movableContentOf { latestContent() } }
+    val navigationOpacity = if (ambientUiVisible(ambient)) ambient?.navigationOpacity ?: 1f else 1f
+    val navigationAmbient = ambient.takeIf { navigationOpacity < 1f }
 
     val settings = LocalSettingsRepository.current
     val savedOrder by settings.get(SettingsKeys.NAVIGATION_ORDER)
@@ -910,7 +926,14 @@ internal fun KickNavScaffold(
                 enter = slideInVertically { it } + expandVertically(),
                 exit = slideOutVertically { it } + shrinkVertically()
             ) {
-                NavigationBar { BottomBarItems() }
+                Box {
+                    if (navigationAmbient != null) NavigationAmbientBackdrop(navigationAmbient)
+                    val color = NavigationBarDefaults.containerColor
+                    NavigationBar(
+                        containerColor = color.copy(alpha = navigationOpacity),
+                        contentColor = contentColorFor(color),
+                    ) { BottomBarItems() }
+                }
             }
         }
     } else {
@@ -921,7 +944,7 @@ internal fun KickNavScaffold(
             navigationProgress = { navigationProgress?.invoke() ?: fallbackProgress.value },
             onNavigationWidthChanged = onNavigationWidthChanged,
             navigation = {
-                Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
+                NavigationRailSurface(navigationAmbient) {
                     Column(
                         Modifier
                             .layout { measurable, constraints ->
@@ -1051,6 +1074,19 @@ internal fun KickNavScaffold(
                     com.lechixy.kick.components.LocalRailBrandVisible provides (railExpanded && !hidden)
                 ) { sharedContent() }
             }
+        )
+    }
+}
+
+@Composable
+private fun NavigationRailSurface(ambient: PlayerAmbientState?, content: @Composable () -> Unit) {
+    val color = MaterialTheme.colorScheme.surfaceContainer
+    Box {
+        if (ambient != null) NavigationAmbientBackdrop(ambient)
+        Surface(
+            color = color.copy(alpha = ambient?.navigationOpacity ?: 1f),
+            contentColor = contentColorFor(color),
+            content = content,
         )
     }
 }

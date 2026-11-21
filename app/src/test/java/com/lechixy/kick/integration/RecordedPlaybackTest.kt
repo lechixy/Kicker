@@ -8,6 +8,7 @@ import org.junit.Test
 
 import com.lechixy.kick.components.PlayerHostState
 import com.lechixy.kick.components.PlayerMode
+import com.lechixy.kick.components.LivePlaybackAccess
 import com.lechixy.kick.data.channel.model.ChannelClip
 import com.lechixy.kick.data.channel.model.ChannelDetail
 import com.lechixy.kick.data.channel.model.ChannelLivestream
@@ -22,6 +23,39 @@ class RecordedPlaybackTest {
     private val offline = ChannelDetail(id = 1, slug = "channel")
     private val live = offline.copy(livestream = ChannelLivestream(id = 42), playbackUrl = "https://example.com/live.m3u8")
     private val recording = RecordedPlayback("01a173e5-f220-78ca-9ddd-d29e8cc11441", "Recording", 60_000)
+
+    @Test fun matureApprovalAppliesOnlyToTheCurrentBroadcast() {
+        val host = PlayerHostState()
+        host.open("channel")
+        host.onChannelLoaded("channel", live.copy(livestream = ChannelLivestream(id = 42, isMaturityKnown = false)))
+        assertEquals(LivePlaybackAccess.CheckingRating, host.livePlaybackAccess(true))
+        host.onChannelLoaded("channel", live.copy(livestream = ChannelLivestream(id = 42, isMature = true)))
+        assertEquals(LivePlaybackAccess.CheckingRating, host.livePlaybackAccess(null))
+        assertEquals(LivePlaybackAccess.NeedsConfirmation, host.livePlaybackAccess(true))
+        assertTrue(host.approveMatureLivestream(42))
+        host.minimize()
+        host.expand()
+        assertEquals(LivePlaybackAccess.Ready, host.livePlaybackAccess(true))
+
+        host.onChannelLoaded("channel", live.copy(livestream = ChannelLivestream(id = 43, isMature = true)))
+        assertFalse(host.approveMatureLivestream(42))
+        assertEquals(LivePlaybackAccess.NeedsConfirmation, host.livePlaybackAccess(true))
+        assertEquals(LivePlaybackAccess.Ready, host.livePlaybackAccess(false))
+    }
+
+    @Test fun decliningMatureLiveKeepsTheCurrentRecordingPlaying() {
+        val host = PlayerHostState()
+        host.open("channel")
+        host.onChannelLoaded("channel", live.copy(livestream = ChannelLivestream(id = 42, isMature = true)))
+        host.playRecording(recording)
+        assertEquals(LivePlaybackAccess.Ready, host.livePlaybackAccess(true))
+        host.requestLivePlayback()
+        assertEquals(LivePlaybackAccess.NeedsConfirmation, host.livePlaybackAccess(true))
+        host.declineMatureLivestream(42)
+        assertEquals(recording, host.recording)
+        assertFalse(host.livePlaybackRequested)
+        assertEquals(LivePlaybackAccess.Ready, host.livePlaybackAccess(true))
+    }
 
     @Test fun recordingSurvivesLiveStartStopAndAnnouncements() {
         val host = PlayerHostState()

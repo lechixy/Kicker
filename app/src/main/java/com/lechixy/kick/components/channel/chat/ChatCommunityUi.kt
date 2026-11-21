@@ -221,8 +221,13 @@ fun KickUserProfileCard(
                 }
                 Box(Modifier.offset(y = (-36).dp).size(96.dp), contentAlignment = Alignment.Center) {
                     LevelAvatarAnimation(uiState.level, Modifier.requiredWidth(216.dp).aspectRatio(688f / 306f))
-                    ProfileImage(uiState.profilePicUrl, uiState.username,
-                        Modifier.size(64.dp).clip(CircleShape).background(Color(0xFF181B1E)).then(LevelBorderModifier(accent, CircleShape, 2.dp)))
+                    com.lechixy.kick.components.channel.ExpandableProfilePhoto(
+                        uiState.profilePicUrl, uiState.username,
+                        Modifier.size(64.dp).background(Color(0xFF181B1E), CircleShape)
+                            .then(LevelBorderModifier(accent, CircleShape, 2.dp)),
+                        expandOnClick = true,
+                        placeholder = painterResource(R.drawable.person_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
+                    )
                 }
                 Text(uiState.username, Modifier.offset(y = (-28).dp), fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 KickBadgeRow(uiState.level, uiState.badges, Modifier.offset(y = (-16).dp))

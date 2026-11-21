@@ -2,6 +2,7 @@ package com.lechixy.kick.data.channel.model
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.Transient
 
 import com.lechixy.kick.data.common.model.Channel
 import com.lechixy.kick.data.common.model.Livestream
@@ -84,7 +85,8 @@ data class ChannelLivestream(
     @SerialName("lang_iso") val langIso: String? = null,
     val thumbnail: BannerImage? = null,
     val tags: List<String> = emptyList(),
-    val categories: List<RecentCategory> = emptyList()
+    val categories: List<RecentCategory> = emptyList(),
+    @Transient val isMaturityKnown: Boolean = true,
 )
 
 @kotlinx.serialization.Serializable

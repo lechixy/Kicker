@@ -25,6 +25,7 @@ import androidx.media3.exoplayer.hls.playlist.HlsPlaylist
 import androidx.media3.exoplayer.hls.playlist.HlsPlaylistParserFactory
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.exoplayer.upstream.DefaultAllocator
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import androidx.media3.exoplayer.upstream.ParsingLoadable
@@ -40,6 +41,7 @@ import com.lechixy.kick.service.player.PlaybackNetworkCounter
 import com.lechixy.kick.service.player.PlaybackProgressTracker
 import com.lechixy.kick.service.player.PlaybackUsageTracker
 import com.lechixy.kick.service.player.SleepTimer
+import com.lechixy.kick.service.player.StreamTrackSelectionFactory
 import com.lechixy.kick.service.player.distanceBehindLiveTargetMs
 import com.lechixy.kick.service.player.trackUsage
 import com.lechixy.kick.service.player.transformKickLivePlaylist
@@ -146,6 +148,7 @@ class PlaybackService : MediaSessionService() {
 
         val player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(mediaSourceFactory)
+            .setTrackSelector(DefaultTrackSelector(this, StreamTrackSelectionFactory()))
             .setLoadControl(loadControl)
             .setLivePlaybackSpeedControl(liveSpeedControl)
             .setAudioAttributes(

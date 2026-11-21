@@ -5,6 +5,7 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -17,9 +18,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -90,20 +91,12 @@ enum class SettingsDestinations(val titleRes: Int, val descriptionRes: Int, val 
 internal fun SettingsOverview(
     destinations: List<SettingsDestinations>,
     onSelect: (SettingsDestinations) -> Unit,
+    releaseViewModel: ReleaseViewModel?,
+    onBack: () -> Unit,
 ) {
     BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         val columns = ((maxWidth.coerceAtMost(SettingsContentWidth).value - 16f) / 268f).toInt().coerceAtLeast(1)
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(1),
-            modifier = Modifier.widthIn(max = SettingsContentWidth).fillMaxSize(),
-            contentPadding = PaddingValues(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            item("about") {
-                val about = SettingsDestinations.ABOUT
-                SettingCard(stringResource(about.titleRes), description = stringResource(about.descriptionRes),
-                    icon = about.icon, onClick = { onSelect(about) })
-            }
+        SettingsAboutScreen(releaseViewModel, onBack) {
             items(destinations.filter { it != SettingsDestinations.ABOUT }.chunked(columns), key = { it.first().name }) { row ->
                 Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     row.forEach { section ->
@@ -113,7 +106,6 @@ internal fun SettingsOverview(
                     repeat(columns - row.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
-            item("about-summary") { AboutSummary() }
         }
     }
 }
@@ -142,18 +134,41 @@ internal fun SettingsSearchScreen(query: String, unlocked: Boolean, onBack: () -
 }
 
 @Composable
-internal fun SettingsAboutScreen(viewModel: ReleaseViewModel?, onBack: () -> Unit) {
+internal fun SettingsAboutScreen(
+    viewModel: ReleaseViewModel?,
+    onBack: () -> Unit,
+    overviewContent: (LazyListScope.() -> Unit)? = null,
+) {
     val state = viewModel?.history?.collectAsStateWithLifecycle()?.value ?: ReleaseHistoryState()
     LaunchedEffect(viewModel) { viewModel?.loadHistory() }
-    SettingsAboutPage(state, { viewModel?.loadHistory(retry = true) }, onBack)
+    SettingsAboutPage(state, { viewModel?.loadHistory(retry = true) }, onBack, overviewContent)
 }
 
 @Composable
-internal fun SettingsAboutPage(state: ReleaseHistoryState, onRetry: () -> Unit, onBack: () -> Unit) {
+internal fun SettingsAboutPage(
+    state: ReleaseHistoryState,
+    onRetry: () -> Unit,
+    onBack: () -> Unit,
+    overviewContent: (LazyListScope.() -> Unit)? = null,
+) {
     var selected by remember { mutableStateOf<GitHubRelease?>(null) }
-    SettingsPage(stringResource(R.string.about), onBack) {
+    val aboutContent: LazyListScope.() -> Unit = {
         item("about-summary") { AboutSummary() }
         releaseNotes(state, onRetry) { selected = it }
+    }
+    if (overviewContent == null) {
+        SettingsPage(stringResource(R.string.about), onBack, content = aboutContent)
+    } else {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
+            LazyColumn(
+                modifier = Modifier.widthIn(max = SettingsContentWidth).fillMaxSize(),
+                contentPadding = PaddingValues(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                overviewContent()
+                aboutContent()
+            }
+        }
     }
     selected?.let { ReleaseDialog(ReleaseDialogRequest(ReleaseDialogMode.WhatsNew, it), { selected = null }) }
 }

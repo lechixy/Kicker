@@ -36,7 +36,7 @@ class SettingsBackupDataTest {
         val manager = SettingsBackupManager(context, repository)
         val originalPath = manager.defaultPath
         val files = listOf(
-            """{"version":1,"edition":"stable","settings":{"chat_font_size":18}}""",
+            """{"version":1,"edition":"stable","settings":{"chat_font_size":18,"fullscreen_chat_blur":true}}""",
             """{"version":1,"edition":"test","settings":{"chat_font_size":19}}""",
             """{"chat_font_size":20}""",
         )
@@ -45,6 +45,8 @@ class SettingsBackupDataTest {
                 val file = File(directory, "backup-$index.json").apply { writeText(json) }
                 manager.restorePickedBackup(Uri.fromFile(file))
                 assertEquals(18 + index, repository.get(SettingsKeys.CHAT_FONT_SIZE).first())
+                if (index == 0) assertTrue(repository.get(SettingsKeys.FULLSCREEN_CHAT_BLUR).first())
+                assertEquals("soft", repository.get(SettingsKeys.FULLSCREEN_CHAT_BLUR_STYLE).first())
             }
             assertEquals(originalPath, manager.defaultPath)
             assertEquals(null, manager.customLocation.value)
@@ -68,6 +70,7 @@ class SettingsBackupDataTest {
                 {"version":1,"settings":{
                   "chat_font_size":19,
                   "fullscreen_chat_opacity":0.0,
+                  "fullscreen_chat_blur_style":"frosted_glass",
                   "player_ambient_mode":"live",
                   "player_ambient_live_fps":60,
                   "player_ambient_intensity":125,
@@ -87,6 +90,7 @@ class SettingsBackupDataTest {
             assertEquals(80, repository.get(SettingsKeys.AMBIENT_SPREAD).first())
             assertFalse(repository.get(SettingsKeys.AMBIENT_FULLSCREEN).first())
             assertEquals(0f, repository.get(SettingsKeys.FULLSCREEN_CHAT_OPACITY).first())
+            assertEquals("frosted_glass", repository.get(SettingsKeys.FULLSCREEN_CHAT_BLUR_STYLE).first())
             assertTrue(FavoriteUsersStore.favorites.value.contains(null, favorite))
             val export = File(directory, manager.fileName).apply { createNewFile() }
             manager.exportTo(Uri.fromFile(export))
@@ -98,6 +102,7 @@ class SettingsBackupDataTest {
             assertEquals("80", backup.getValue("settings").jsonObject.getValue("player_ambient_spread").toString())
             assertEquals("false", backup.getValue("settings").jsonObject.getValue("player_ambient_fullscreen").toString())
             assertEquals("0.0", backup.getValue("settings").jsonObject.getValue("fullscreen_chat_opacity").toString())
+            assertEquals("\"frosted_glass\"", backup.getValue("settings").jsonObject.getValue("fullscreen_chat_blur_style").toString())
             assertTrue(backup.getValue("playback").jsonObject.getValue("favorites").toString().contains(favorite))
         } finally {
             if (FavoriteUsersStore.favorites.value.contains(null, favorite)) FavoriteUsersStore.toggle(null, favorite)

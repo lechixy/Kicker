@@ -43,6 +43,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -74,8 +75,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LoadingIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -111,8 +112,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -125,10 +129,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
@@ -168,6 +174,7 @@ import com.lechixy.kick.data.chat.remote.ChatConnectionState
 import com.lechixy.kick.data.player.local.PlaybackProgressStore
 import com.lechixy.kick.data.player.model.RecordedPlayback
 import com.lechixy.kick.data.player.remote.ViewerSession
+import com.lechixy.kick.data.settings.model.FullscreenChatBlurStyle
 import com.lechixy.kick.data.settings.model.PlayerAmbientMode
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
@@ -177,6 +184,7 @@ import com.lechixy.kick.service.EXTRA_LIVE_DVR
 import com.lechixy.kick.service.EXTRA_LOW_LATENCY
 import com.lechixy.kick.service.PlaybackService
 import com.lechixy.kick.service.buildPlaybackMediaItem
+import com.lechixy.kick.service.player.StreamVideoQuality
 import com.lechixy.kick.service.player.broadcastPositionMs
 import com.lechixy.kick.service.player.distanceBehindLiveTargetMs
 import com.lechixy.kick.service.player.isNearLiveTarget
@@ -308,7 +316,12 @@ fun KickPlayerView(
     val settingsRepository = LocalSettingsRepository.current
     val ambientModeValue by remember(settingsRepository) { settingsRepository.get(SettingsKeys.AMBIENT_MODE) }
         .collectAsStateWithLifecycle(SettingsKeys.AMBIENT_MODE.defaultValue)
-    val ambientMode = PlayerAmbientMode.fromValue(ambientModeValue)
+    val selectedAmbientMode = PlayerAmbientMode.fromValue(ambientModeValue)
+    val ambientBatterySaver by remember(settingsRepository) { settingsRepository.get(SettingsKeys.AMBIENT_BATTERY_SAVER) }
+        .collectAsStateWithLifecycle(SettingsKeys.AMBIENT_BATTERY_SAVER.defaultValue)
+    val ambientMode = if (selectedAmbientMode == PlayerAmbientMode.Live &&
+        ambientBatterySaver && !isInPipMode && rememberAmbientPowerSaveMode()
+    ) PlayerAmbientMode.Dynamic else selectedAmbientMode
     val ambientFpsValue by remember(settingsRepository) { settingsRepository.get(SettingsKeys.AMBIENT_LIVE_FPS) }
         .collectAsStateWithLifecycle(SettingsKeys.AMBIENT_LIVE_FPS.defaultValue)
     val ambientFps = if (ambientFpsValue == 60) 60 else 30
@@ -318,10 +331,21 @@ fun KickPlayerView(
         .collectAsStateWithLifecycle(SettingsKeys.AMBIENT_SPREAD.defaultValue)
     val ambientFullscreen by remember(settingsRepository) { settingsRepository.get(SettingsKeys.AMBIENT_FULLSCREEN) }
         .collectAsStateWithLifecycle(SettingsKeys.AMBIENT_FULLSCREEN.defaultValue)
+    val ambientThroughUi by remember(settingsRepository) { settingsRepository.get(SettingsKeys.AMBIENT_THROUGH_UI) }
+        .collectAsStateWithLifecycle(SettingsKeys.AMBIENT_THROUGH_UI.defaultValue)
+    val ambientChatOpacity by remember(settingsRepository) { settingsRepository.get(SettingsKeys.AMBIENT_CHAT_OPACITY) }
+        .collectAsStateWithLifecycle(SettingsKeys.AMBIENT_CHAT_OPACITY.defaultValue)
+    val ambientNavigationOpacity by remember(settingsRepository) { settingsRepository.get(SettingsKeys.AMBIENT_NAVIGATION_OPACITY) }
+        .collectAsStateWithLifecycle(SettingsKeys.AMBIENT_NAVIGATION_OPACITY.defaultValue)
+    val preserveBlackBars by remember(settingsRepository) { settingsRepository.get(SettingsKeys.AMBIENT_PRESERVE_BLACK_BARS) }
+        .collectAsStateWithLifecycle(SettingsKeys.AMBIENT_PRESERVE_BLACK_BARS.defaultValue)
     androidx.compose.runtime.SideEffect {
-        ambient.intensity = ambientIntensity.coerceIn(25, 150) / 100f
-        ambient.spread = ambientSpread.coerceIn(50, 150) / 100f
+        ambient.intensity = ambientIntensity.coerceIn(SettingsKeys.AMBIENT_INTENSITY_RANGE) / 100f
+        ambient.spread = ambientSpread.coerceIn(SettingsKeys.AMBIENT_SPREAD_RANGE) / 100f
         ambient.fullscreenEnabled = ambientFullscreen
+        ambient.throughUi = ambientThroughUi
+        ambient.chatOpacity = ambientChatOpacity.coerceIn(0, 100) / 100f
+        ambient.navigationOpacity = ambientNavigationOpacity.coerceIn(0, 100) / 100f
     }
     val overlaySupported = playerHost != null && channel != null && if (recording == null) {
         liveChatViewModel != null
@@ -352,14 +376,21 @@ fun KickPlayerView(
 
     var selectedQualityHeight by remember { mutableIntStateOf(preferredQuality) }
     val availableQualities = remember { mutableStateListOf<VideoQualityOption>() }
-    var currentVideoHeight by remember { mutableIntStateOf(0) }
+    var currentVideoHeight by remember(player, stableId) { mutableIntStateOf(0) }
 
     LaunchedEffect(preferredQuality) {
         selectedQualityHeight = preferredQuality
     }
 
-    LaunchedEffect(player, selectedQualityHeight, availableQualities.toList()) {
-        applyQualityToPlayer(player, selectedQualityHeight, availableQualities)
+    val compactQualityLimit = if (isMini || isInPipMode) {
+        compactVideoHeightLimit(viewport.width, selectedQualityHeight)
+    } else {
+        null
+    }
+    LaunchedEffect(selectedQualityHeight, compactQualityLimit) {
+        // Let the mini-player or PiP resize settle before requesting a new quality.
+        if (compactQualityLimit != null) delay(150)
+        StreamVideoQuality.current = StreamVideoQuality(selectedQualityHeight, compactQualityLimit)
     }
 
     val latestIsFullScreen by rememberUpdatedState(isFullScreen)
@@ -609,7 +640,7 @@ fun KickPlayerView(
                 }
 
                 override fun onVideoSizeChanged(videoSize: VideoSize) {
-                    if (videoSize.height > 0) currentVideoHeight = videoSize.height
+                    if (p.currentMediaItem?.mediaId == stableId) currentVideoHeight = videoSize.height
                 }
 
                 override fun onTracksChanged(tracks: Tracks) {
@@ -639,6 +670,7 @@ fun KickPlayerView(
             }
 
             val isSameMedia = p.currentMediaItem?.mediaId == stableId
+            currentVideoHeight = if (isSameMedia) p.videoSize.height else 0
             refreshPlaybackControls()
             isBuffering = !isSameMedia || p.playbackState == Player.STATE_BUFFERING
             isPlayerReady = isSameMedia && p.playbackState == Player.STATE_READY
@@ -786,6 +818,23 @@ fun KickPlayerView(
         transitionSpec = { tween(if (targetState) 200 else 160) },
         label = "playback controls opacity",
     ) { if (it) 1f else 0f }
+    val backdropTexture = playerTexture.takeIf {
+        !isMini && !isInPipMode && hasRenderedFirstFrame && loadedMediaId == stableId && playbackError == null
+    }
+    val chatBlurStyle = overlayPreferences?.blurStyle.takeIf {
+        overlayPreferences?.blur == true &&
+            ((fullscreenChatOverlayEnabled && overlayHasOpacity) || editingChatPosition)
+    }
+    val visibleChatBlurStyle = chatBlurStyle.takeIf { chatBlurBounds != null }
+    val legacyBackdrop = if (Build.VERSION.SDK_INT < 31) {
+        rememberLegacyFullscreenChatFrame(
+            backdropTexture,
+            isPlaying,
+            soft = visibleChatBlurStyle == FullscreenChatBlurStyle.Soft,
+            frosted = controlBlur.regions.isNotEmpty() || visibleChatBlurStyle == FullscreenChatBlurStyle.FrostedGlass,
+            mediaKey = stableId to activePlaybackUrl,
+        )
+    } else null
     val trackAmbient = ambientMode != PlayerAmbientMode.Off && !isMini && !isInPipMode
     if (trackAmbient) {
         TrackAmbientVideoLayout(ambient, playerTexture) { ambientCoordinates }
@@ -807,12 +856,15 @@ fun KickPlayerView(
         mediaUrl = activePlaybackUrl,
         firstFrame = ambientFirstFrame,
         seek = ambientSeek,
+        preserveBlackBars = preserveBlackBars,
         keepFrameWhenHidden = hostedAmbient != null && isMini && !isInPipMode,
     )
     Box(
         modifier = modifier
             .drawBehind {
-                if (!useHostBackdrop || !ambientVisible || ambient.frame == null) drawRect(Color.Black)
+                if (isMini || preserveBlackBars || !useHostBackdrop || !ambientVisible || ambient.frame == null) {
+                    drawRect(Color.Black)
+                }
             }
             .onGloballyPositioned { coordinates ->
                 ambientCoordinates = coordinates
@@ -840,7 +892,7 @@ fun KickPlayerView(
             },
         contentAlignment = Alignment.Center
     ) {
-        if (!useHostBackdrop && ambientVisible && ambient.bounds?.hasLetterboxSpace == true) {
+        if (!isMini && !preserveBlackBars && !useHostBackdrop && ambientVisible && ambient.bounds?.hasLetterboxSpace == true) {
             PlayerAmbientBackdrop(ambient, modifier = Modifier.matchParentSize())
         }
         PlayerVideoSurface(
@@ -879,12 +931,10 @@ fun KickPlayerView(
             )
         }
 
-        if (!isMini && hasRenderedFirstFrame) {
-            val chatRegion = chatBlurBounds.takeIf {
-                overlayPreferences?.blur == true && (fullscreenChatOverlayEnabled || editingChatPosition)
-            }
+        if (backdropTexture != null) {
+            val chatRegion = chatBlurBounds.takeIf { chatBlurStyle != null }
             VideoBackdropBlur(
-                playerTexture,
+                backdropTexture,
                 listOfNotNull(chatRegion) + controlBlur.regions.values,
                 controlOpacity = { controlsOpacity.value },
                 opacity = { if (editingChatPosition) 1f else playerHost?.fullscreenChatOverlayAlpha ?: 0f },
@@ -894,10 +944,7 @@ fun KickPlayerView(
             ((fullscreenChatOverlayEnabled && overlayHasOpacity) || editingChatPosition)
         ) {
             val blur = if (overlayPreferences.blur) {
-                val legacyFrame = if (Build.VERSION.SDK_INT < 31 && hasRenderedFirstFrame) {
-                    rememberLegacyFullscreenChatFrame(playerTexture, isPlaying)
-                } else null
-                FullscreenChatBlur(updateChatBlurBounds, legacyFrame)
+                FullscreenChatBlur(updateChatBlurBounds, legacyBackdrop, overlayPreferences.blurStyle)
             } else null
             FullscreenChatOverlay(
                 host = playerHost,
@@ -934,7 +981,7 @@ fun KickPlayerView(
         val autoQualityLabel = stringResource(R.string.player_auto)
         val qualityLabel = remember(selectedQualityHeight, currentVideoHeight, autoQualityLabel) {
             when {
-                selectedQualityHeight > 0 -> "${selectedQualityHeight}p"
+                selectedQualityHeight > 0 -> "${currentVideoHeight.takeIf { it > 0 } ?: selectedQualityHeight}p"
                 currentVideoHeight > 0 -> "${currentVideoHeight}p ($autoQualityLabel)"
                 else -> autoQualityLabel
             }
@@ -977,9 +1024,6 @@ fun KickPlayerView(
             val currentChannelState = channelState?.takeIf { it.channel?.id == channel?.id }
             val updatedStream = currentChannelState?.channel?.livestream
             val liveStream = updatedStream?.takeIf { it.id == hostStream?.id } ?: hostStream
-            val controlFrame = if (Build.VERSION.SDK_INT < 31 && hasRenderedFirstFrame && playerTexture != null) {
-                rememberLegacyFullscreenChatFrame(playerTexture, isPlaying)
-            } else null
             PlayerControlsOverlay(
                 isFullScreen = isFullScreen,
                 mediaInfo = if (isFullScreen) { modifier ->
@@ -997,6 +1041,7 @@ fun KickPlayerView(
                                 tags = recording?.tags ?: liveStream?.tags.orEmpty(),
                                 event = currentChannelState?.event,
                                 language = if (recording == null) liveStream?.language else recording.language,
+                                isMature = recording == null && liveStream?.isMature == true,
                                 contentColor = Color.White,
                             )
                         }
@@ -1016,8 +1061,9 @@ fun KickPlayerView(
                 isSettingsDialogVisible = showSettingsDialog,
                 isCastDialogVisible = showCastDialog,
                 qualityLabel = qualityLabel,
-                controlFrame = controlFrame,
+                controlFrame = legacyBackdrop,
                 controlBlur = controlBlur,
+                controlVideoReady = backdropTexture != null,
                 sleepRemainingSeconds = if (sleepTimerMinutes > 0) remainingTimerSeconds else 0,
                 streamDuration = streamDuration,
                 positionMs = if (isLiveStream) liveSeekWindow?.positionMs ?: 0L else positionMs,
@@ -1324,7 +1370,6 @@ fun KickPlayerView(
                                                 coroutineScope.launch {
                                                     settingsRepository.set(SettingsKeys.VIDEO_QUALITY, -1)
                                                 }
-                                                applyQualityToPlayer(player, -1, availableQualities)
                                                 dismissSettings()
                                             }
                                         )
@@ -1342,11 +1387,6 @@ fun KickPlayerView(
                                                             quality.height
                                                         )
                                                     }
-                                                    applyQualityToPlayer(
-                                                        player,
-                                                        quality.height,
-                                                        availableQualities
-                                                    )
                                                     dismissSettings()
                                                 }
                                             )
@@ -1498,38 +1538,15 @@ private fun rememberMediaController(): State<Player?> {
     return playerState
 }
 
-@androidx.annotation.OptIn(UnstableApi::class)
-private fun applyQualityToPlayer(
-    player: Player?,
-    selectedHeight: Int,
-    availableQualities: List<VideoQualityOption>
-) {
-    val p = player ?: return
-    if (selectedHeight == -1) {
-        p.trackSelectionParameters = p.trackSelectionParameters
-            .buildUpon()
-            .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
-            .setMaxVideoSize(Int.MAX_VALUE, Int.MAX_VALUE)
-            .setMinVideoSize(0, 0)
-            .build()
-    } else {
-        val resolvedHeight = if (availableQualities.isNotEmpty()) {
-            availableQualities.firstOrNull { it.height == selectedHeight }?.height
-                ?: availableQualities.firstOrNull { it.height <= selectedHeight }?.height
-                ?: availableQualities.lastOrNull()?.height
-                ?: selectedHeight
-        } else {
-            selectedHeight
-        }
-
-        val targetWidth = resolvedHeight * 16 / 9
-        p.trackSelectionParameters = p.trackSelectionParameters
-            .buildUpon()
-            .clearOverridesOfType(C.TRACK_TYPE_VIDEO)
-            .setMaxVideoSize(targetWidth, resolvedHeight)
-            .setMinVideoSize(targetWidth, resolvedHeight)
-            .build()
+internal fun compactVideoHeightLimit(widthPx: Int, preferredHeight: Int): Int {
+    val limit = when {
+        widthPx <= 0 -> 360
+        widthPx <= 256 -> 144
+        widthPx <= 426 -> 240
+        widthPx <= 640 -> 360
+        else -> 480
     }
+    return if (preferredHeight > 0) minOf(limit, preferredHeight) else limit
 }
 
 @RequiresApi(Build.VERSION_CODES.S)
@@ -1685,6 +1702,7 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
     qualityLabel: String,
     controlFrame: State<FullscreenChatVideoFrame?>? = null,
     controlBlur: FrostedPlayerRegions? = null,
+    controlVideoReady: Boolean = false,
     sleepRemainingSeconds: Int,
     streamDuration: String,
     positionMs: Long = 0L,
@@ -1789,7 +1807,6 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                             tint = Color.White,
                         )
                     }
-                    if (!isFullScreen) PlayerQualityBadge(qualityLabel, controlFrame, controlBlur)
                 }
 
                 if (mediaInfoBesideActions) {
@@ -1799,7 +1816,10 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(if (isCompact) 4.dp else 8.dp),
                 ) {
-                    if (isFullScreen) PlayerQualityBadge(qualityLabel, controlFrame, controlBlur, onOpenQuality)
+                    PlayerQualityBadge(
+                        qualityLabel, controlFrame, controlBlur, onOpenQuality, controlVideoReady,
+                        modifier = Modifier.heightIn(min = if (isCompact && !largeControls) 36.dp else 48.dp),
+                    )
                     IconButton(
                         onClick = onOpenCastDialog,
                         modifier = chromeButtonModifier
@@ -1846,6 +1866,7 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                     onClick = onSeekBack,
                     frame = controlFrame,
                     backdrop = controlBlur,
+                    videoReady = controlVideoReady,
                     modifier = Modifier.size(48.dp)
                 ) {
                     Icon(painterResource(R.drawable.replay_10_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
@@ -1856,6 +1877,7 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                 onClick = onTogglePlay,
                 frame = controlFrame,
                 backdrop = controlBlur,
+                videoReady = controlVideoReady,
                 modifier = Modifier.size(60.dp)
             ) {
                 Icon(
@@ -1867,7 +1889,7 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
             }
 
             if (!isLive) {
-                FrostedPlaybackButton(onSeekForward, controlFrame, Modifier.size(48.dp), controlBlur) {
+                FrostedPlaybackButton(onSeekForward, controlFrame, Modifier.size(48.dp), controlBlur, controlVideoReady) {
                     Icon(painterResource(R.drawable.forward_10_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
                         contentDescription = stringResource(R.string.player_skip_forward), tint = Color.White)
                 }
@@ -1891,13 +1913,35 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                 val sliderPosition = (scrubPosition ?: positionMs.toFloat()).coerceIn(0f, sliderMax)
                 DisposableEffect(Unit) { onDispose { onSeekingChanged(false) } }
                 Column(Modifier.fillMaxWidth().padding(horizontal = if (isCompact) 12.dp else 20.dp)) {
-                    if (!isLive) Text(
-                        text = (if (remaining) "-" + FormatUtils.formatDuration((durationMs - shownPosition).coerceAtLeast(0))
-                            else FormatUtils.formatDuration(shownPosition)) + " / " + FormatUtils.formatDuration(durationMs),
-                        color = Color.White,
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.clickable { remaining = !remaining }.padding(vertical = 2.dp)
-                    )
+                    if (isLive) {
+                        Row(
+                            modifier = Modifier.padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(if (isCompact) 8.dp else 10.dp)
+                                    .background(color = MaterialTheme.colorScheme.primary, shape = CircleShape)
+                            )
+                            Text(
+                                text = streamDuration,
+                                color = Color.White,
+                                style = labelStyle,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                softWrap = false,
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = (if (remaining) "-" + FormatUtils.formatDuration((durationMs - shownPosition).coerceAtLeast(0))
+                                else FormatUtils.formatDuration(shownPosition)) + " / " + FormatUtils.formatDuration(durationMs),
+                            color = Color.White,
+                            style = labelStyle,
+                            modifier = Modifier.clickable { remaining = !remaining }.padding(vertical = 2.dp)
+                        )
+                    }
                     CompactPlayerSlider(
                         value = if (isLive) sliderPosition / sliderMax else sliderPosition,
                         valueRange = 0f..(if (isLive) 1f else sliderMax),
@@ -1947,7 +1991,7 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                 )
 
                 Row(
-                    modifier = Modifier.weight(1f, fill = false),
+                    modifier = Modifier.weight(1f, fill = false).playerControlsScroll(isFullScreen),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(itemSpacing)
                 ) {
@@ -1980,23 +2024,6 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                         maxLines = 1,
                         softWrap = false
                     )
-                    if (isLive) {
-                        Separator()
-                        Box(
-                            modifier = Modifier
-                                .size(if (isCompact) 8.dp else 10.dp)
-                                .background(color = MaterialTheme.colorScheme.primary, shape = CircleShape)
-                        )
-                        Text(
-                            text = streamDuration,
-                            color = Color.White,
-                            style = labelStyle,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
-                            softWrap = false
-                        )
-
-                    }
                     if (isLive) {
                         Separator()
                         Surface(
@@ -2037,7 +2064,7 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                                 }
                             }
                         }
-                        if (isFullScreen && largeControls && liveViewerCount != null) {
+                        if (isFullScreen && liveViewerCount != null) {
                             Separator()
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -2126,6 +2153,41 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
 }
 
 private const val DVR_LIVE_GAP_MS = 30_000L
+
+@Composable
+private fun Modifier.playerControlsScroll(isFullScreen: Boolean): Modifier {
+    val scroll = key(isFullScreen) { rememberScrollState() }
+    return graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+        .drawWithCache {
+            val fadeWidth = minOf(20.dp.toPx(), size.width / 2)
+            val rtl = layoutDirection == LayoutDirection.Rtl
+            onDrawWithContent {
+                drawContent()
+                val before = scroll.value
+                val after = scroll.maxValue - before
+                val left = minOf(fadeWidth, (if (rtl) after else before).toFloat())
+                val right = minOf(fadeWidth, (if (rtl) before else after).toFloat())
+                if (left > 0f) {
+                    drawRect(
+                        Brush.horizontalGradient(listOf(Color.Transparent, Color.Black), endX = left),
+                        size = size.copy(width = left),
+                        blendMode = BlendMode.DstIn,
+                    )
+                }
+                if (right > 0f) {
+                    val start = size.width - right
+                    drawRect(
+                        Brush.horizontalGradient(listOf(Color.Black, Color.Transparent), startX = start, endX = size.width),
+                        topLeft = Offset(start, 0f),
+                        size = size.copy(width = right),
+                        blendMode = BlendMode.DstIn,
+                    )
+                }
+            }
+        }
+        .horizontalScroll(scroll)
+}
+
 private data class LiveDvrPlayback(val url: String, val positionMs: Long, val playWhenReady: Boolean)
 private data class LiveSeekWindow(val startMs: Long, val edgeMs: Long, val positionMs: Long, val usesDvr: Boolean = false)
 
@@ -2147,14 +2209,20 @@ private fun PlayerQualityBadge(
     label: String,
     frame: State<FullscreenChatVideoFrame?>?,
     blur: FrostedPlayerRegions?,
-    onClick: (() -> Unit)? = null,
+    onClick: () -> Unit,
+    videoReady: Boolean,
+    modifier: Modifier = Modifier,
 ) {
     Box(
-        modifier = if (onClick == null) Modifier else Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(8.dp))
-            .clickable(onClickLabel = stringResource(R.string.player_quality), onClick = onClick),
+        modifier = modifier.clip(CircleShape)
+            .clickable(
+                onClickLabel = stringResource(R.string.player_quality),
+                role = Role.Button,
+                onClick = onClick,
+            ),
         contentAlignment = Alignment.Center,
     ) {
-        FrostedPlayerControl(frame, blur)
+        FrostedPlayerControl(frame, blur, videoReady)
         Text(
             text = label,
             color = Color.White,
@@ -2162,7 +2230,7 @@ private fun PlayerQualityBadge(
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             softWrap = false,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
         )
     }
 }

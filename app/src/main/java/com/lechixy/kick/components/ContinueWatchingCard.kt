@@ -1,12 +1,6 @@
 package com.lechixy.kick.components
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
+import android.os.SystemClock
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
@@ -23,9 +17,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -47,8 +41,9 @@ fun ContinueWatchingCard(
     var cardCoordinates by remember(entry.key) { mutableStateOf<LayoutCoordinates?>(null) }
     var mediaCoordinates by remember(entry.key) { mutableStateOf<LayoutCoordinates?>(null) }
     var showActions by remember(entry.key) { mutableStateOf(false) }
+    var lastTapAt by remember(entry.key, enabled) { mutableStateOf<Long?>(null) }
     val actionsVisible = showActions && enabled
-    val scrimAlpha by animateFloatAsState(if (actionsVisible) .48f else 0f, tween(180), label = "history card scrim")
+    val doubleTapTimeout = LocalViewConfiguration.current.doubleTapTimeoutMillis
     val context = LocalContext.current
     val imageRequest = remember(context, entry.thumbnail) {
         buildOptimizedImageRequest(context = context, data = entry.thumbnail,
@@ -56,6 +51,7 @@ fun ContinueWatchingCard(
     }
     fun resume() {
         showActions = false
+        lastTapAt = null
         val card = cardCoordinates?.takeIf { it.isAttached }?.boundsInRoot()
         val media = mediaCoordinates?.takeIf { it.isAttached }?.boundsInRoot()
         onClick(card?.let {
@@ -65,8 +61,16 @@ fun ContinueWatchingCard(
         })
     }
     InteractiveCard(
-        onClick = { showActions = true },
-        onDoubleClick = ::resume,
+        onClick = {
+            val now = SystemClock.uptimeMillis()
+            val previousTap = lastTapAt
+            if (showActions && previousTap != null && now - previousTap <= doubleTapTimeout) {
+                resume()
+            } else {
+                lastTapAt = now
+                showActions = true
+            }
+        },
         onClickLabel = stringResource(R.string.home_show_history_actions),
         enabled = enabled,
         modifier = Modifier.fillMaxWidth().onGloballyPositioned { cardCoordinates = it },
@@ -99,34 +103,22 @@ fun ContinueWatchingCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
-        Box(Modifier.matchParentSize().graphicsLayer { alpha = scrimAlpha }.background(Color.Black))
-        Box(Modifier.matchParentSize()) {
-            AnimatedVisibility(
-                visible = actionsVisible,
-                modifier = Modifier.align(Alignment.Center),
-                enter = fadeIn(tween(150)) + scaleIn(tween(210), initialScale = .72f),
-                exit = fadeOut(tween(120)) + scaleOut(tween(160), targetScale = .82f),
-            ) {
-                FilledIconButton(onClick = ::resume, enabled = actionsVisible, modifier = Modifier.size(54.dp)) {
+        if (actionsVisible) {
+            Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = .48f))) {
+                FilledIconButton(onClick = ::resume, modifier = Modifier.align(Alignment.Center).size(54.dp)) {
                     Icon(
                         painterResource(R.drawable.play_arrow_24dp_e3e3e3_fill1_wght400_grad0_opsz24),
                         stringResource(R.string.home_continue_watching),
                         Modifier.size(30.dp),
                     )
                 }
-            }
-            AnimatedVisibility(
-                visible = actionsVisible,
-                modifier = Modifier.align(Alignment.TopEnd).padding(4.dp),
-                enter = fadeIn(tween(150)) + scaleIn(tween(180), initialScale = .8f),
-                exit = fadeOut(tween(120)) + scaleOut(tween(150), targetScale = .85f),
-            ) {
                 FilledIconButton(
                     onClick = {
                         showActions = false
+                        lastTapAt = null
                         onRemove()
                     },
-                    enabled = actionsVisible,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(4.dp),
                     colors = IconButtonDefaults.filledIconButtonColors(
                         containerColor = Color.Black.copy(alpha = .62f),
                         contentColor = Color.White,

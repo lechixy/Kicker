@@ -91,12 +91,8 @@ internal fun AccountDashboard(onChannelClick: (String) -> Unit) {
     }
     Column(Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Box(Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.account_title), style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 10.dp))
-            if (session.signedIn && profile != null && state.loading) {
-                LinearProgressIndicator(Modifier.fillMaxWidth().align(Alignment.BottomStart))
-            }
+        if (session.signedIn && profile != null && state.loading) {
+            LinearProgressIndicator(Modifier.fillMaxWidth())
         }
         if (!session.signedIn || profile == null) {
             AccountPanel(showTitle = false)

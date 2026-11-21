@@ -1,4 +1,11 @@
 <resources>
+    <string name="mature_live_title">+18 canlı yayın</string>
+    <string name="mature_live_message">Bu yayın yetişkinlere yönelik içerik barındırabilir.</string>
+    <string name="mature_live_dont_ask">Bu uyarıyı bir daha gösterme</string>
+    <string name="mature_live_watch">İzle</string>
+    <string name="mature_live_cancel">Vazgeç</string>
+    <string name="settings_mature_live_confirmation">+18 yayınları açmadan önce sor</string>
+    <string name="settings_mature_live_confirmation_description">Yetişkinlere yönelik olarak işaretlenen canlı yayınları açmadan önce onay iste.</string>
     <string name="active_chatters_partial_notice">Burada aktif sohbetçilerin yalnızca bir kısmı gösterilir</string>
     <string name="offline_banner_expand">Çevrimdışı afişini genişlet</string>
     <string name="channel_follow_failed">Takip durumu yüklenemedi veya güncellenemedi, tekrar deneyin</string>
@@ -56,6 +63,9 @@
     <string name="fullscreen_chat_preview_stream">izleyici2: Harika yayın!</string>
     <string name="fullscreen_chat_open_settings">Sohbet katmanı ayarları</string>
     <string name="fullscreen_chat_blur">Sohbetin arkasındaki videoyu bulanıklaştır</string>
+    <string name="fullscreen_chat_blur_style">Bulanıklık stili</string>
+    <string name="fullscreen_chat_blur_style_soft">Yumuşak</string>
+    <string name="fullscreen_chat_blur_style_frosted_glass">Buzlu Cam</string>
     <string name="fullscreen_chat_badges">Diğer rozetleri göster</string>
     <string name="fullscreen_chat_lock_position">Konumu kilitle</string>
     <string name="fullscreen_chat_lock_position_description">Kilitliyken sohbeti Konumu ve boyutu düzenle seçeneğiyle taşıyabilir veya boyutlandırabilirsin.</string>
@@ -91,6 +101,15 @@
     <string name="player_ambient_spread_description">Işığın video kenarından ne kadar uzağa yayıldığını ayarla.</string>
     <string name="player_ambient_fullscreen">Tam ekranda göster</string>
     <string name="player_ambient_fullscreen_description">Tam ekranda videonun çevresindeki boşlukları aydınlat.</string>
+    <string name="player_ambient_through_ui">Gezinme ve sohbetin arkasında göster</string>
+    <string name="player_ambient_through_ui_description">Ortam ışığı gezinme ve sohbet arka planlarının arkasından görünsün.</string>
+    <string name="player_ambient_battery_saver">Pil tasarrufunda Dinamik modu kullan</string>
+    <string name="player_ambient_battery_saver_description">Android pil tasarrufu açıkken Canlı moddan Dinamik moda geç.</string>
+    <string name="player_ambient_chat_opacity">Sohbet arka planı opaklığı</string>
+    <string name="player_ambient_navigation_opacity">Gezinme arka planı opaklığı</string>
+    <string name="player_ambient_reset_levels">Yoğunluğu ve yayılımı %100’e döndür</string>
+    <string name="player_ambient_preserve_black_bars">Siyah şeritleri koru</string>
+    <string name="player_ambient_preserve_black_bars_description">Oynatıcıdaki şeritleri siyah tut ve videoda algılanan siyah kenarlara ışığın taşmasını önle.</string>
     <string name="settings_backup_account_title">Kick oturumunuz bu cihazda kalır</string>
     <string name="settings_backup_account_description">Kick giriş bilgileriniz ve oturumunuz asla yedeklenmez. Çıkış yapınca, uygulama verilerini temizleyince veya uygulamayı kaldırınca kayıtlı oturum silinir. Yeniden kurduğunuzda, cihaz değiştirdiğinizde veya oturumunuzun süresi dolduğunda tekrar giriş yapın.</string>
 </resources>

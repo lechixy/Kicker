@@ -153,6 +153,15 @@ internal fun settingsCatalog(expandGroups: Boolean = false): List<SettingsEntry>
             SettingSwitch(SettingsKeys.AUTOPLAY, stringResource(R.string.player_autoplay),
                 icon = R.drawable.play_circle_24dp_e3e3e3_fill0_wght400_grad0_opsz24)
         },
+        SettingsEntry("mature-live-confirmation", R.string.settings_mature_live_confirmation, R.string.settings_mature_live_confirmation_description,
+            playback, R.string.settings_group_streaming, searchTerms = listOf(R.string.channel_mature_badge)) {
+            SettingSwitch(
+                key = SettingsKeys.ASK_BEFORE_MATURE_LIVE,
+                title = stringResource(R.string.settings_mature_live_confirmation),
+                description = stringResource(R.string.settings_mature_live_confirmation_description),
+                icon = R.drawable.warning_24dp,
+            )
+        },
         SettingsEntry("volume", R.string.settings_volume_sync, R.string.settings_volume_sync_description, playback, R.string.settings_group_audio) {
             SettingSwitch(SettingsKeys.SYNC_PLAYER_VOLUME_WITH_DEVICE, stringResource(R.string.settings_volume_sync),
                 description = stringResource(R.string.settings_volume_sync_description),

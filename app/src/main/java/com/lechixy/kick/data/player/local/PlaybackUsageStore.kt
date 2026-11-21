@@ -12,7 +12,15 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 
-internal data class PlaybackUsageChannel(val slug: String, val name: String, val avatar: String? = null)
+@Serializable
+internal enum class PlaybackContentType { LIVE, RECORDING, UNCLASSIFIED }
+
+internal data class PlaybackUsageChannel(
+    val slug: String,
+    val name: String,
+    val contentType: PlaybackContentType,
+    val avatar: String? = null,
+)
 
 @Serializable
 internal data class PlaybackUsage(
@@ -24,11 +32,17 @@ internal data class PlaybackUsage(
     val channelAvatar: String? = null,
     val epochDay: Long? = null,
     val recentMinutes: Map<Long, PlaybackUsageMinute> = emptyMap(),
+    val contentType: PlaybackContentType = PlaybackContentType.UNCLASSIFIED,
 ) {
-    internal val key get() = PlaybackUsageKey(channelSlug, transport, epochDay)
+    internal val key get() = PlaybackUsageKey(channelSlug, transport, epochDay, contentType)
 }
 
-internal data class PlaybackUsageKey(val slug: String, val transport: ConnectionTransport, val epochDay: Long?)
+internal data class PlaybackUsageKey(
+    val slug: String,
+    val transport: ConnectionTransport,
+    val epochDay: Long?,
+    val contentType: PlaybackContentType,
+)
 
 @Serializable
 internal data class PlaybackUsageMinute(val watchedMs: Long = 0, val bytes: Long = 0)
@@ -99,8 +113,10 @@ internal object PlaybackUsageStore {
         watchedMs: Long = 0,
         bytes: Long = 0,
     ) {
-        val existing = pending[PlaybackUsageKey(channel.slug, transport, epochDay)]
-            ?: PlaybackUsage(channel.slug, channel.name, transport, epochDay = epochDay)
+        val key = PlaybackUsageKey(channel.slug, transport, epochDay, channel.contentType)
+        val existing = pending[key] ?: PlaybackUsage(
+            channel.slug, channel.name, transport, epochDay = epochDay, contentType = channel.contentType,
+        )
         val previousMinute = existing.recentMinutes[minute] ?: PlaybackUsageMinute()
         pending[existing.key] = existing.copy(
             watchedMs = existing.watchedMs + watchedMs,

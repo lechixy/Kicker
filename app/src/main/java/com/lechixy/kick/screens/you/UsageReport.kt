@@ -4,6 +4,7 @@ import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import com.lechixy.kick.R
 import com.lechixy.kick.data.common.remote.ConnectionTransport
+import com.lechixy.kick.data.player.local.PlaybackContentType
 import com.lechixy.kick.data.player.local.PlaybackUsage
 import com.lechixy.kick.data.player.local.last24UsageMinutes
 import com.lechixy.kick.data.player.local.usageMinute
@@ -61,7 +62,8 @@ internal class UsageReport(
     } else entries.filter { entry ->
         metric.value(entry) > 0 && (days == null || entry.epochDay?.let { it in days } == true)
     }
-    val total = matching.sumOf(metric::value)
+    val byContentType = matching.groupingBy { it.contentType }.fold(0L) { sum, entry -> sum + metric.value(entry) }
+    val total = byContentType.values.sum()
     val byDay = matching.filter { it.epochDay != null }.groupingBy { requireNotNull(it.epochDay) }
         .fold(0L) { sum, entry -> sum + metric.value(entry) }
     val undated = matching.any { it.epochDay == null }

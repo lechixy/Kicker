@@ -151,7 +151,7 @@ internal fun SettingsHost(
                     ) {
                         composable(OVERVIEW) {
                             if (paneIsWide) SettingsAboutScreen(releaseViewModel, currentBack)
-                            else SettingsOverview(visibleDestinations, selectSection)
+                            else SettingsOverview(visibleDestinations, selectSection, releaseViewModel, currentBack)
                         }
                         composable(SEARCH) {
                             SettingsSearchScreen(query, developerUnlocked, currentBack) { selectSection(SettingsDestinations.ABOUT) }

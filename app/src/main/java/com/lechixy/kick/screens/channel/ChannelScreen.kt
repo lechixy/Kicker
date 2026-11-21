@@ -6,6 +6,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -17,7 +18,6 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -80,6 +80,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
@@ -150,6 +152,7 @@ import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 import com.lechixy.kick.util.FormatUtils
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 enum class ChannelTab(
@@ -505,11 +508,13 @@ fun ChannelScreen(
                                                     lastHourGiftedSubsRank = state.lastHourGiftedSubsRank,
                                                     recording = playerHost?.recording,
                                                     onPlayLive = {
-                                                        val requestedRecording = playerHost?.recording?.id
-                                                        viewModel.refreshLivePlayback { fresh ->
-                                                            if (playerHost?.recording?.id == requestedRecording) {
-                                                                playerHost?.onChannelLoaded(channelSlug, fresh)
-                                                                playerHost?.playLive()
+                                                        playerHost?.let { host ->
+                                                            val requestedRecording = host.recording?.id ?: return@let
+                                                            viewModel.refreshLivePlayback { fresh ->
+                                                                if (host.slug == channelSlug && host.recording?.id == requestedRecording) {
+                                                                    host.onChannelLoaded(channelSlug, fresh)
+                                                                    host.requestLivePlayback()
+                                                                }
                                                             }
                                                         }
                                                     },
@@ -548,7 +553,7 @@ fun ChannelScreen(
                                                     canHideChat = playerHost != null,
                                                     isReplay = playerHost?.recording != null,
                                                     isLive = hasPlayback,
-                                                    modifier = Modifier.padding(top = channelTabTopPadding),
+                                                    modifier = if (isWide) Modifier.padding(top = channelTabTopPadding) else Modifier,
                                                 )
                                             } else if (pageTab != ChannelTab.CHAT && (channel == null || state.isLoading)) {
                                                 ChannelTabSkeleton(pageTab) { target ->
@@ -559,7 +564,11 @@ fun ChannelScreen(
                                                 val chatScroll = if (offline) {
                                                     Modifier.scrollable(rememberScrollableState { 0f }, Orientation.Vertical)
                                                 } else Modifier
-                                                Box(Modifier.fillMaxSize().padding(top = channelTabTopPadding).then(chatScroll)) {
+                                                Box(
+                                                    Modifier.fillMaxSize()
+                                                        .padding(top = if (isWide) channelTabTopPadding else 0.dp)
+                                                        .then(chatScroll)
+                                                ) {
                                                     if (isChatVisible && channel != null) {
                                                         sharedChat(channel, playerHost?.let { host ->
                                                             { host.updateChatVisibility(visible = false) }
@@ -1003,6 +1012,7 @@ private fun ChannelHeaderInfo(
             .fillMaxWidth()
             .wrapContentHeight(Alignment.Top, unbounded = true)
     ) {
+        val channelIsLive = channel.livestream != null
         val liveAvailable = isLive && channel.livestream != null
         val recordingAvailable = recording != null
         if ((liveAvailable) || recordingAvailable) {
@@ -1045,6 +1055,7 @@ private fun ChannelHeaderInfo(
                         tags = if (liveAvailable) channel.livestream.tags else recording?.tags.orEmpty(),
                         event = event,
                         language = if (liveAvailable) channel.livestream.language else recording?.language,
+                        isMature = liveAvailable && channel.livestream.isMature,
                         modifier = Modifier
                             .weight(1f)
                             .padding(end = 8.dp),
@@ -1094,12 +1105,10 @@ private fun ChannelHeaderInfo(
                 url = channel.user?.profilePic,
                 username = channel.user?.username,
                 onExpandedChange = onProfilePhotoExpandedChange,
-                modifier = Modifier.size(56.dp).then(
-                    if (channel.livestream != null) {
-                        Modifier.border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
-                            .padding(4.dp)
-                    } else Modifier
-                )
+                modifier = Modifier.size(56.dp).then(if (channelIsLive) liveProfilePhotoOutline() else Modifier),
+                imagePadding = if (channelIsLive) 4.dp else 0.dp,
+                onTap = onPlayLive.takeIf { channelIsLive && recordingAvailable },
+                onTapLabel = if (channelIsLive && recordingAvailable) stringResource(R.string.play_live) else null,
             )
 
             Column(
@@ -1142,24 +1151,6 @@ private fun ChannelHeaderInfo(
                 }
             }
 
-            if (recordingAvailable) {
-                Button(
-                    onClick = onPlayLive,
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        contentColor = MaterialTheme.colorScheme.onPrimary
-                    ),
-                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
-                ) {
-                    Text(
-                        text = stringResource(R.string.play_live),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-
             com.lechixy.kick.components.FavoriteUserButton(
                 channel.userId ?: channel.user?.id, channel.user?.username ?: channel.slug, channel.slug,
                 matchButtonSize = true)
@@ -1191,6 +1182,32 @@ private fun ChannelHeaderInfo(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun liveProfilePhotoOutline(): Modifier {
+    val color = MaterialTheme.colorScheme.primary
+    val wave = remember { Animatable(0f) }
+    LaunchedEffect(wave) {
+        while (true) {
+            wave.snapTo(0f)
+            wave.animateTo(1f, tween(1_200, easing = LinearOutSlowInEasing))
+            delay(4_800)
+        }
+    }
+    return Modifier.drawBehind {
+        val stroke = Stroke(2.dp.toPx())
+        val radius = size.minDimension / 2f - stroke.width / 2f
+        val progress = wave.value
+        if (progress > 0f && progress < 1f) {
+            drawCircle(
+                color = color.copy(alpha = 0.6f * (1f - progress)),
+                radius = radius + 10.dp.toPx() * progress,
+                style = stroke,
+            )
+        }
+        drawCircle(color = color, radius = radius, style = stroke)
     }
 }
 

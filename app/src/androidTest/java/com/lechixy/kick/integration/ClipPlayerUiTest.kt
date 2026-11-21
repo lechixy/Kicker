@@ -156,11 +156,12 @@ class ClipPlayerUiTest {
             }
         }
         val video = compose.onNodeWithTag("clip-video")
-        video.performTouchInput { doubleClick(Offset(width * .75f, center.y)) }
+        // Keep gesture coordinates clear of the central playback buttons on compact displays.
+        video.performTouchInput { doubleClick(Offset(width * .75f, height / 3f)) }
         compose.runOnIdle { assertEquals(12_000L, position.value) }
-        video.performTouchInput { doubleClick(Offset(width * .25f, center.y)) }
+        video.performTouchInput { doubleClick(Offset(width * .25f, height / 3f)) }
         compose.runOnIdle { assertEquals(2_000L, position.value) }
-        video.performTouchInput { doubleClick(Offset(width * .25f, center.y)) }
+        video.performTouchInput { doubleClick(Offset(width * .25f, height / 3f)) }
         compose.runOnIdle { assertEquals(0L, position.value) }
     }
 }

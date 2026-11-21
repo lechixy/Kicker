@@ -419,7 +419,7 @@ private fun ComposerContent(
     }
     if (showIdentityDialog) {
         LoadingChatIdentityDialog(channel.id, session.profile?.name.orEmpty(), channel.subscriberBadges,
-            onPreviewClick = onIdentityPreviewClick) { initial, updated ->
+            avatarUrl = session.profile?.avatar, onPreviewClick = onIdentityPreviewClick) { initial, updated ->
             showIdentityDialog = false
             if (updated != null) {
                 identitySaving = true

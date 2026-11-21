@@ -141,7 +141,7 @@ class NavigationUpdatesUiTest {
         }
     }
     @Test fun settingsDestinationCardsHaveEqualRowHeightWhenDescriptionsWrap() {
-        show { Box(Modifier.width(820.dp)) { SettingsOverview(SettingsDestinations.entries, {}) } }
+        show { Box(Modifier.width(820.dp)) { SettingsOverview(SettingsDestinations.entries, {}, null, {}) } }
         val titles = listOf(R.string.settings_general, R.string.settings_customization, R.string.player_playback)
         val bounds = titles.map { title ->
             compose.onNode(hasText(label(title)) and hasClickAction()).fetchSemanticsNode().boundsInRoot
