@@ -62,7 +62,12 @@ import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 import com.lechixy.kick.util.findActivity
 
 @Composable
-fun DeveloperToolsScreen(onBackClick: () -> Unit, onTriggerLive: () -> Unit, canTriggerLive: Boolean) {
+fun DeveloperToolsScreen(
+    onBackClick: () -> Unit,
+    onTriggerLive: () -> Unit,
+    canTriggerLive: Boolean,
+    onPreviewWinter: (Boolean) -> Unit = {},
+) {
     val repository = LocalSettingsRepository.current
     val unlocked by repository.get(SettingsKeys.DEVELOPER_ENABLED).collectAsStateWithLifecycle(false)
     SettingsPage(stringResource(R.string.developer_tools), onBackClick) {
@@ -74,7 +79,7 @@ fun DeveloperToolsScreen(onBackClick: () -> Unit, onTriggerLive: () -> Unit, can
             item("welcome") { WelcomeSetting() }
             item("diagnostics") {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    DeveloperToolsContent(onTriggerLive, canTriggerLive)
+                    DeveloperToolsContent(onTriggerLive, canTriggerLive, onPreviewWinter)
                 }
             }
         }
@@ -82,7 +87,7 @@ fun DeveloperToolsScreen(onBackClick: () -> Unit, onTriggerLive: () -> Unit, can
 }
 
 @Composable
-private fun DeveloperToolsContent(onTriggerLive: () -> Unit, canTriggerLive: Boolean) {
+private fun DeveloperToolsContent(onTriggerLive: () -> Unit, canTriggerLive: Boolean, onPreviewWinter: (Boolean) -> Unit) {
     PlayerDiagnosticsContent()
     HorizontalDivider()
     val state by ViewerTrackingDiagnostics.state.collectAsStateWithLifecycle()
@@ -91,6 +96,12 @@ private fun DeveloperToolsContent(onTriggerLive: () -> Unit, canTriggerLive: Boo
     if (!canTriggerLive) Text(stringResource(R.string.developer_live_required), style = MaterialTheme.typography.bodySmall)
     HorizontalDivider()
     DropsBannerPreviewControls()
+    HorizontalDivider()
+    Text(stringResource(R.string.developer_winter_preview), style = MaterialTheme.typography.titleMedium)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(onClick = { onPreviewWinter(true) }) { Text(stringResource(R.string.developer_winter_in_season)) }
+        OutlinedButton(onClick = { onPreviewWinter(false) }) { Text(stringResource(R.string.developer_winter_off_season)) }
+    }
     HorizontalDivider()
     Text(stringResource(R.string.developer_viewer_socket), style = MaterialTheme.typography.titleMedium)
     val status = when (state.status) {
@@ -172,13 +183,19 @@ private fun PlayerDiagnosticsContent() {
 /** A bounded, non-focusable application subwindow. It never participates in screen measurement,
  * changes soft-input behavior, dims a dialog, or intercepts touches outside its own bounds. */
 @Composable
-fun DeveloperToolsOverlay(isInPipMode: Boolean, onTriggerLive: () -> Unit, canTriggerLive: Boolean) {
+fun DeveloperToolsOverlay(
+    isInPipMode: Boolean,
+    onTriggerLive: () -> Unit,
+    canTriggerLive: Boolean,
+    onPreviewWinter: (Boolean) -> Unit = {},
+) {
     val repository = LocalSettingsRepository.current
     val unlocked by repository.get(SettingsKeys.DEVELOPER_ENABLED).collectAsStateWithLifecycle(false)
     val floating by repository.get(SettingsKeys.DEVELOPER_FLOATING_MENU).collectAsStateWithLifecycle(true)
     val activity = LocalContext.current.findActivity() as? ComponentActivity ?: return
     val parent = rememberCompositionContext()
     val trigger by rememberUpdatedState(onTriggerLive)
+    val previewWinter by rememberUpdatedState(onPreviewWinter)
     val canTrigger by rememberUpdatedState(canTriggerLive)
     val scope = rememberCoroutineScope()
     val position by remember(repository) {
@@ -349,7 +366,7 @@ fun DeveloperToolsOverlay(isInPipMode: Boolean, onTriggerLive: () -> Unit, canTr
                             .verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             // A native INVISIBLE window keeps its composition alive.
                             // Drop the live collectors while the panel is idle-hidden.
-                            if (!idleHidden) DeveloperToolsContent({ trigger() }, canTrigger)
+                            if (!idleHidden) DeveloperToolsContent({ trigger() }, canTrigger) { previewWinter(it) }
                         }
                     }
                 }

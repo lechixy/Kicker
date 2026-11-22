@@ -1,4 +1,7 @@
 <resources>
+    <string name="web_link_open_failed">Bu bağlantıyı açabilecek uyumlu bir tarayıcı bulunamadı.</string>
+    <string name="settings_supported_links">Desteklenen bağlantıları aç</string>
+    <string name="settings_supported_links_summary">Android’in kick.com ve www.kick.com bağlantılarını Kicker’da açmasını seç.</string>
     <string name="mature_live_title">+18 canlı yayın</string>
     <string name="mature_live_message">Bu yayın yetişkinlere yönelik içerik barındırabilir</string>
     <string name="mature_live_dont_ask">Bu uyarıyı bir daha gösterme</string>

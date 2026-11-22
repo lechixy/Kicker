@@ -135,7 +135,7 @@ fun ChatMessageItem(
         }
         val segments = giftedEventSegments(eventContext, giftedEvent, userColors, defaultPrimaryColor)
         ChatEventBaseItem(
-            iconRes = R.drawable.featured_seasonal_and_gifts_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+            iconRes = R.drawable.kick_star,
             segments = segments,
             bodyContent = null,
             fontSizeSp = fontSizeSp,
@@ -169,13 +169,14 @@ fun ChatMessageItem(
         val segments = celebrationEventSegments(eventContext, senderName, months,
             userColor = userColor, primaryColor = defaultPrimaryColor)
         ChatEventBaseItem(
-            iconRes = R.drawable.celebration_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+            iconRes = subscriptionCelebrationIcon(celebration),
             segments = segments,
             bodyContent = message.content.takeIf { it.isNotBlank() }?.let {
                 stringResource(R.string.chat_event_celebration_message, senderName, it)
             },
             subtitle = months?.let { stringResource(R.string.chat_event_celebration_milestone, it) },
             subscriptionGoal = subscriptionGoal,
+            contentPadding = 10.dp,
             fontSizeSp = fontSizeSp,
             stripeColor = userColor,
             onUsernameClick = onEventUserClick,
@@ -202,11 +203,12 @@ fun ChatMessageItem(
         val segments = subscriptionEventSegments(eventContext, subUsername, months, extraSubscribers,
             userColor = userColor, primaryColor = defaultPrimaryColor)
         ChatEventBaseItem(
-            iconRes = R.drawable.star_shine_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+            iconRes = R.drawable.kick_star,
             segments = segments,
             bodyContent = message.content.takeIf { it.isNotBlank() },
             fontSizeSp = fontSizeSp,
             stripeColor = userColor,
+            contentPadding = 10.dp,
             onUsernameClick = onEventUserClick,
             iconTint = defaultPrimaryColor,
             streamerUsername = streamerUsername,

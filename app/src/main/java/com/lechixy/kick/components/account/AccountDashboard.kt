@@ -1,7 +1,5 @@
 package com.lechixy.kick.components.account
 
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -48,6 +46,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -74,6 +73,7 @@ internal fun AccountDashboard(onChannelClick: (String) -> Unit) {
     val profile = session.profile
     val state by AccountGraph.dashboard.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
     val scope = rememberCoroutineScope()
     // minSdk 30 supports ImageDecoder, including animated GIF level badges.
     val badgeLoader = remember(context) {
@@ -98,7 +98,7 @@ internal fun AccountDashboard(onChannelClick: (String) -> Unit) {
             AccountPanel(showTitle = false)
         } else {
             GamificationCard(state, profile, badgeLoader, onEdit = {
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://kick.com/settings/profile")))
+                uriHandler.openUri("https://kick.com/settings/profile")
             })
             StreakCard(state.streak, badgeLoader)
             if (state.failures.isNotEmpty()) {

@@ -200,14 +200,7 @@ object ChatTextParser {
 
                 "sub_gifter", "subgifter", "gifter" -> {
                     val count = badgeInfo.count ?: 1
-                    val drawableRes = when {
-                        count >= 100 -> R.drawable.gifter_100_badge
-                        count >= 50 -> R.drawable.gifter_50_badge
-                        count >= 25 -> R.drawable.gifter_25_badge
-                        count >= 10 -> R.drawable.gifter_10_badge
-                        count >= 5 -> R.drawable.gifter_5_badge
-                        else -> R.drawable.gifter_1_badge
-                    }
+                    val drawableRes = resolveGifterBadgeRes(count.toLong())
                     result.add(
                         ResolvedChatBadge(
                             key = "badge_local_gifter_$count",

@@ -218,6 +218,10 @@
     <string name="sleep_timer_stopped_title">Uyku zamanlayıcısı durduruldu</string>
     <string name="sleep_timer_stopped_description">Otomatik duraklatma iptal edildi</string>
     <string name="player_more">Diğer</string>
+    <string name="player_experimental">Deneysel</string>
+    <string name="player_video_noise_reduction">Video parazit azaltma</string>
+    <string name="player_video_noise_reduction_description">İnce paraziti ve sıkıştırma izlerini GPU ile azaltır.</string>
+    <string name="player_video_noise_reduction_requires_android_13">Android 13 veya üzeri gerekir.</string>
     <string name="player_off">Kapalı</string>
     <string name="player_per_hour">/saat</string>
     <string name="player_quality">Kalite</string>

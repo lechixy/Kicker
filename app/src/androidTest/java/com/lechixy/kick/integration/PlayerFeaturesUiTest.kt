@@ -1,5 +1,8 @@
 package com.lechixy.kick.integration
 
+import android.graphics.Color as AndroidColor
+import android.graphics.Paint
+import android.os.Build
 import android.view.TextureView
 import android.view.View
 import com.lechixy.kick.data.account.remote.string
@@ -9,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.CompositionLocalProvider
@@ -22,11 +26,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.click
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -45,6 +51,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.Assert.*
+import org.junit.Assume.assumeTrue
 
 import com.lechixy.kick.KickNavScaffold
 import com.lechixy.kick.R
@@ -61,6 +68,7 @@ import com.lechixy.kick.components.detectRecordingTaps
 import com.lechixy.kick.components.channel.ExpandableProfilePhoto
 import com.lechixy.kick.components.channel.ChannelMediaTags
 import com.lechixy.kick.components.channel.ChannelMediaTitle
+import com.lechixy.kick.components.settings.SettingSwitch
 import com.lechixy.kick.data.channel.model.ChannelEvent
 import com.lechixy.kick.data.common.remote.ConnectionNotice
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
@@ -77,6 +85,72 @@ import kotlinx.coroutines.cancel
 class PlayerFeaturesUiTest {
     @get:Rule val compose = createComposeRule()
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
+
+    @Test fun experimentalBadgeWrapsBelowTheTitleWhenSpaceIsLimited() {
+        var width by mutableStateOf(400.dp)
+        val title = "Video noise reduction"
+        val badge = "Experimental"
+        compose.setContent {
+            MaterialTheme {
+                SettingSwitch(title, false, {}, Modifier.width(width), badge = badge)
+            }
+        }
+        val titleNode = compose.onNodeWithText(title, useUnmergedTree = true)
+        val badgeNode = compose.onNodeWithText(badge, useUnmergedTree = true)
+        val wideTitle = titleNode.fetchSemanticsNode().boundsInRoot
+        val wideBadge = badgeNode.fetchSemanticsNode().boundsInRoot
+        assertTrue(wideBadge.left > wideTitle.right)
+        assertEquals(wideTitle.center.y, wideBadge.center.y, 1f)
+
+        compose.runOnIdle { width = 220.dp }
+        val narrowTitle = titleNode.fetchSemanticsNode().boundsInRoot
+        val narrowBadge = badgeNode.fetchSemanticsNode().boundsInRoot
+        assertTrue(narrowBadge.top > narrowTitle.bottom)
+    }
+
+    @Test fun videoNoiseReductionSoftensFineNoiseAndPreservesStrongEdges() {
+        assumeTrue(Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+        var enabled by mutableStateOf(false)
+        var texture: TextureView? = null
+        compose.setContent {
+            Box(Modifier.size(160.dp).testTag("noise-reduction-video")) {
+                PlayerVideoSurface(null, false, Modifier.fillMaxSize(), reduceNoise = enabled) { texture = it }
+            }
+        }
+        compose.runOnIdle {
+            val video = checkNotNull(texture)
+            video.rootView.findViewById<View>(androidx.media3.ui.R.id.exo_shutter).visibility = View.INVISIBLE
+            val canvas = checkNotNull(video.lockCanvas())
+            try {
+                canvas.drawColor(AndroidColor.rgb(100, 100, 100))
+                val paint = Paint().apply { color = AndroidColor.rgb(240, 240, 240) }
+                val edge = (video.width / 4).toFloat()
+                canvas.drawRect(0f, 0f, edge + 1f, video.height.toFloat(), paint)
+                val x = (video.width / 2).toFloat()
+                val y = (video.height / 2).toFloat()
+                paint.color = AndroidColor.rgb(112, 112, 112)
+                canvas.drawRect(x, y, x + 1f, y + 1f, paint)
+            } finally {
+                video.unlockCanvasAndPost(canvas)
+            }
+        }
+        val video = compose.onNodeWithTag("noise-reduction-video")
+        fun sample(): Pair<Float, Float> {
+            val pixels = video.captureToImage().toPixelMap()
+            return pixels[pixels.width / 2, pixels.height / 2].red to
+                pixels[pixels.width / 4, pixels.height / 2].red
+        }
+
+        compose.waitUntil(5_000) { sample().second > 0.9f }
+        val (noiseBefore, edgeBefore) = sample()
+        assertEquals(112f / 255f, noiseBefore, 0.005f)
+        compose.runOnIdle { enabled = true }
+        compose.waitUntil(5_000) { sample().first < noiseBefore - 0.008f }
+        assertEquals(edgeBefore, sample().second, 0.005f)
+
+        compose.runOnIdle { enabled = false }
+        compose.waitUntil(5_000) { sample().first >= noiseBefore - 0.005f }
+    }
 
     @Test fun liveDurationSitsAboveProgressAndFullscreenViewerCountFollowsLiveBadge() {
         var fullscreen by mutableStateOf(false)

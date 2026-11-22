@@ -6,6 +6,9 @@ import com.lechixy.kick.data.account.repository.ChallengesRepository
 import com.lechixy.kick.data.account.repository.fetchAccountLevel
 import com.lechixy.kick.data.account.remote.accountDiagnostic
 import com.lechixy.kick.data.chat.model.*
+import com.lechixy.kick.data.chat.remote.maintainCentrifugoToken
+import com.lechixy.kick.data.chat.remote.realtimeConnectionToken
+import com.lechixy.kick.data.chat.remote.realtimeSubscriptionToken
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.SendChannel
@@ -122,7 +125,8 @@ class AccountNotificationsRepository internal constructor(
             .filter { it.provider == "centrifugo" }
             .firstNotNullOfOrNull { it.credentials?.url?.takeIf(String::isNotBlank) }
             ?: "wss://realtime.us-east-1.platform.kick.com/connection/websocket"
-        val connectionToken = requestToken("connection", buildJsonObject { put("client_id", userId.toString()) })
+        val clientId = userId.toString()
+        val connectionToken = auth.realtimeConnectionToken(clientId)
         val opened = CompletableDeferred<Unit>()
         val done = CompletableDeferred<Unit>()
         val lastActivity = AtomicLong(elapsedRealtime())
@@ -173,41 +177,74 @@ class AccountNotificationsRepository internal constructor(
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { done.complete(Unit) }
         })
 
-        suspend fun command(expected: String, encode: (Int) -> String): Boolean {
+        suspend fun command(expected: String, encode: (Int) -> String): JsonObject? {
             val id = nextCommandId.getAndIncrement()
             val reply = CompletableDeferred<JsonObject>()
             replies[id] = reply
             try {
-                if (!socket.send(encode(id))) return false
+                if (!socket.send(encode(id))) return null
                 val result = withTimeoutOrNull(10_000) { reply.await() }
-                if (result?.get(expected) is JsonObject) return true
+                val payload = result?.get(expected) as? JsonObject
+                if (payload != null && result?.get("error") == null) return payload
                 val code = ((result?.get("error") as? JsonObject)?.get("code") as? JsonPrimitive)?.intOrNull
                 accountDiagnostic(TAG, "Feed $expected failed: protocol code $code")
-                return false
+                return null
             } finally {
                 replies.remove(id)
             }
         }
 
         val subscriptions = launch {
-            val connected = withTimeoutOrNull(10_000) { opened.await() } != null && command("connect") { id ->
-                json.encodeToString(CentrifugoConnectFrame(ConnectPayload(connectionToken), id))
-            }
-            if (!connected) {
+            if (withTimeoutOrNull(10_000) { opened.await() } == null) {
                 done.complete(Unit)
                 return@launch
+            }
+            val connected = command("connect") { id ->
+                json.encodeToString(CentrifugoConnectFrame(ConnectPayload(connectionToken), id))
+            }
+            if (connected == null) {
+                done.complete(Unit)
+                return@launch
+            }
+            launch {
+                val kept = maintainCentrifugoToken(connected) {
+                    val refreshed = try {
+                        auth.realtimeConnectionToken(clientId)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        return@maintainCentrifugoToken null
+                    }
+                    command("refresh") { id ->
+                        json.encodeToString(CentrifugoRefreshFrame(ConnectionRefreshPayload(refreshed), id))
+                    }
+                }
+                if (!kept) done.complete(Unit)
             }
             for (channel in listOf("private-userfeed.$userId", "private-$userId")) launch {
                 var backoff = 1_000L
                 while (isActive) {
                     try {
-                        val token = requestToken("channel", buildJsonObject { put("channel", channel) })
+                        val token = auth.realtimeSubscriptionToken(channel)
                         val subscribed = command("subscribe") { id ->
                             json.encodeToString(CentrifugoSubscribeFrame(SubscribePayload(channel, token = token), id))
                         }
-                        if (subscribed) {
+                        if (subscribed != null) {
                             val feed = if (channel.startsWith("private-userfeed.")) "live" else "drops"
                             accountDiagnostic(TAG, "Subscribed to $feed feed")
+                            val kept = maintainCentrifugoToken(subscribed) {
+                                val refreshed = try {
+                                    auth.realtimeSubscriptionToken(channel)
+                                } catch (cancelled: CancellationException) {
+                                    throw cancelled
+                                } catch (_: Exception) {
+                                    return@maintainCentrifugoToken null
+                                }
+                                command("sub_refresh") { id ->
+                                    json.encodeToString(CentrifugoSubscriptionRefresh(SubscriptionRefreshPayload(channel, refreshed), id))
+                                }
+                            }
+                            if (!kept) done.complete(Unit)
                             break
                         }
                     } catch (cancelled: CancellationException) {
@@ -232,12 +269,6 @@ class AccountNotificationsRepository internal constructor(
             watchdog.cancel()
             socket.cancel()
         }
-    }
-
-    private suspend fun requestToken(route: String, body: JsonObject): String {
-        val response = auth.request("$REALTIME_URL/auth/$route", "POST", body)
-        return json.decodeFromJsonElement<RealtimeAuthResponse>(response).data?.token
-            ?.takeIf { it.isNotBlank() } ?: error("Missing realtime $route token")
     }
 
     private companion object {

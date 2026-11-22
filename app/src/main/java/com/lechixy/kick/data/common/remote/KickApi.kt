@@ -17,6 +17,9 @@ import com.lechixy.kick.data.channel.model.ChannelVideo
 import com.lechixy.kick.data.channel.model.ClipDetailResponse
 import com.lechixy.kick.data.channel.model.ClipResponse
 import com.lechixy.kick.data.channel.model.EventsBrowseResponse
+import com.lechixy.kick.data.channel.model.KicksLeaderboardData
+import com.lechixy.kick.data.channel.model.LeaderboardResponse
+import com.lechixy.kick.data.channel.model.SubscriptionLeaderboardData
 import com.lechixy.kick.data.channel.model.EventClipsResponse
 import com.lechixy.kick.data.channel.model.EventStreamsResponse
 import com.lechixy.kick.data.channel.model.VideoDetailResponse
@@ -34,6 +37,12 @@ import com.lechixy.kick.data.player.model.PlaybackRequest
 import com.lechixy.kick.data.player.model.PlaybackResponse
 
 interface KickApi {
+    @GET("https://web.kick.com/api/v1/channels/{channelId}/subscriptions/leaderboard")
+    suspend fun getSubscriptionLeaderboard(@Path("channelId") channelId: Long): LeaderboardResponse<SubscriptionLeaderboardData>
+
+    @GET("https://web.kick.com/api/v1/kicks/{channelId}/leaderboard")
+    suspend fun getKicksLeaderboard(@Path("channelId") channelId: Long): LeaderboardResponse<KicksLeaderboardData>
+
     @GET("api/v1/events/browse")
     suspend fun browseEvents(
         @Query("collection") collection: String? = null,

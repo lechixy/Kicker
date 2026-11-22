@@ -2,6 +2,7 @@ package com.lechixy.kick.components.channel.chat
 
 import android.content.Context
 import android.icu.text.ListFormatter
+import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,9 +20,18 @@ import com.lechixy.kick.data.channel.model.KickGoalDto
 import com.lechixy.kick.util.FormatUtils
 import androidx.compose.ui.graphics.Color
 import com.lechixy.kick.R
+import com.lechixy.kick.data.chat.model.ChatCelebration
 import com.lechixy.kick.data.chat.model.GiftedSubscriptionsEvent
 import java.text.NumberFormat
 import java.util.Locale
+
+@DrawableRes
+internal fun subscriptionCelebrationIcon(celebration: ChatCelebration?): Int {
+    val type = celebration?.type.orEmpty()
+    val isAnniversary = type.contains("anniversary", ignoreCase = true) ||
+        (type.isBlank() && (celebration?.totalMonths ?: 0) > 0)
+    return if (isAnniversary) R.drawable.hotel_class_24dp_e3e3e3_fill1_wght400_grad0_opsz24 else R.drawable.kick_star
+}
 
 private val eventArgument = Regex("%(?:(\\d+)[$]s|%)")
 

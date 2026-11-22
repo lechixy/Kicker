@@ -7,7 +7,7 @@
     <string name="notification_level_up_title">Level %1$d reached!</string>
     <string name="notification_level_up_description">You leveled up on Kick.</string>
     <string name="notification_reward_description">You reached %1$d minutes of watch time, tap to view your challenges</string>
-    <string name="notification_live_title">%1$s just went live</string>
+    <string name="notification_live_title">%1$s just went live!</string>
     <string name="notification_live_description">Tap to join the stream</string>
     <string name="notification_dismiss">Dismiss notification</string>
     <string name="release_whats_new">What’s new</string>

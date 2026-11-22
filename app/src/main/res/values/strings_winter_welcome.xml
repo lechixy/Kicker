@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="badge_developer_favorite">Developer’s (%1$s) fav 💖</string>
+    <string name="winter_welcome_title">It’s winter time!</string>
+    <string name="winter_welcome_text">Winter mode is on for this special time of year. Let it snow to celebrate.</string>
+    <string name="winter_offseason_title">Winter mode is off</string>
+    <string name="winter_offseason_text">Winter mode turned off automatically for the season. You can still enjoy one last flurry.</string>
+    <string name="winter_turn_off">Turn off</string>
+    <string name="winter_celebrate">Let it snow</string>
+    <string name="developer_winter_preview">Preview winter mode dialog</string>
+    <string name="developer_winter_in_season">Winter season</string>
+    <string name="developer_winter_off_season">Outside winter</string>
+</resources>

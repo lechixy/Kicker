@@ -1,11 +1,13 @@
 package com.lechixy.kick
 
 import android.app.PictureInPictureUiState
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -75,6 +77,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -112,6 +116,7 @@ import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 import com.lechixy.kick.data.settings.repository.LocalBlurEffectsEnabled
 import com.lechixy.kick.data.settings.repository.SettingsRepository
+import com.lechixy.kick.data.settings.repository.WinterWelcome
 import com.lechixy.kick.screens.search.SearchScreen
 import com.lechixy.kick.screens.channel.ChannelScreen
 import com.lechixy.kick.screens.channel.ChannelViewModel
@@ -128,11 +133,20 @@ import com.lechixy.kick.screens.you.YouHost
 import com.lechixy.kick.screens.you.YouPage
 import com.lechixy.kick.service.RecordingDownloadService
 import com.lechixy.kick.theme.KickTheme
+import com.lechixy.kick.util.KickLink
+import com.lechixy.kick.util.incomingKickLink
+import com.lechixy.kick.util.kickLinkDestination
+import com.lechixy.kick.util.openBrowserTab
+import com.lechixy.kick.util.webLink
+import com.lechixy.kick.data.player.model.RecordedPlayback
+import com.lechixy.kick.screens.channel.ChannelTab
+import okhttp3.HttpUrl
 import com.lechixy.kick.theme.Theme
 import com.lechixy.kick.util.LanguageUtils.getCurrentAppLanguage
 import com.lechixy.kick.util.findActivity
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -146,10 +160,23 @@ class MainActivity : ComponentActivity() {
     internal var enteringPip by mutableStateOf(false)
         private set
     internal var openDownloadsRequested by mutableStateOf(false)
+    internal var pendingKickLink by mutableStateOf<String?>(null)
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         if (intent.action == RecordingDownloadService.ACTION_OPEN_DOWNLOADS) openDownloadsRequested = true
+        receiveKickLink(intent)
+    }
+
+    private fun receiveKickLink(intent: Intent) {
+        if (intent.action == Intent.ACTION_VIEW) {
+            pendingKickLink = intent.dataString?.let(::incomingKickLink)?.toString()
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString("pending_kick_link", pendingKickLink)
+        super.onSaveInstanceState(outState)
     }
 
     @RequiresApi(Build.VERSION_CODES.S)
@@ -201,6 +228,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
+        if (savedInstanceState == null) receiveKickLink(intent)
+        else pendingKickLink = savedInstanceState.getString("pending_kick_link")
         if (savedInstanceState == null && intent.action == RecordingDownloadService.ACTION_OPEN_DOWNLOADS) {
             openDownloadsRequested = true
         }
@@ -361,7 +390,36 @@ fun KickApp(restorePending: Boolean = false) {
     val isInPipMode = pipActive || enteringPip
     val winterSnow by settingsRepository.get(SettingsKeys.WINTER_SNOW)
         .collectAsStateWithLifecycle(SettingsKeys.WINTER_SNOW.defaultValue)
-    val showSnow = winterSnow && !isInPipMode && playerHost.mode != PlayerMode.Fullscreen && activeClipId == null
+    var winterWelcome by rememberSaveable { mutableStateOf<WinterWelcome?>(null) }
+    var winterPreview by rememberSaveable { mutableStateOf<WinterWelcome?>(null) }
+    var snowCelebrating by remember { mutableStateOf(false) }
+    val winterScope = rememberCoroutineScope()
+    val canShowWinterWelcome = !isInPipMode && !restorePending && !challengesOpen &&
+        releaseDialogs.isEmpty() && activeClipId == null
+    val visibleWinterWelcome = (winterPreview ?: winterWelcome).takeIf { canShowWinterWelcome }
+    val showSnow = !isInPipMode &&
+        (snowCelebrating || (winterSnow && playerHost.mode != PlayerMode.Fullscreen && activeClipId == null))
+    val previewWinterWelcome: (Boolean) -> Unit = { seasonal ->
+        winterPreview = if (seasonal) WinterWelcome.Seasonal else WinterWelcome.OffSeason
+    }
+    LaunchedEffect(settingsRepository, lifecycleOwner, canShowWinterWelcome) {
+        if (!canShowWinterWelcome) return@LaunchedEffect
+        lifecycleOwner.lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.RESUMED) {
+            settingsRepository.get(SettingsKeys.WINTER_SNOW).collect {
+                try {
+                    settingsRepository.prepareWinterWelcome(java.time.LocalDate.now())?.let { winterWelcome = it }
+                } catch (_: java.io.IOException) {
+                    // Retry on the next foreground entry if preferences are temporarily unavailable.
+                }
+            }
+        }
+    }
+    LaunchedEffect(snowCelebrating) {
+        if (snowCelebrating) {
+            delay(com.lechixy.kick.components.SNOW_FLURRY_DURATION_MS.toLong())
+            snowCelebrating = false
+        }
+    }
     val snowFollowsScroll by settingsRepository.get(SettingsKeys.WINTER_SNOW_SCROLL)
         .collectAsStateWithLifecycle(SettingsKeys.WINTER_SNOW_SCROLL.defaultValue)
     val snowScrollOffset = remember { mutableDoubleStateOf(0.0) }
@@ -411,6 +469,83 @@ fun KickApp(restorePending: Boolean = false) {
         if (playerHost.isChannelVisible) playerHost.minimize()
         navController.navigate("events/${android.net.Uri.encode(slug)}") { launchSingleTop = true }
     }
+    var linkedChannelTab by remember { mutableStateOf<Pair<String, ChannelTab>?>(null) }
+    val openCategory: (String) -> Unit = { slug ->
+        if (playerHost.isChannelVisible) playerHost.minimize()
+        if (slug.isBlank()) {
+            navController.navigate("browse") { launchSingleTop = true }
+        } else if (navController.currentBackStackEntry?.arguments?.getString("slug") != slug ||
+            navController.currentDestination?.route != "category/{slug}"
+        ) {
+            navController.navigate("category/${android.net.Uri.encode(slug)}")
+        }
+    }
+    val openWebLink: (HttpUrl) -> Unit = { url ->
+        when (val destination = kickLinkDestination(url)) {
+            is KickLink.Clip -> openClip(destination.id)
+            is KickLink.Channel -> {
+                activeClipId = null
+                val tab = destination.tab
+                channelEntry.open(destination.slug, null, watchLive = tab == null || tab == ChannelTab.CHAT) {
+                    if (tab != null) {
+                        playerHost.consumeAutoFullscreen(enterFullscreen = false)
+                        if (playerHost.isTheaterMode) playerHost.toggleTheaterMode()
+                        if (tab == ChannelTab.CHAT) playerHost.updateChatVisibility(true)
+                    }
+                    linkedChannelTab = tab?.let { destination.slug to it }
+                }
+            }
+            is KickLink.Recording -> {
+                activeClipId = null
+                openRecording(
+                    destination.slug,
+                    RecordedPlayback(
+                        id = destination.id,
+                        title = "",
+                        durationMs = 0,
+                        videoUuid = destination.id,
+                        channelSlug = destination.slug,
+                    ),
+                    null,
+                )
+            }
+            is KickLink.Category -> {
+                activeClipId = null
+                openCategory(destination.slug)
+            }
+            is KickLink.Screen -> {
+                activeClipId = null
+                if (playerHost.isChannelVisible) playerHost.minimize()
+                navController.navigate(destination.route) { launchSingleTop = true }
+            }
+            null -> try {
+                context.openBrowserTab(url)
+            } catch (_: ActivityNotFoundException) {
+                Toast.makeText(context, R.string.web_link_open_failed, Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+    val openLatestWebLink by rememberUpdatedState(openWebLink)
+    val platformUriHandler = LocalUriHandler.current
+    val appUriHandler = remember(platformUriHandler) {
+        object : UriHandler {
+            override fun openUri(uri: String) {
+                val web = webLink(uri)
+                if (web != null) openLatestWebLink(web)
+                else if (!uri.startsWith("https:", true) && !uri.startsWith("http:", true)) {
+                    platformUriHandler.openUri(uri)
+                }
+            }
+        }
+    }
+    val pendingLink = pipActivity?.pendingKickLink
+    val canOpenLink = currentRoute != null && !isInPipMode && !restorePending
+    LaunchedEffect(pendingLink, canOpenLink) {
+        if (pendingLink != null && canOpenLink) {
+            pipActivity.pendingKickLink = null
+            incomingKickLink(pendingLink)?.let(openLatestWebLink)
+        }
+    }
     val navType =
         NavigationSuiteScaffoldDefaults.calculateFromAdaptiveInfo(currentWindowAdaptiveInfoV2())
     val useBottomBar = navType.toString().contains("NavigationBar", ignoreCase = true)
@@ -436,6 +571,7 @@ fun KickApp(restorePending: Boolean = false) {
         contentColor = MaterialTheme.colorScheme.onBackground
     ) {
         CompositionLocalProvider(
+            LocalUriHandler provides appUriHandler,
             com.lechixy.kick.components.channel.chat.LocalOpenChatClip provides openClip,
             com.lechixy.kick.components.account.LocalOpenChallenges provides {
                 challengesOpen = true
@@ -451,16 +587,8 @@ fun KickApp(restorePending: Boolean = false) {
                         }"
                     ) { launchSingleTop = true }
                 },
-                category = { slug ->
-                    if (playerHost.isChannelVisible) playerHost.minimize()
-                    if (slug.isBlank()) {
-                        navController.navigate("browse") { launchSingleTop = true }
-                    } else if (navController.currentBackStackEntry?.arguments?.getString("slug") != slug ||
-                        navController.currentDestination?.route != "category/{slug}"
-                    ) {
-                        navController.navigate("category/${android.net.Uri.encode(slug)}")
-                    }
-                }, channel = { openChannel(it, null) },
+                category = openCategory,
+                channel = { openChannel(it, null) },
                 recording = openRecording,
                 event = openEvent,
             )
@@ -517,6 +645,7 @@ fun KickApp(restorePending: Boolean = false) {
                                         onTriggerLive = { playerHost.triggerLiveAnnouncement(System.nanoTime()) },
                                         canTriggerLive = playerHost.channel?.livestream != null &&
                                             playerHost.recording == null && playerHost.mode != PlayerMode.Hidden,
+                                        onPreviewWinter = previewWinterWelcome,
                                     )
                                 }
                             }
@@ -722,6 +851,8 @@ fun KickApp(restorePending: Boolean = false) {
                                                 viewModel = activeChannelVm,
                                                 onChannelLoaded = { playerHost.onChannelLoaded(slug, it) },
                                                 onBackClick = playerHost::minimize,
+                                                linkedTab = linkedChannelTab?.takeIf { it.first.equals(slug, ignoreCase = true) }?.second,
+                                                onLinkedTabOpened = { linkedChannelTab = null },
                                             )
                                         }
                                     }
@@ -731,19 +862,21 @@ fun KickApp(restorePending: Boolean = false) {
 
                     }
                 }
-                if (winterSnow) {
+                if (winterSnow || snowCelebrating) {
                     com.lechixy.kick.components.WinterSnowfall(
                         visible = showSnow,
                         playerBounds = { snowPlayerBounds },
                         scrollOffset = { snowScrollOffset.doubleValue },
                         modifier = Modifier.matchParentSize(),
+                        celebrating = snowCelebrating,
+                        ambient = winterSnow && playerHost.mode != PlayerMode.Fullscreen && activeClipId == null,
                     )
                 }
                 if (!isInPipMode) {
                     channelEntry.Confirmation()
                     com.lechixy.kick.components.InAppNotificationHost(
                         modifier = Modifier.align(Alignment.TopCenter),
-                        enabled = !restorePending && !challengesOpen && releaseDialogs.isEmpty(),
+                        enabled = !restorePending && !challengesOpen && releaseDialogs.isEmpty() && visibleWinterWelcome == null,
                         onActivate = { notification ->
                             when (notification.kind) {
                                 com.lechixy.kick.data.notifications.NotificationKind.WatchTimeGoal -> challengesOpen =
@@ -769,6 +902,22 @@ fun KickApp(restorePending: Boolean = false) {
                             releaseViewModel::dismiss
                         )
                     }
+                    visibleWinterWelcome?.let { welcome ->
+                        val preview = winterPreview != null
+                        val dismiss = { if (preview) winterPreview = null else winterWelcome = null }
+                        com.lechixy.kick.components.WinterWelcomeDialog(
+                            welcome = welcome,
+                            onDismiss = dismiss,
+                            onTurnOff = {
+                                if (!preview) winterScope.launch { settingsRepository.set(SettingsKeys.WINTER_SNOW, false) }
+                                dismiss()
+                            },
+                            onCelebrate = {
+                                snowCelebrating = true
+                                dismiss()
+                            },
+                        )
+                    }
                 }
                 if (!isInPipMode) com.lechixy.kick.components.NetworkInfoBar(
                     Modifier.align(
@@ -778,7 +927,8 @@ fun KickApp(restorePending: Boolean = false) {
                 com.lechixy.kick.screens.settings.DeveloperToolsOverlay(
                     isInPipMode = isInPipMode,
                     onTriggerLive = { playerHost.triggerLiveAnnouncement(System.nanoTime()) },
-                    canTriggerLive = playerHost.channel?.livestream != null && playerHost.recording == null && playerHost.mode != PlayerMode.Hidden
+                    canTriggerLive = playerHost.channel?.livestream != null && playerHost.recording == null && playerHost.mode != PlayerMode.Hidden,
+                    onPreviewWinter = previewWinterWelcome,
                 )
                 if (!isInPipMode) activeClipId?.let { id ->
                     key(id) {

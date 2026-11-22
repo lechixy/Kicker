@@ -17,6 +17,15 @@ data class CentrifugoConnectFrame(
 )
 
 @Serializable
+internal data class CentrifugoRefreshFrame(
+    val refresh: ConnectionRefreshPayload,
+    val id: Int,
+)
+
+@Serializable
+internal data class ConnectionRefreshPayload(val token: String)
+
+@Serializable
 data class SubscribePayload(
     val channel: String,
     val flag: Int = 1,
@@ -28,6 +37,15 @@ data class CentrifugoSubscribeFrame(
     val subscribe: SubscribePayload,
     val id: Int
 )
+
+@Serializable
+internal data class CentrifugoSubscriptionRefresh(
+    @SerialName("sub_refresh") val subscription: SubscriptionRefreshPayload,
+    val id: Int,
+)
+
+@Serializable
+internal data class SubscriptionRefreshPayload(val channel: String, val token: String)
 
 @Serializable
 data class CentrifugoPushFrame(

@@ -4,8 +4,10 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.lechixy.kick.R
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -20,6 +22,8 @@ import com.lechixy.kick.data.channel.model.ChannelClip
 import com.lechixy.kick.data.channel.model.ChannelDetail
 import com.lechixy.kick.data.channel.model.ChannelEvent
 import com.lechixy.kick.data.channel.model.ChannelLivestream
+import com.lechixy.kick.data.channel.model.ChannelLeaderboardUiState
+import com.lechixy.kick.data.channel.model.channelLeaderboardBoards
 import com.lechixy.kick.data.channel.model.ChannelSectionState
 import com.lechixy.kick.data.channel.model.ChannelVideo
 import com.lechixy.kick.data.channel.model.KickChannelLinkDto
@@ -72,6 +76,43 @@ class ChannelViewModel(
 
     private val _uiState = MutableStateFlow(ChannelUiState())
     val uiState: StateFlow<ChannelUiState> = _uiState.asStateFlow()
+
+    private val _channelLeaderboard = MutableStateFlow(ChannelLeaderboardUiState())
+    internal val channelLeaderboard = _channelLeaderboard.asStateFlow()
+    private var channelLeaderboardJob: Job? = null
+
+    internal fun loadChannelLeaderboard(channelId: Long, refresh: Boolean = false) {
+        val previous = _channelLeaderboard.value
+        if (previous.channelId == channelId && (!refresh || channelLeaderboardJob?.isActive == true)) return
+        channelLeaderboardJob?.cancel()
+        _channelLeaderboard.value = ChannelLeaderboardUiState(
+            channelId = channelId,
+            boards = previous.boards.takeIf { previous.channelId == channelId }.orEmpty(),
+        )
+        channelLeaderboardJob = viewModelScope.launch {
+            coroutineScope {
+                val subscriptions = async { leaderboardResult { repository.getSubscriptionLeaderboard(channelId) } }
+                val kicks = async { leaderboardResult { repository.getKicksLeaderboard(channelId) } }
+                val subsData = subscriptions.await()
+                val kicksData = kicks.await()
+                val boards = channelLeaderboardBoards(subsData, kicksData)
+                _channelLeaderboard.value = ChannelLeaderboardUiState(
+                    channelId = channelId,
+                    isLoading = false,
+                    hasError = boards.isEmpty() && (subsData == null || kicksData == null),
+                    boards = boards,
+                )
+            }
+        }
+    }
+
+    private suspend fun <T> leaderboardResult(fetch: suspend () -> T): T? = try {
+        fetch()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (_: Exception) {
+        null
+    }
 
     val highTraffic = repository.chatWebSocketClient.highTraffic
     val chatMessages: StateFlow<List<ChatMessage>> = repository.chatWebSocketClient.messages

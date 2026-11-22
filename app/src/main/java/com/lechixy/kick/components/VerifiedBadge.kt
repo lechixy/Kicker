@@ -1,21 +1,32 @@
 package com.lechixy.kick.components
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.vector.PathParser
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.lechixy.kick.R
+import com.lechixy.kick.components.channel.chat.ChatTooltip
 
 private const val BADGE_PATH =
     "M9.15 1.43c.48-.57 1.18-.57 1.64 0l1.26 1.58c.1.1.18.14.33.1q.97-.29 1.96-.54c.7-.18 1.27.23 1.3.95q.09 1 .11 2.03 0 .22.19.27l1.86.7c.74.27.97.91.54 1.58l-1.1 1.67c-.08.13-.08.2 0 .33l1.12 1.72c.4.6.18 1.26-.48 1.6q-.94.38-1.88.72c-.12.04-.2.1-.2.27l-.11 2.07c-.02.7-.6 1.11-1.28.93l-1.99-.54c-.14-.04-.2 0-.29.1l-1.28 1.6c-.46.57-1.14.57-1.62 0l-1.28-1.6q-.1-.17-.29-.1c-.64.18-1.28.33-1.92.54-.8.25-1.39-.35-1.39-1.02 0-.66-.08-1.3-.1-1.96q.02-.22-.19-.27l-1.94-.75a.98.98 0 0 1-.5-1.47q.55-.89 1.14-1.75c.08-.15.08-.23 0-.36L1.64 8.12c-.4-.6-.18-1.24.48-1.51l1.92-.75c.13-.06.19-.12.19-.27q.03-1.04.1-2.07c.04-.74.58-1.1 1.47-.89l1.74.48q.23.08.37-.12zm5.36 5a1.4 1.4 0 0 0-1.98.09l-4.17 4.54-1.3-1.3a1.4 1.4 0 0 0-2.09 1.88l.1.1L7.4 14.1a1.4 1.4 0 0 0 2.03-.05l5.16-5.62a1.4 1.4 0 0 0-.09-1.99"
@@ -56,18 +67,38 @@ fun VerifiedBadge(
         }
     }
 
-    Canvas(
-        modifier = modifier
-            .size(size)
-            .then(
-                if (contentDescription != null)
-                    Modifier.semantics { this.contentDescription = contentDescription }
-                else Modifier
+    val label = contentDescription ?: stringResource(R.string.badge_verified)
+    Box(modifier.size(size)) {
+        ChatTooltip(label) {
+            Canvas(Modifier.fillMaxSize().semantics { this.contentDescription = label }) {
+                val s = this.size.width / 20f
+                scale(scaleX = s, scaleY = s, pivot = Offset.Zero) {
+                    drawPath(path = path, brush = brush)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+internal fun DeveloperFavoriteBadge(colors: List<Color>, modifier: Modifier = Modifier) {
+    val label = stringResource(R.string.badge_developer_favorite, "@lechixy")
+    Box(modifier.size(20.dp)) {
+        ChatTooltip(label) {
+            Image(
+                painterResource(R.drawable.person_heart_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
+                contentDescription = label,
+                modifier = Modifier.fillMaxSize().graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                    .drawWithCache {
+                        val gradient = Brush.linearGradient(colors,
+                            start = GRADIENT_START * (size.width / 20f),
+                            end = GRADIENT_END * (size.width / 20f))
+                        onDrawWithContent {
+                            drawContent()
+                            drawRect(gradient, blendMode = BlendMode.SrcIn)
+                        }
+                    },
             )
-    ) {
-        val s = this.size.width / 20f
-        scale(scaleX = s, scaleY = s, pivot = Offset.Zero) {
-            drawPath(path = path, brush = brush)
         }
     }
 }

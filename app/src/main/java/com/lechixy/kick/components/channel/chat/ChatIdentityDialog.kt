@@ -21,6 +21,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import coil3.compose.AsyncImage
 import com.lechixy.kick.R
+import com.lechixy.kick.components.LocalContentNavigation
 import com.lechixy.kick.components.channel.ExpandableProfilePhoto
 import com.lechixy.kick.components.dialogEntrance
 import com.lechixy.kick.data.channel.model.SubscriberBadge
@@ -57,6 +59,7 @@ internal fun ChatIdentityDialog(
     isLoading: Boolean = false,
     loadFailed: Boolean = false,
     onRetry: () -> Unit = {},
+    onManageSilencedUsers: (() -> Unit)? = null,
     onDismiss: (ChatIdentity?) -> Unit
 ) {
     var draft by remember(initialIdentity) { mutableStateOf(initialIdentity ?: ChatIdentity()) }
@@ -108,6 +111,9 @@ internal fun ChatIdentityDialog(
                         preview.forEach { IdentityBadgeImage(it) }
                         Text(username, color = ChatTextParser.parseHexColor(pending.color, MaterialTheme.colorScheme.primary))
                     }
+                }
+                if (onManageSilencedUsers != null) {
+                    TextButton(onClick = onManageSilencedUsers) { Text(stringResource(R.string.chat_silenced_users)) }
                 }
                 Text(stringResource(R.string.identity_badges), style = MaterialTheme.typography.titleMedium)
                 Text(stringResource(R.string.identity_badges_limit), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -190,6 +196,7 @@ private fun IdentityBadgeImage(badge: ResolvedChatBadge) {
 @Composable
 internal fun LoadingChatIdentityDialog(
     channelId: Long,
+    channelSlug: String,
     username: String,
     subscriberBadges: List<SubscriberBadge>,
     avatarUrl: String? = null,
@@ -199,6 +206,7 @@ internal fun LoadingChatIdentityDialog(
     var identity by remember(channelId) { mutableStateOf<ChatIdentity?>(null) }
     var failed by remember { mutableStateOf(false) }
     var retry by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var showSilencedUsers by remember { mutableStateOf(false) }
     androidx.compose.runtime.LaunchedEffect(channelId, retry) {
         failed = false
         try { identity = com.lechixy.kick.data.account.AccountGraph.chat.identity(channelId) }
@@ -206,7 +214,11 @@ internal fun LoadingChatIdentityDialog(
         catch (_: Exception) { failed = true }
     }
     ChatIdentityDialog(identity, username, subscriberBadges, avatarUrl, onPreviewClick,
-        isLoading = identity == null && !failed, loadFailed = failed, onRetry = { retry++ }) {
+        isLoading = identity == null && !failed, loadFailed = failed, onRetry = { retry++ },
+        onManageSilencedUsers = { showSilencedUsers = true }) {
         onDismiss(identity, it)
+    }
+    if (showSilencedUsers) SilencedUsersDialog(channelSlug, subscriberBadges, LocalContentNavigation.current.channel) {
+        showSilencedUsers = false
     }
 }

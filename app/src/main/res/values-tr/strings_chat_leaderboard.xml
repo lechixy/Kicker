@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_silenced_users">Sessize alınan kullanıcılar</string>
+    <string name="chat_silenced_empty">Sessize alınan kullanıcı yok</string>
+    <string name="chat_silenced_load_error">Sessize alınan kullanıcılar Kick’ten yüklenemedi.</string>
+    <string name="chat_silenced_update_error">Sessize alınan kullanıcılar güncellenemedi.</string>
+    <string name="chat_silenced_unmute">%1$s adlı kullanıcının sesini aç</string>
+    <string name="chat_silenced_unmute_action">Sesini aç</string>
+    <plurals name="chat_silenced_total">
+        <item quantity="one">%1$d sessize alınan kullanıcı</item>
+        <item quantity="other">%1$d sessize alınan kullanıcı</item>
+    </plurals>
+    <string name="leaderboard_title">Liderlik tabloları</string>
+    <string name="leaderboard_open">Liderlik tablolarını aç</string>
+    <string name="leaderboard_monthly_gifters">Ayın abonelik liderleri</string>
+    <string name="leaderboard_lifetime_gifters">Tüm zamanların abonelik liderleri</string>
+    <string name="leaderboard_weekly_gifters">Haftanın abonelik liderleri</string>
+    <string name="leaderboard_monthly_kickers">Ayın KICK liderleri</string>
+    <string name="leaderboard_lifetime_kickers">Tüm zamanların KICK liderleri</string>
+    <string name="leaderboard_weekly_kickers">Haftanın KICK liderleri</string>
+    <string name="leaderboard_previous">Önceki liderlik tablosu</string>
+    <string name="leaderboard_next">Sonraki liderlik tablosu</string>
+    <string name="leaderboard_empty">Henüz hediye yok</string>
+    <string name="leaderboard_load_error">Liderlik tabloları yüklenemedi.</string>
+    <string name="leaderboard_unavailable">Kullanılabilir liderlik tablosu yok</string>
+    <string name="leaderboard_rank">%1$d. sıra</string>
+    <string name="leaderboard_gift_target">%2$s sıraya yükselmek için %1$s hediye et</string>
+    <string name="leaderboard_kick_target">%2$s sıraya yükselmek için %1$s gönder</string>
+    <string name="leaderboard_ordinal">{0,number,integer}.</string>
+    <string name="leaderboard_kicks">%1$s KICK</string>
+    <plurals name="leaderboard_subs">
+        <item quantity="one">%1$s abonelik</item>
+        <item quantity="other">%1$s abonelik</item>
+    </plurals>
+    <plurals name="leaderboard_resets_days">
+        <item quantity="one">%1$d gün sonra sıfırlanır</item>
+        <item quantity="other">%1$d gün sonra sıfırlanır</item>
+    </plurals>
+    <plurals name="leaderboard_resets_hours">
+        <item quantity="one">%1$d saat sonra sıfırlanır</item>
+        <item quantity="other">%1$d saat sonra sıfırlanır</item>
+    </plurals>
+    <string name="leaderboard_resets_soon">Bir saatten kısa süre içinde sıfırlanır</string>
+</resources>

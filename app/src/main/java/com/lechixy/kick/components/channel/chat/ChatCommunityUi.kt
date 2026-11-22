@@ -253,7 +253,8 @@ fun KickUserProfileCard(
                     FilledTonalButton(onClick = onChannelClick, enabled = uiState.slug.isNotBlank(), modifier = Modifier.height(48.dp), shape = RoundedCornerShape(8.dp)) {
                         Text(stringResource(R.string.chatter_channel))
                     }
-                    FilledTonalButton(onMuteClick, modifier = Modifier.size(48.dp), contentPadding = PaddingValues(0.dp), shape = RoundedCornerShape(8.dp)) {
+                    FilledTonalButton(onMuteClick, modifier = Modifier.size(48.dp), enabled = uiState.muteEnabled && !uiState.actionLoading,
+                        contentPadding = PaddingValues(0.dp), shape = RoundedCornerShape(8.dp)) {
                         Icon(painterResource(if (uiState.isMuted) R.drawable.volume_off_24dp_e3e3e3_fill0_wght400_grad0_opsz24
                             else R.drawable.volume_up_24dp_e3e3e3_fill0_wght400_grad0_opsz24), stringResource(if (uiState.isMuted) R.string.chatter_unmute else R.string.chatter_mute))
                     }

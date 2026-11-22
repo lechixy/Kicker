@@ -98,6 +98,7 @@ import com.lechixy.kick.components.LocalPlayerAmbientState
 import com.lechixy.kick.components.ambientUiVisible
 import com.lechixy.kick.components.settings.SettingCard
 import com.lechixy.kick.components.settings.SettingSlider
+import com.lechixy.kick.components.settings.SettingAction
 import com.lechixy.kick.components.settings.SettingSwitch
 import com.lechixy.kick.data.channel.model.SubscriberBadge
 import com.lechixy.kick.data.chat.model.ChatCelebration
@@ -141,7 +142,8 @@ fun ChatView(
     highTraffic: Boolean = false,
     autoHideHeader: Boolean = false,
     playerControlsVisible: Boolean = false,
-    floatingComposer: Boolean = false
+    floatingComposer: Boolean = false,
+    belowHeader: @Composable () -> Unit = {},
 ) {
     val repository = LocalSettingsRepository.current
     val chatActive = LocalChatContentActive.current
@@ -173,6 +175,7 @@ fun ChatView(
     val timestampZone = java.time.ZoneId.systemDefault()
 
     var showOptions by remember { mutableStateOf(false) }
+    var showSilencedUsers by remember { mutableStateOf(false) }
     var headerVisible by remember(autoHideHeader) { mutableStateOf(true) }
     var chatInteraction by remember { mutableIntStateOf(0) }
     var touchingChat by remember { mutableStateOf(false) }
@@ -505,17 +508,20 @@ fun ChatView(
             enter = expandVertically() + fadeIn(),
             exit = shrinkVertically() + fadeOut()
         ) {
-            ChatHeader(
-                connectionState = connectionState,
-                showOptions = showOptions,
-                onToggleOptions = { showOptions = true },
-                onHideChat = onHideChat,
-                showChatters = showChatters,
-                chatterCount = activeChatters?.totalCount,
-                onToggleChatters = { showChatters = !showChatters },
-                chattersEnabled = channelId != null && !isReplay,
-                ambientVisible = chatOpacity < 1f,
-            )
+            Column {
+                ChatHeader(
+                    connectionState = connectionState,
+                    showOptions = showOptions,
+                    onToggleOptions = { showOptions = true },
+                    onHideChat = onHideChat,
+                    showChatters = showChatters,
+                    chatterCount = activeChatters?.totalCount,
+                    onToggleChatters = { showChatters = !showChatters },
+                    chattersEnabled = channelId != null && !isReplay,
+                    ambientVisible = chatOpacity < 1f,
+                )
+                belowHeader()
+            }
         }
 
         // Chat Options Modal BottomSheet
@@ -554,6 +560,14 @@ fun ChatView(
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
+                        SettingAction(
+                            title = stringResource(R.string.chat_silenced_users),
+                            icon = R.drawable.volume_off_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+                            onClick = {
+                                showOptions = false
+                                showSilencedUsers = true
+                            },
+                        )
                         if (!isReplay) {
                             SettingSwitch(
                                 key = SettingsKeys.AUTO_CONNECT_CHAT,
@@ -607,6 +621,10 @@ fun ChatView(
                     }
                 }
             }
+        }
+
+        if (showSilencedUsers) SilencedUsersDialog(streamerSlug, subscriberBadges, onOpenChannel) {
+            showSilencedUsers = false
         }
 
         if (showChatters) {
@@ -1037,7 +1055,7 @@ private fun tickerContent(
 
     fun celebration(event: ChatCelebration, sender: com.lechixy.kick.data.chat.model.ChatSender?): ChatTickerContent {
         val username = sender?.username?.takeIf { it.isNotBlank() } ?: event.username
-        return ChatTickerContent(R.drawable.celebration_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+        return ChatTickerContent(subscriptionCelebrationIcon(event),
             subscriptionEventSegments(context, username, event.totalMonths,
                 userColor = userColor(username, sender?.identity?.color), primaryColor = accent))
     }
@@ -1048,10 +1066,10 @@ private fun tickerContent(
             raidEventSegments(context, event.event.user.username, event.event.message.numberOfViewers,
                 userColor(event.event.user.username)))
         is ChatWebSocketEvent.GiftedSubscriptions -> ChatTickerContent(
-            R.drawable.featured_seasonal_and_gifts_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+            R.drawable.kick_star,
             giftedEventSegments(context, event.event, userColors, accent))
         is ChatWebSocketEvent.ChannelSubscribed -> ChatTickerContent(
-            R.drawable.star_shine_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+            R.drawable.kick_star,
             subscriptionEventSegments(context, event.event.username, event.event.totalMonths ?: event.event.months,
                 (event.event.userIds.size - 1).coerceAtLeast(0), userColor(event.event.username), accent))
         is ChatWebSocketEvent.Celebration -> celebration(event.event, event.event.sender)
@@ -1148,9 +1166,9 @@ private fun ChatEventTickerOverlay(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(start = 12.dp, end = 6.dp, top = 6.dp, bottom = 6.dp),
+                        .padding(start = 14.dp, end = 10.dp, top = 9.dp, bottom = 9.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     key(active.id) {
                         ContinuousTickerRow(

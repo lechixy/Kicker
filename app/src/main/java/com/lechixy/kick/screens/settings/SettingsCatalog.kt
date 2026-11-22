@@ -1,5 +1,10 @@
 package com.lechixy.kick.screens.settings
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -61,6 +66,27 @@ internal fun settingsCatalog(expandGroups: Boolean = false): List<SettingsEntry>
         SettingsEntry("welcome", R.string.welcome_settings_title, R.string.welcome_settings_summary,
             general, R.string.settings_group_interface) {
             WelcomeSetting()
+        },
+        SettingsEntry("supported-links", R.string.settings_supported_links, R.string.settings_supported_links_summary,
+            general, R.string.settings_group_interface) {
+            SettingCard(
+                title = stringResource(R.string.settings_supported_links),
+                description = stringResource(R.string.settings_supported_links_summary),
+                icon = R.drawable.public_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+                onClick = {
+                    val packageUri = Uri.fromParts("package", context.packageName, null)
+                    val appDetails = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, packageUri)
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                        try {
+                            context.startActivity(Intent(Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS, packageUri))
+                        } catch (_: ActivityNotFoundException) {
+                            context.startActivity(appDetails)
+                        }
+                    } else {
+                        context.startActivity(appDetails)
+                    }
+                },
+            )
         },
         SettingsEntry("developer-floating-menu", R.string.developer_floating_menu, null, SettingsDestinations.DEVELOPER, R.string.settings_group_interface) {
             SettingSwitch(SettingsKeys.DEVELOPER_FLOATING_MENU, stringResource(R.string.developer_floating_menu),

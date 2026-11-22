@@ -366,10 +366,11 @@ internal fun EventOrganiserLabel(
                     fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
                 if (organiser.channel?.verified == true) {
-                    Icon(
-                        painterResource(R.drawable.verified_badge), stringResource(R.string.events_verified_host),
-                        Modifier.size(13.dp), tint = MaterialTheme.colorScheme.primary
-                    )
+                    val label = stringResource(R.string.events_verified_host)
+                    com.lechixy.kick.components.channel.chat.ChatTooltip(label) {
+                        Icon(painterResource(R.drawable.verified_badge), label,
+                            Modifier.size(13.dp), tint = MaterialTheme.colorScheme.primary)
+                    }
                 }
             }
             if (showHostLabel) {

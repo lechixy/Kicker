@@ -5,6 +5,8 @@ import java.time.Instant
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -35,7 +37,9 @@ import kotlin.time.Duration.Companion.milliseconds
 
 import com.lechixy.kick.data.chat.model.CentrifugoConnectFrame
 import com.lechixy.kick.data.chat.model.CentrifugoPushFrame
+import com.lechixy.kick.data.chat.model.CentrifugoRefreshFrame
 import com.lechixy.kick.data.chat.model.CentrifugoSubscribeFrame
+import com.lechixy.kick.data.chat.model.CentrifugoSubscriptionRefresh
 import com.lechixy.kick.data.chat.model.ChannelSubscriptionEvent
 import com.lechixy.kick.data.chat.model.ChatCelebration
 import com.lechixy.kick.data.chat.model.ChatMessage
@@ -43,6 +47,7 @@ import com.lechixy.kick.data.chat.model.ChatMessageMetadata
 import com.lechixy.kick.data.chat.model.ChatMessageType
 import com.lechixy.kick.data.chat.model.ChatWebSocketEvent
 import com.lechixy.kick.data.chat.model.ConnectPayload
+import com.lechixy.kick.data.chat.model.ConnectionRefreshPayload
 import android.os.SystemClock
 import com.lechixy.kick.data.channel.model.KickGoalDto
 import com.lechixy.kick.data.chat.model.ChatPointsUpdate
@@ -60,8 +65,12 @@ import com.lechixy.kick.data.chat.model.RealtimeClientInfo
 import com.lechixy.kick.data.chat.model.RealtimeConnectionRequest
 import com.lechixy.kick.data.chat.model.RewardRedeemedEvent
 import com.lechixy.kick.data.chat.model.StopStreamBroadcastEvent
+import com.lechixy.kick.data.chat.model.StreamHostEvent
+import com.lechixy.kick.data.chat.model.StreamHostedEvent
 import com.lechixy.kick.data.chat.model.StreamerIsLiveEvent
 import com.lechixy.kick.data.chat.model.SubscribePayload
+import com.lechixy.kick.data.chat.model.SubscriptionRefreshPayload
+import com.lechixy.kick.data.chat.model.NewSubscriberUpdate
 import com.lechixy.kick.data.chat.model.UserBannedEvent
 import com.lechixy.kick.data.chat.model.mergeChatHistory
 import com.lechixy.kick.data.chat.model.splitCentrifugoFrames
@@ -108,6 +117,8 @@ class KickChatWebSocketClient(
     private var currentChatroomId: Long? = null
     private var reconnectJob: Job? = null
     private var heartbeatJob: Job? = null
+    private var connectionRefreshJob: Job? = null
+    private var privateSubscriptionJob: Job? = null
     private var connectionJob: Job? = null
     private var connectionGeneration = 0L
     private var retryDelayMs = 1_000L
@@ -137,6 +148,7 @@ class KickChatWebSocketClient(
     val subscriptionGoal = _subscriptionGoal.asStateFlow()
 
     private val presentationRevision = AtomicLong()
+    private val recentStreamHosts = RecentStreamHosts()
     private val _pointsUpdated = MutableStateFlow<ChatPointsUpdate?>(null)
     val pointsUpdated = _pointsUpdated.asStateFlow()
 
@@ -155,15 +167,13 @@ class KickChatWebSocketClient(
     }
 
     private fun publishEvent(event: ChatWebSocketEvent) {
+        val now = SystemClock.elapsedRealtime()
+        if (event is ChatWebSocketEvent.StreamHosted && !recentStreamHosts.accept(event.event, now)) return
         event.tickerDurationMillis()?.let { duration ->
-            val now = SystemClock.elapsedRealtime()
             val timed = TimedChatEvent(presentationRevision.incrementAndGet(), event, duration, now + duration)
             _tickerEvents.update { events ->
                 val active = events.filter { it.expiresAtMillis > now }
-                val duplicate = event is ChatWebSocketEvent.StreamHosted && active.any {
-                    it.event is ChatWebSocketEvent.StreamHosted && it.event.event.message.id == event.event.message.id
-                }
-                if (duplicate) active else (active.takeLast(31) + timed)
+                active.takeLast(31) + timed
             }
         }
         _events.tryEmit(event)
@@ -264,19 +274,22 @@ class KickChatWebSocketClient(
                 .firstNotNullOfOrNull { it.credentials?.url?.takeIf(String::isNotBlank) }
                 ?: "wss://realtime.us-east-1.platform.kick.com/connection/websocket"
 
-            val authReq = RealtimeAuthRequest(clientId = guestClientId)
-            val authenticatedToken = if (userId != null) try {
-                account.request("https://web.kick.com/api/v1/realtime/auth/connection", "POST",
-                    kotlinx.serialization.json.buildJsonObject {
-                        put("client_id", JsonPrimitive(guestClientId))
-                    })["data"]?.let { it as? JsonObject }?.get("token")
-                    ?.let { it as? JsonPrimitive }?.content
-            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-              catch (_: Exception) {
-                  Log.w(tag, "Authenticated chat unavailable; private channel points updates unavailable until reconnect")
-                  null
-              } else null
-            val token = authenticatedToken ?: api.getRealtimeAuth(authReq).data?.token.orEmpty()
+            val accountTokenProvider: (suspend () -> String)? = if (userId != null) {
+                { account.realtimeConnectionToken(guestClientId) }
+            } else null
+            val guestTokenProvider: suspend () -> String = {
+                api.getRealtimeAuth(RealtimeAuthRequest(clientId = guestClientId)).data?.token.orEmpty()
+            }
+            val authenticatedToken = try {
+                accountTokenProvider?.invoke()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                Log.w(tag, "Authenticated chat unavailable; private channel points updates unavailable until reconnect")
+                null
+            }
+            val token = authenticatedToken ?: guestTokenProvider()
+            val refreshToken = accountTokenProvider?.takeIf { authenticatedToken != null } ?: guestTokenProvider
 
             val request = Request.Builder()
                 .url(wsUrl)
@@ -289,7 +302,9 @@ class KickChatWebSocketClient(
 
             synchronized(this) {
                 if (connectionGeneration != generation) return
-                val listener = ChatSocketListener(token, guestClientId, channelId, chatroomId, authenticatedToken != null)
+                val listener = ChatSocketListener(
+                    token, guestClientId, channelId, chatroomId, authenticatedToken != null, refreshToken,
+                )
                 val socket = client.newWebSocket(request, listener)
                 webSocket = socket
                 lastChatMessageAt = SystemClock.elapsedRealtime()
@@ -313,6 +328,7 @@ class KickChatWebSocketClient(
         private val channelId: Long,
         private val chatroomId: Long,
         private val authenticated: Boolean,
+        private val refreshToken: suspend () -> String,
     ) : WebSocketListener() {
         private val subscriptions = mapOf(
             2 to "chatroom_$chatroomId",
@@ -321,8 +337,10 @@ class KickChatWebSocketClient(
             5 to "chatrooms.$chatroomId",
             6 to "predictions-channel-$channelId",
             7 to "chatrooms.$chatroomId.v2",
-            10 to "private-channelpoints-$clientId",
         )
+        private val pointsChannel = "private-channelpoints-$clientId"
+        private var nextCommandId = 10
+        private val commandReplies = mutableMapOf<Int, CompletableDeferred<JsonObject>>()
         private val confirmedSubscriptions = mutableSetOf<String>()
         private val roomRepliesPending = subscriptions.filterValues { it.startsWith("chatroom") }.keys.toMutableSet()
         private val startedAt = SystemClock.elapsedRealtime()
@@ -407,11 +425,15 @@ class KickChatWebSocketClient(
                     } else {
                         val push = (root["push"] as? JsonObject) ?: root
                         val unsubscribedChannel = (push["channel"] as? JsonPrimitive)?.content
-                        if (push["disconnect"] != null ||
-                            (push["unsubscribe"] != null && unsubscribedChannel != null &&
-                                unsubscribedChannel in confirmedSubscriptions)
+                        if (push["disconnect"] != null) {
+                            reconnect(webSocket, "Server disconnected chat")
+                        } else if (push["unsubscribe"] != null && unsubscribedChannel == pointsChannel && authenticated) {
+                            confirmedSubscriptions.remove(pointsChannel)
+                            startPointsSubscription(webSocket)
+                        } else if (push["unsubscribe"] != null && unsubscribedChannel != null &&
+                            unsubscribedChannel in confirmedSubscriptions
                         ) {
-                            reconnect(webSocket, "Server disconnected chat or removed a subscription")
+                            reconnect(webSocket, "Server removed a chat subscription")
                         } else {
                             handlePublication(root, channelId, chatroomId, clientId.toLongOrNull().takeIf { authenticated })
                         }
@@ -422,6 +444,11 @@ class KickChatWebSocketClient(
         }
 
         private fun handleReply(socket: WebSocket, id: Int, root: JsonObject) {
+            commandReplies.remove(id)?.let {
+                it.complete(root)
+                return
+            }
+
             if (id == 1) {
                 val result = root["connect"] as? JsonObject
                 if (result == null || root["error"] != null) {
@@ -432,10 +459,8 @@ class KickChatWebSocketClient(
                     ?.takeIf { it > 0 }?.let { it * 1_000L + 10_000L }
                 sendPong = (result["pong"] as? JsonPrimitive)?.booleanOrNull == true
                 for ((subId, channel) in subscriptions) {
-                    val privateChannel = channel.startsWith("private-")
-                    if (privateChannel && !authenticated) continue
                     val frame = CentrifugoSubscribeFrame(
-                        SubscribePayload(channel, token = token.takeIf { privateChannel }),
+                        SubscribePayload(channel),
                         id = subId,
                     )
                     if (!socket.send(json.encodeToString(CentrifugoSubscribeFrame.serializer(), frame))) {
@@ -443,6 +468,9 @@ class KickChatWebSocketClient(
                         return
                     }
                 }
+                connectionRefreshJob?.cancel()
+                connectionRefreshJob = clientScope.launch { refreshConnection(socket, result) }
+                if (authenticated) startPointsSubscription(socket)
                 return
             }
 
@@ -457,6 +485,87 @@ class KickChatWebSocketClient(
                 }
             } else if (isChatroom && connectedAt == null && roomRepliesPending.isEmpty()) {
                 reconnect(socket, "Chat room subscriptions rejected")
+            }
+        }
+
+        private suspend fun refreshConnection(socket: WebSocket, connected: JsonObject) {
+            val kept = maintainCentrifugoToken(connected) {
+                val refreshed = try {
+                    refreshToken().takeIf { it.isNotBlank() }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    null
+                } ?: return@maintainCentrifugoToken null
+                command(socket, "refresh") { id ->
+                    json.encodeToString(CentrifugoRefreshFrame(ConnectionRefreshPayload(refreshed), id))
+                }
+            }
+            if (!kept) reconnect(socket, "Chat connection token refresh failed")
+        }
+
+        private fun startPointsSubscription(socket: WebSocket) {
+            privateSubscriptionJob?.cancel()
+            privateSubscriptionJob = clientScope.launch { subscribeToPoints(socket) }
+        }
+
+        private suspend fun subscribeToPoints(socket: WebSocket) {
+            val auth = com.lechixy.kick.data.account.AccountGraph.auth
+            var retryDelay = 1_000L
+            while (true) {
+                val subscribed = try {
+                    val channelToken = auth.realtimeSubscriptionToken(pointsChannel)
+                    command(socket, "subscribe") { id ->
+                        json.encodeToString(CentrifugoSubscribeFrame(SubscribePayload(pointsChannel, token = channelToken), id))
+                    }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    null
+                }
+                if (subscribed != null) {
+                    synchronized(this@KickChatWebSocketClient) {
+                        if (webSocket !== socket) return
+                        confirmedSubscriptions.add(pointsChannel)
+                    }
+                    val kept = maintainCentrifugoToken(subscribed) {
+                        val channelToken = try {
+                            auth.realtimeSubscriptionToken(pointsChannel)
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (_: Exception) {
+                            return@maintainCentrifugoToken null
+                        }
+                        command(socket, "sub_refresh") { id ->
+                            json.encodeToString(CentrifugoSubscriptionRefresh(SubscriptionRefreshPayload(pointsChannel, channelToken), id))
+                        }
+                    }
+                    if (kept) return
+                    retryDelay = 1_000L
+                    Log.w(tag, "Chat points subscription refresh failed; retrying on the same socket")
+                }
+                delay(retryDelay)
+                retryDelay = (retryDelay * 2).coerceAtMost(30_000L)
+            }
+        }
+
+        private suspend fun command(socket: WebSocket, expected: String, encode: (Int) -> String): JsonObject? {
+            val reply = CompletableDeferred<JsonObject>()
+            val id = synchronized(this@KickChatWebSocketClient) {
+                if (webSocket !== socket) return null
+                val id = nextCommandId++
+                commandReplies[id] = reply
+                if (!socket.send(encode(id))) {
+                    commandReplies.remove(id)
+                    return null
+                }
+                id
+            }
+            try {
+                val frame = withTimeoutOrNull(10_000) { reply.await() } ?: return null
+                return (frame[expected] as? JsonObject)?.takeIf { frame["error"] == null }
+            } finally {
+                synchronized(this@KickChatWebSocketClient) { commandReplies.remove(id) }
             }
         }
 
@@ -505,8 +614,14 @@ class KickChatWebSocketClient(
                     if (publicationChannel != "chatrooms.$chatroomId" && publicationChannel != "chatrooms.$chatroomId.v2" &&
                         !isChannelPublication) return
                     val data = rawData ?: return
-                    val event = decodeEventPayload<com.lechixy.kick.data.chat.model.StreamHostedEvent>(data) ?: return
+                    val event = decodeEventPayload<StreamHostedEvent>(data) ?: return
                     publishEvent(ChatWebSocketEvent.StreamHosted(event))
+                }
+                "App\\Events\\StreamHostEvent", "StreamHostEvent" -> {
+                    if (publicationChannel != "chatrooms.$chatroomId.v2") return
+                    val event = rawData?.let { decodeEventPayload<StreamHostEvent>(it) } ?: return
+                    if (event.chatroomId != chatroomId) return
+                    publishEvent(ChatWebSocketEvent.StreamHosted(event.toStreamHostedEvent()))
                 }
                 "App\\Events\\ChatroomUpdatedEvent", "ChatroomUpdatedEvent",
                 "App\\Events\\ChatSettingsChanged", "ChatSettingsChanged" -> {
@@ -625,6 +740,12 @@ class KickChatWebSocketClient(
                         kicksGifted = event
                     ))
                     publishEvent(ChatWebSocketEvent.KicksGifted(event))
+                }
+                "NewSubscriberUpdatedEvent", "App\\Events\\NewSubscriberUpdatedEvent" -> {
+                    if (!isChannelPublication) return
+                    val event = rawData?.let { decodeEventPayload<NewSubscriberUpdate>(it) } ?: return
+                    if (event.channelId != channelId || event.count < 0) return
+                    publishEvent(ChatWebSocketEvent.SubscriberCountUpdated(event))
                 }
                 "GoalProgressUpdateEvent", "App\\Events\\GoalProgressUpdateEvent" -> {
                     if (!isChannelPublication) return
@@ -782,6 +903,8 @@ class KickChatWebSocketClient(
         webSocket = null
         socket?.cancel()
         heartbeatJob?.cancel()
+        connectionRefreshJob?.cancel()
+        privateSubscriptionJob?.cancel()
         reconnectJob?.cancel()
         _connectionState.value = ChatConnectionState.CONNECTING
         val delayMs = retryDelayMs
@@ -815,6 +938,8 @@ class KickChatWebSocketClient(
         connectionJob?.cancel()
         reconnectJob?.cancel()
         heartbeatJob?.cancel()
+        connectionRefreshJob?.cancel()
+        privateSubscriptionJob?.cancel()
         // Private publications belong to this connection's account, even when keeping public chat history.
         _pointsUpdated.value = null
         val socket = webSocket
@@ -826,6 +951,7 @@ class KickChatWebSocketClient(
             _messages.value = emptyList()
             _pinnedMessage.value = null
             _tickerEvents.value = emptyList()
+            recentStreamHosts.clear()
             _subscriptionGoal.value = null
             _userColors.value = emptyMap()
         }

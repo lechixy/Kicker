@@ -1,6 +1,5 @@
 package com.lechixy.kick.components
 
-import android.content.Intent
 import android.text.method.LinkMovementMethod
 import android.text.util.Linkify
 import android.widget.TextView
@@ -32,11 +31,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.net.toUri
 import com.lechixy.kick.BuildConfig
 import com.lechixy.kick.R
 import com.lechixy.kick.data.releases.ReleaseConfig
@@ -44,7 +43,10 @@ import com.lechixy.kick.data.releases.ReleaseDialogMode
 import com.lechixy.kick.data.releases.ReleaseDialogRequest
 import com.lechixy.kick.data.releases.normalizeVersion
 import com.lechixy.kick.util.FormatUtils
+import com.lechixy.kick.util.webLink
+import io.noties.markwon.AbstractMarkwonPlugin
 import io.noties.markwon.Markwon
+import io.noties.markwon.MarkwonConfiguration
 import io.noties.markwon.linkify.LinkifyPlugin
 import kotlinx.coroutines.delay
 import java.time.Instant
@@ -56,12 +58,11 @@ import java.time.format.FormatStyle
 @Composable
 fun ReleaseDialog(request: ReleaseDialogRequest, onDismiss: () -> Unit) {
     val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
     val release = request.release
     val update = request.mode == ReleaseDialogMode.UpdateAvailable
     fun open(url: String) {
-        val uri = url.toUri()
-        if (uri.scheme == "https" && !uri.host.isNullOrBlank())
-            runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
+        if (webLink(url)?.isHttps == true) uriHandler.openUri(url)
     }
 
     val date = release.publicationTime?.let { releaseDateLabel(it) }
@@ -146,8 +147,15 @@ fun ReleaseDialog(request: ReleaseDialogRequest, onDismiss: () -> Unit) {
                     ?: stringResource(R.string.release_no_notes)
                 val foreground = MaterialTheme.colorScheme.onSurface.toArgb()
                 val accent = MaterialTheme.colorScheme.primary.toArgb()
-                val markwon = remember(context) {
-                    Markwon.builder(context).usePlugin(LinkifyPlugin.create(Linkify.WEB_URLS)).build()
+                val markwon = remember(context, uriHandler) {
+                    Markwon.builder(context)
+                        .usePlugin(LinkifyPlugin.create(Linkify.WEB_URLS))
+                        .usePlugin(object : AbstractMarkwonPlugin() {
+                            override fun configureConfiguration(builder: MarkwonConfiguration.Builder) {
+                                builder.linkResolver { _, link -> webLink(link)?.let { uriHandler.openUri(it.toString()) } }
+                            }
+                        })
+                        .build()
                 }
                 val notes = remember(markwon, body) { markwon.toMarkdown(body) }
                 AndroidView(modifier = Modifier.fillMaxWidth(), factory = {

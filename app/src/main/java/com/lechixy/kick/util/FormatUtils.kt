@@ -20,7 +20,10 @@ object FormatUtils {
     }
 
     fun formatViewersCount(count: Int?, locale: Locale = Locale.getDefault()): String =
-        NumberFormat.getIntegerInstance(locale).format(count ?: 0)
+        formatInteger(count?.toLong() ?: 0, locale)
+
+    fun formatInteger(count: Long, locale: Locale = Locale.getDefault()): String =
+        NumberFormat.getIntegerInstance(locale).format(count)
 
     fun formatCompactCount(count: Long, locale: Locale): String =
         compactNumbers.locale(locale).format(count).toString()

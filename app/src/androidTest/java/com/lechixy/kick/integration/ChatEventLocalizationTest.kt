@@ -9,9 +9,12 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 
+import com.lechixy.kick.R
 import com.lechixy.kick.components.channel.chat.giftedEventSegments
 import com.lechixy.kick.components.channel.chat.raidEventSegments
+import com.lechixy.kick.components.channel.chat.subscriptionCelebrationIcon
 import com.lechixy.kick.components.channel.chat.subscriptionEventSegments
+import com.lechixy.kick.data.chat.model.ChatCelebration
 import com.lechixy.kick.data.chat.model.GiftedSubscriptionsEvent
 import com.lechixy.kick.util.FormatUtils
 
@@ -25,22 +28,28 @@ class ChatEventLocalizationTest {
         val event = GiftedSubscriptionsEvent(gifterUsername = "Alice", giftedUsernames = listOf("Bob"), giftedTotal = 1)
         fun text(language: String, gift: GiftedSubscriptionsEvent) =
             giftedEventSegments(context(language), gift, emptyMap(), Color.Green).joinToString("") { it.text }
-        assertEquals("Alice gifted 1 sub to Bob.", text("en", event))
-        assertEquals("Alice, Bob için 1 abonelik hediye etti.", text("tr", event))
+        assertEquals("Alice gifted 1 sub to Bob", text("en", event))
+        assertEquals("Alice, Bob için abonelik hediye etti", text("tr", event))
         val small = event.copy(giftedUsernames = listOf("Bob", "Charlie"), giftedTotal = 2)
-        assertEquals("Alice gifted 2 subs to Bob and Charlie.", text("en", small))
-        assertEquals("Alice, Bob ve Charlie için 2 abonelik hediye etti.", text("tr", small))
-        assertEquals("Alice gifted 5 subs to the community.", text("en", small.copy(giftedTotal = 5)))
-        assertEquals("Alice topluluğa 5 abonelik hediye etti.", text("tr", small.copy(giftedTotal = 5)))
+        assertEquals("Alice gifted 2 subs to Bob and Charlie", text("en", small))
+        assertEquals("Alice, Bob ve Charlie için 2 abonelik hediye etti", text("tr", small))
+        assertEquals("Alice gifted 5 subs to the community", text("en", small.copy(giftedTotal = 5)))
+        assertEquals("Alice topluluğa 5 abonelik hediye etti", text("tr", small.copy(giftedTotal = 5)))
     }
 
     @Test fun subscriptionAndRaidSentencesUseLocalePluralRules() {
         fun subscription(language: String, months: Int) = subscriptionEventSegments(context(language), "Alice", months,
             userColor = Color.Green, primaryColor = Color.Green).joinToString("") { it.text }
-        assertEquals("Alice has subscribed for 1 month.", subscription("en", 1))
-        assertEquals("Alice has subscribed for 2 months.", subscription("en", 2))
-        assertEquals("Alice, 2 aydır abone.", subscription("tr", 2))
-        assertEquals("Alice raided with 1 viewer!", raidEventSegments(context("en"), "Alice", 1, Color.Green).joinToString("") { it.text })
+        assertEquals("Alice has subscribed for 1 month", subscription("en", 1))
+        assertEquals("Alice has subscribed for 2 months", subscription("en", 2))
+        assertEquals("Alice, 2 aydır abone", subscription("tr", 2))
+        assertEquals("Alice raided with 2 viewers", raidEventSegments(context("en"), "Alice", 2, Color.Green).joinToString("") { it.text })
+    }
+
+    @Test fun anniversaryAndOtherCelebrationsUseDifferentStars() {
+        assertEquals(R.drawable.kick_star, subscriptionCelebrationIcon(ChatCelebration(type = "subscription")))
+        assertEquals(R.drawable.hotel_class_24dp_e3e3e3_fill1_wght400_grad0_opsz24,
+            subscriptionCelebrationIcon(ChatCelebration(type = "subscription_anniversary", totalMonths = 12)))
     }
 
     @Test fun compactCountsLocalizeSuffixDecimalAndDigits() {

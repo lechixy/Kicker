@@ -96,6 +96,10 @@
     <string name="player_quality">Quality</string>
     <string name="player_playback_speed">Playback speed</string>
     <string name="player_more">More</string>
+    <string name="player_experimental">Experimental</string>
+    <string name="player_video_noise_reduction">Video noise reduction</string>
+    <string name="player_video_noise_reduction_description">Use the GPU to reduce fine noise and compression artifacts.</string>
+    <string name="player_video_noise_reduction_requires_android_13">Requires Android 13 or later.</string>
     <string name="player_auto_network">According to network speed</string>
     <string name="player_off">Off</string>
     <string name="player_minutes">%1$d minutes</string>

@@ -359,13 +359,37 @@ data class StopStreamBroadcastEvent(
 )
 
 @Serializable
-data class StreamHostedMessage(val id: String, val numberOfViewers: Int)
+data class StreamHostedMessage(
+    val id: String?,
+    val numberOfViewers: Int,
+    val optionalMessage: String? = null,
+)
 
 @Serializable
-data class StreamHostedUser(val id: Long, val username: String)
+data class StreamHostedUser(val id: Long?, val username: String)
 
 @Serializable
 data class StreamHostedEvent(val message: StreamHostedMessage, val user: StreamHostedUser)
+
+@Serializable
+internal data class StreamHostEvent(
+    @SerialName("chatroom_id") val chatroomId: Long,
+    @SerialName("number_viewers") val numberOfViewers: Int,
+    @SerialName("host_username") val username: String,
+    @SerialName("optional_message") val optionalMessage: String? = null,
+) {
+    fun toStreamHostedEvent() = StreamHostedEvent(
+        StreamHostedMessage(null, numberOfViewers, optionalMessage),
+        StreamHostedUser(null, username),
+    )
+}
+
+@Serializable
+data class NewSubscriberUpdate(
+    @SerialName("channel_id") val channelId: Long,
+    @SerialName("last_subscriber") val lastSubscriber: String,
+    val count: Int,
+)
 
 sealed interface ChatWebSocketEvent {
     data class Raid(val event: ChannelRaid) : ChatWebSocketEvent
@@ -375,6 +399,7 @@ sealed interface ChatWebSocketEvent {
     data class RewardRedeemed(val event: RewardRedeemedEvent) : ChatWebSocketEvent
     data class GiftedSubscriptions(val event: GiftedSubscriptionsEvent) : ChatWebSocketEvent
     data class ChannelSubscribed(val event: ChannelSubscriptionEvent) : ChatWebSocketEvent
+    data class SubscriberCountUpdated(val event: NewSubscriberUpdate) : ChatWebSocketEvent
     data class UserBanned(val event: UserBannedEvent) : ChatWebSocketEvent
     data class MessageDeleted(val event: MessageDeletedEvent) : ChatWebSocketEvent
     data class SettingsChanged(val settings: JsonObject) : ChatWebSocketEvent

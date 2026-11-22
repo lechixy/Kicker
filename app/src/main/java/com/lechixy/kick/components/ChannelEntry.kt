@@ -29,12 +29,13 @@ internal class ChannelEntry(
         val source: ExpansionSource?,
         val detail: ChannelDetail,
         val watchLive: Boolean,
+        val onOpened: () -> Unit,
     )
 
     private var approval by mutableStateOf<Opening?>(null)
     private var job: Job? = null
 
-    fun open(slug: String, source: ExpansionSource?, watchLive: Boolean = false) {
+    fun open(slug: String, source: ExpansionSource?, watchLive: Boolean = false, onOpened: () -> Unit = {}) {
         cancel()
         val openLive = watchLive || source?.isLive == true
         job = scope.launch {
@@ -44,6 +45,7 @@ internal class ChannelEntry(
                 if (!askBeforeMatureLive || reopeningRecording) {
                     host.open(slug, source)
                     if (openLive) host.requestLivePlayback()
+                    onOpened()
                     return@launch
                 }
 
@@ -51,9 +53,10 @@ internal class ChannelEntry(
                 ensureActive()
                 val stream = detail.livestream
                 if (stream?.isMature == true && !host.isMatureLivestreamApproved(slug, stream.id)) {
-                    approval = Opening(slug, source, detail, openLive)
+                    approval = Opening(slug, source, detail, openLive, onOpened)
                 } else {
                     host.openPreloadedChannel(slug, source, detail, openLive, matureApproved = stream?.isMature == true)
+                    onOpened()
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -80,6 +83,7 @@ internal class ChannelEntry(
                         approval = null
                         host.openPreloadedChannel(opening.slug, opening.source, opening.detail, opening.watchLive,
                             matureApproved = true)
+                        opening.onOpened()
                         if (dontAskAgain) scope.launch { settings.set(SettingsKeys.ASK_BEFORE_MATURE_LIVE, false) }
                     }
                 },

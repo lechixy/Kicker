@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="badge_developer_favorite">Geliştiricinin (%1$s) favorisi 💖</string>
+    <string name="winter_welcome_title">Kış geldi!</string>
+    <string name="winter_welcome_text">Yılın bu özel zamanı için kış modu açıldı. Biraz karla kutlayalım.</string>
+    <string name="winter_offseason_title">Kış modu kapandı</string>
+    <string name="winter_offseason_text">Kış mevsimi dışında kış modu otomatik kapatıldı. İstersen son bir kez kar yağdırabilirsin.</string>
+    <string name="winter_turn_off">Kapat</string>
+    <string name="winter_celebrate">Kar yağdır</string>
+    <string name="developer_winter_preview">Kış modu diyaloğunu önizle</string>
+    <string name="developer_winter_in_season">Kış mevsimi</string>
+    <string name="developer_winter_off_season">Mevsim dışı</string>
+</resources>

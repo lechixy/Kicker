@@ -100,6 +100,8 @@ fun InAppNotificationHost(onActivate: (AppNotification) -> Unit, modifier: Modif
     }
 }
 
+private val streamNotificationName = Regex("<strong>(.*?)</strong>", RegexOption.IGNORE_CASE)
+
 @Composable
 internal fun NotificationCard(notification: AppNotification, onClick: () -> Unit, onDismiss: () -> Unit) {
     val title = when (notification.kind) {
@@ -107,9 +109,14 @@ internal fun NotificationCard(notification: AppNotification, onClick: () -> Unit
         NotificationKind.LevelUp -> stringResource(R.string.notification_level_up_title, notification.level)
         NotificationKind.SleepTimerStarted -> stringResource(R.string.sleep_timer_started_title)
         NotificationKind.SleepTimerStopped -> stringResource(R.string.sleep_timer_stopped_title)
-        NotificationKind.StreamStarted -> notification.title.takeIf { it.isNotBlank() }?.let {
-            HtmlCompat.fromHtml(it, HtmlCompat.FROM_HTML_MODE_LEGACY).toString().trim()
-        } ?: stringResource(R.string.notification_live_title, notification.channelSlug.orEmpty())
+        NotificationKind.StreamStarted -> {
+            val name = remember(notification.title, notification.channelSlug) {
+                streamNotificationName.find(notification.title)?.groupValues?.get(1)?.let {
+                    HtmlCompat.fromHtml(it, HtmlCompat.FROM_HTML_MODE_LEGACY).toString().trim()
+                }?.takeIf(String::isNotBlank) ?: notification.channelSlug.orEmpty()
+            }
+            stringResource(R.string.notification_live_title, name)
+        }
     }
     val description = when (notification.kind) {
         NotificationKind.WatchTimeGoal -> stringResource(R.string.notification_reward_description, notification.thresholdMinutes)

@@ -1,5 +1,8 @@
 package com.lechixy.kick.components
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -41,6 +44,7 @@ import kotlin.math.roundToInt
 import kotlin.random.Random
 
 private const val MAX_FLAKES = 72
+internal const val SNOW_FLURRY_DURATION_MS = 4_000
 
 private class Snowflake(random: Random) {
     val x = random.nextFloat()
@@ -56,6 +60,8 @@ internal fun WinterSnowfall(
     playerBounds: () -> Rect?,
     scrollOffset: () -> Double,
     modifier: Modifier = Modifier,
+    celebrating: Boolean = false,
+    ambient: Boolean = true,
 ) {
     val elapsed = remember { mutableDoubleStateOf(0.0) }
     val flakes = remember { Random(31).let { random -> List(MAX_FLAKES) { Snowflake(random) } } }
@@ -67,6 +73,13 @@ internal fun WinterSnowfall(
     val speed by settings.get(SettingsKeys.WINTER_SNOW_SPEED).collectAsStateWithLifecycle(SettingsKeys.WINTER_SNOW_SPEED.defaultValue)
     val particleSize by settings.get(SettingsKeys.WINTER_SNOW_SIZE).collectAsStateWithLifecycle(SettingsKeys.WINTER_SNOW_SIZE.defaultValue)
     val speedFactor by rememberUpdatedState(speed / 100.0)
+    val flurry = if (celebrating) {
+        val progress = remember { Animatable(0f) }
+        LaunchedEffect(Unit) {
+            progress.animateTo(1f, tween(SNOW_FLURRY_DURATION_MS, easing = LinearEasing))
+        }
+        progress
+    } else null
     val shapes = remember { List(3, ::snowflakePath) }
     val flakeStroke = remember { Stroke(width = 0.12f, cap = StrokeCap.Round) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -98,7 +111,7 @@ internal fun WinterSnowfall(
 
         val excluded = playerBounds()?.translate(-origin.value) ?: Rect.Zero
         val baseCount = ((size.width / density) * (size.height / density) / 11_000f).toInt().coerceIn(16, 48)
-        val count = (baseCount * intensity / 100f).roundToInt().coerceIn(1, MAX_FLAKES)
+        val count = if (ambient) (baseCount * intensity / 100f).roundToInt().coerceIn(1, MAX_FLAKES) else 0
         val drawFlakes = style == SnowParticleStyle.Flakes.name
         val sizeFactor = particleSize / 100f
         val margin = 16.dp.toPx()
@@ -124,6 +137,24 @@ internal fun WinterSnowfall(
                 } else {
                     drawCircle(color, (0.9f + 1.6f * depth).dp.toPx() * sizeFactor, center, alpha)
                 }
+            }
+        }
+        flurry?.value?.let { progress ->
+            if (progress >= 1f) return@let
+            flakes.forEachIndexed { index, flake ->
+                val phase = (progress - flake.y * 0.30f) / (0.78f - flake.depth * 0.23f)
+                if (phase <= 0f || phase >= 1f) return@forEachIndexed
+                val travel = 0.55f * phase + 0.65f * phase * phase
+                val y = -margin + travel * fallHeight
+                val sway = sin(phase * (4f + flake.depth) + flake.phase) * (10f + 18f * flake.depth).dp.toPx()
+                val x = flake.x * size.width + sway + phase * (flake.depth - 0.40f) * 54.dp.toPx()
+                val alpha = (0.38f + 0.45f * flake.depth) * ((1f - phase) * 4f).coerceAtMost(1f)
+                val radius = (2.5f + 4.5f * flake.depth).dp.toPx()
+                withTransform({
+                    translate(x, y)
+                    rotate(flake.rotation + phase * 64f, Offset.Zero)
+                    scale(radius, radius, Offset.Zero)
+                }) { drawPath(shapes[index % shapes.size], color, alpha = alpha, style = flakeStroke) }
             }
         }
     }

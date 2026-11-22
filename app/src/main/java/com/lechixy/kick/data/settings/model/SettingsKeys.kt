@@ -111,6 +111,11 @@ object SettingsKeys {
         defaultValue = false,
         type = SettingType.BooleanType
     )
+    val VIDEO_NOISE_REDUCTION = SettingKey(
+        key = booleanPreferencesKey("video_noise_reduction"),
+        defaultValue = false,
+        type = SettingType.BooleanType
+    )
     val AMBIENT_MODE = SettingKey(
         key = stringPreferencesKey("player_ambient_mode"),
         defaultValue = PlayerAmbientMode.Off.value,

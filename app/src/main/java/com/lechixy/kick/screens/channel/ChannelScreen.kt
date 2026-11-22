@@ -94,6 +94,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -119,6 +120,7 @@ import com.lechixy.kick.components.PlayerMode
 import com.lechixy.kick.components.SkeletonBlock
 import com.lechixy.kick.components.SkeletonLoadingScope
 import com.lechixy.kick.components.VerifiedBadge
+import com.lechixy.kick.components.DeveloperFavoriteBadge
 import com.lechixy.kick.components.VideoCard
 import com.lechixy.kick.components.VideoSkeletonGrid
 import com.lechixy.kick.components.WIDE_BREAKPOINT_DP
@@ -133,6 +135,8 @@ import com.lechixy.kick.components.channel.ChannelTabPager
 import com.lechixy.kick.components.channel.OfflineBannerState
 import com.lechixy.kick.components.channel.OfflineChannelBanner
 import com.lechixy.kick.components.channel.chat.ChatRestoreButton
+import com.lechixy.kick.components.channel.chat.ChannelLeaderboardDialog
+import com.lechixy.kick.components.channel.chat.ChannelLeaderboardStrip
 import com.lechixy.kick.components.channel.chat.ChatView
 import com.lechixy.kick.components.channel.chat.LocalChatContentActive
 import com.lechixy.kick.components.channel.chat.collectAsChatState
@@ -143,6 +147,8 @@ import com.lechixy.kick.data.channel.model.ChannelClip
 import com.lechixy.kick.data.channel.model.ChannelDetail
 import com.lechixy.kick.data.channel.model.ChannelEvent
 import com.lechixy.kick.data.channel.model.ChannelVideo
+import com.lechixy.kick.data.channel.model.ChannelLeaderboardUiState
+import com.lechixy.kick.data.channel.model.LeaderboardCategory
 import com.lechixy.kick.data.channel.model.getBannerUrl
 import com.lechixy.kick.data.chat.model.ChatTimestampMode
 import com.lechixy.kick.data.player.model.RecordedPlayback
@@ -150,6 +156,8 @@ import com.lechixy.kick.data.player.model.toRecording
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 import com.lechixy.kick.util.FormatUtils
+import com.lechixy.kick.util.openBrowserTab
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -178,7 +186,9 @@ fun ChannelScreen(
     playerHost: PlayerHostState? = null,
     viewModel: ChannelViewModel = viewModel(),
     onChannelLoaded: (ChannelDetail) -> Unit = {},
-    onBackClick: () -> Unit = {}
+    onBackClick: () -> Unit = {},
+    linkedTab: ChannelTab? = null,
+    onLinkedTabOpened: () -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsState()
     var videoSort by rememberSaveable(channelSlug) { mutableStateOf(ChannelMediaSort.RECENT) }
@@ -368,6 +378,13 @@ fun ChannelScreen(
 
                 val pagerState = key(channelSlug, isWide) {
                     rememberPagerState(initialPage = visibleTabs.indexOf(effectiveSelectedTab).coerceAtLeast(0)) { visibleTabs.size }
+                }
+                LaunchedEffect(pagerState, linkedTab, isFullScreen) {
+                    if (linkedTab != null && !isFullScreen) {
+                        val page = visibleTabs.indexOf(linkedTab)
+                        if (page >= 0) pagerState.scrollToPage(page)
+                        onLinkedTabOpened()
+                    }
                 }
                 LaunchedEffect(pagerState, isFullScreen) {
                     snapshotFlow { pagerState.settledPage }.collect {
@@ -965,6 +982,46 @@ private fun ChannelChatSection(
     val subscriptionGoal by viewModel.subscriptionGoal.collectAsChatState()
     val emotes by viewModel.emotes.collectAsChatState()
     val replySession by com.lechixy.kick.data.account.AccountGraph.auth.session.collectAsChatState()
+    val chatActive = LocalChatContentActive.current
+    val loadedLeaderboard by viewModel.channelLeaderboard.collectAsChatState()
+    val leaderboard = loadedLeaderboard.takeIf { it.channelId == channel.id } ?: ChannelLeaderboardUiState(channelId = channel.id)
+    var showLeaderboard by remember(channel.id) { mutableStateOf(false) }
+    val uriHandler = LocalUriHandler.current
+    val context = LocalContext.current
+    LaunchedEffect(channel.id, chatActive) {
+        if (chatActive) viewModel.loadChannelLeaderboard(channel.id)
+        else showLeaderboard = false
+    }
+    if (showLeaderboard && chatActive) {
+        ChannelLeaderboardDialog(
+            leaderboard,
+            onUserClick = { id ->
+                val entry = leaderboard.boards.firstNotNullOfOrNull { board -> board.entries.firstOrNull { it.userId == id } }
+                if (entry != null) {
+                    showLeaderboard = false
+                    community.openProfile(channel.slug,
+                        com.lechixy.kick.data.chat.model.ActiveChatter(username = entry.username),
+                        com.lechixy.kick.data.chat.model.ChatSender(id = id, username = entry.username),
+                        channel.subscriberBadges)
+                }
+            },
+            onActionCtaClick = { board, _ ->
+                showLeaderboard = false
+                val url = "https://kick.com/${android.net.Uri.encode(channel.slug)}"
+                if (board.category == LeaderboardCategory.GIFTERS) {
+                    uriHandler.openUri("$url/subscribe")
+                } else {
+                    try {
+                        context.openBrowserTab(url.toHttpUrl())
+                    } catch (_: android.content.ActivityNotFoundException) {
+                        android.widget.Toast.makeText(context, R.string.web_link_open_failed, android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }
+            },
+            onRetry = { viewModel.loadChannelLeaderboard(channel.id, refresh = true) },
+            onDismiss = { showLeaderboard = false },
+        )
+    }
     var replyTarget by remember(channel.id, replySession.generation) { mutableStateOf<com.lechixy.kick.data.chat.model.ChatMessage?>(null) }
     LaunchedEffect(chatMessages) {
         if (chatMessages.any { it.id == replyTarget?.id && it.isDeleted }) replyTarget = null
@@ -991,6 +1048,9 @@ private fun ChannelChatSection(
         playerControlsVisible = playerControlsVisible,
         onOpenChannel = onOpenChannel,
         floatingComposer = LocalConfiguration.current.smallestScreenWidthDp < 600 && channel.livestream != null,
+        belowHeader = {
+            ChannelLeaderboardStrip(leaderboard, paused = showLeaderboard || !chatActive, onClick = { showLeaderboard = true })
+        },
         composer = { chatContent -> com.lechixy.kick.components.channel.chat.AccountChatComposer(
             channel, chatConnectionState, chatSettings, pointsUpdated,
             onConsumePoints = viewModel::consumePoints,
@@ -1143,8 +1203,12 @@ private fun ChannelHeaderInfo(
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Text(text = channel.user?.username ?: channel.slug, style = MaterialTheme.typography.titleMedium,
                             modifier = Modifier.weight(1f, fill = false), fontWeight = FontWeight.Bold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-                        if (channel.verified) VerifiedBadge(modifier = Modifier.size(16.dp), colors = listOf(
-                            MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.onPrimaryContainer))
+                        val badgeColors = listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.onPrimaryContainer)
+                        if (channel.verified) VerifiedBadge(modifier = Modifier.size(16.dp), colors = badgeColors)
+                        if (channel.slug.equals("rraenee", ignoreCase = true) ||
+                            channel.slug.equals("elraenn", ignoreCase = true) ||
+                            channel.slug.equals("cordiseps", ignoreCase = true)
+                        ) DeveloperFavoriteBadge(badgeColors, Modifier.size(16.dp))
                     }
                     lastHourGiftedSubsRank?.let { com.lechixy.kick.components.channel.LastHourGiftedSubsChip(it) }
                 }

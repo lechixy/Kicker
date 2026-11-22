@@ -1,6 +1,5 @@
 package com.lechixy.kick.screens.settings
 
-import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -36,11 +35,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.core.net.toUri
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lechixy.kick.BuildConfig
 import com.lechixy.kick.R
@@ -178,6 +177,7 @@ internal fun SettingsAboutPage(
 @Composable
 private fun AboutSummary(latestPublicationTime: Instant?) {
     val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
     val resources = LocalResources.current
     val appInfo = remember(context) { getVersionAndInfo(context) }
     val repository = LocalSettingsRepository.current
@@ -202,13 +202,7 @@ private fun AboutSummary(latestPublicationTime: Instant?) {
                     RoundedCornerShape(20.dp)
                 )
                 .clip(shape = RoundedCornerShape(20.dp))
-                .clickable {
-                    val browserIntent = Intent(
-                        Intent.ACTION_VIEW,
-                        resources.getString(R.string.github).toUri()
-                    )
-                    context.startActivity(browserIntent)
-                }
+                .clickable { uriHandler.openUri(resources.getString(R.string.github)) }
                 .padding(15.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally

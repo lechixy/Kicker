@@ -59,6 +59,10 @@ class KickRepository(
     suspend fun getLastHourGiftedSubsRank(channelId: Long): Int? =
         api.getGiftedSubsLeaderboard(com.lechixy.kick.data.channel.model.hourlyLeaderboardStart()).rankFor(channelId)
 
+    internal suspend fun getSubscriptionLeaderboard(channelId: Long) = api.getSubscriptionLeaderboard(channelId).data
+
+    internal suspend fun getKicksLeaderboard(channelId: Long) = api.getKicksLeaderboard(channelId).data
+
     suspend fun resolveViewerSession(session: com.lechixy.kick.data.player.remote.ViewerSession): com.lechixy.kick.data.player.remote.ViewerSession {
         if (!session.vodId.isNullOrBlank()) return session
         val slug = session.channelSlug?.takeIf { it.isNotBlank() } ?: error("Missing viewer channel slug")

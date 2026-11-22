@@ -117,7 +117,7 @@ class AppEventsUiTest {
         compose.onNode(hasText(localized.getString(R.string.settings_volume_sync)) and !hasSetTextAction()).assertIsDisplayed()
         compose.onNodeWithText(localized.getString(R.string.settings_chat_connection)).assertDoesNotExist()
     }
-    @Test fun notificationRendersHtmlTitleWithoutCloseButtonAndSupportsClick() {
+    @Test fun notificationLocalizesLiveTitleAndPreservesTheDisplayName() {
         var opened = 0; var dismissed = 0
         show {
             Box(Modifier.width(360.dp)) {
@@ -126,13 +126,15 @@ class AppEventsUiTest {
                     { opened++ }, { dismissed++ })
             }
         }
-        compose.onNodeWithText("RRaenee just went live!").assertIsDisplayed()
+        val localizedTitle = context("tr").getString(R.string.notification_live_title, "RRaenee")
+        compose.onNodeWithText(localizedTitle).assertIsDisplayed()
+        compose.onNodeWithText("RRaenee just went live!").assertDoesNotExist()
         compose.onRoot().captureToImage().asAndroidBitmap().let { bitmap ->
             File(compose.activity.getExternalFilesDir(null), "notification-preview.png").outputStream().use {
                 bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
             }
         }
-        compose.onNodeWithText("RRaenee just went live!").performClick()
+        compose.onNodeWithText(localizedTitle).performClick()
         compose.runOnIdle { assertEquals(1, opened) }
         compose.onNodeWithContentDescription(context("tr").getString(R.string.notification_dismiss)).assertDoesNotExist()
         compose.runOnIdle { assertEquals(0, dismissed); assertEquals(1, opened) }

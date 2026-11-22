@@ -45,6 +45,7 @@ data class UserProfileCardUiState(
     val actionLoading: Boolean = false, @get:StringRes val error: Int? = null,
     val isMuted: Boolean = false,
     val fullSizeProfilePicUrl: String? = null,
+    val muteEnabled: Boolean = true,
 )
 
 internal fun profileDate(raw: String?, locale: Locale = Locale.ENGLISH): String? = raw?.let {
@@ -81,13 +82,17 @@ class ChatCommunityViewModel : ViewModel() {
     val listError = _listError.asStateFlow()
     private val _profile = MutableStateFlow<UserProfileCardUiState?>(null)
     val profile = _profile.asStateFlow()
-    private val _mutedUsers = MutableStateFlow<Set<String>>(emptySet())
-    val mutedUsers = _mutedUsers.asStateFlow()
+    val mutedUsers = AccountGraph.silencedUsers.mutedUsers
     private var listJob: Job? = null
     private var profileJob: Job? = null
     private var channelId: Long? = null
 
     init {
+        viewModelScope.launch {
+            mutedUsers.collect { names ->
+                _profile.update { it?.copy(isMuted = it.username.lowercase(Locale.ROOT) in names) }
+            }
+        }
         viewModelScope.launch {
             var generation = AccountGraph.auth.session.value.generation
             AccountGraph.auth.session.collect { session ->
@@ -117,7 +122,8 @@ class ChatCommunityViewModel : ViewModel() {
         profileJob?.cancel()
         val slug = chatter.slug.ifBlank { chatter.username.lowercase(Locale.ROOT) }
         val initial = UserProfileCardUiState(userId = sender?.id, username = chatter.username,
-            slug = slug, profilePicUrl = chatter.profilePicture, isMuted = chatter.username.lowercase(Locale.ROOT) in _mutedUsers.value,
+            slug = slug, profilePicUrl = chatter.profilePicture, isMuted = chatter.username.lowercase(Locale.ROOT) in mutedUsers.value,
+            muteEnabled = !AccountGraph.auth.session.value.signedIn || sender?.id?.let { it > 0 } == true,
             badges = resolveProfileBadges(sender?.identity, null, subscriberBadges))
         _profile.value = initial
         profileJob = viewModelScope.launch {
@@ -170,7 +176,7 @@ class ChatCommunityViewModel : ViewModel() {
                 }
                 val level = user?.value("level")?.toIntOrNull() ?: user?.obj("gamification")?.value("level")?.toIntOrNull()
                     ?: identity?.badgesV2?.firstNotNullOfOrNull { it.levelNumber() }
-                _profile.value = initial.copy(userId = id,
+                _profile.update { current -> current?.copy(userId = id,
                     profilePicUrl = user?.value("profile_pic") ?: user?.value("profile_picture") ?: fullSizeProfilePicUrl ?: initial.profilePicUrl,
                     fullSizeProfilePicUrl = fullSizeProfilePicUrl,
                     bannerPicUrl = channel?.obj("banner_image")?.let { it.value("src") ?: it.value("url") },
@@ -180,8 +186,9 @@ class ChatCommunityViewModel : ViewModel() {
                     subscribedMonths = subscribedMonths,
                     isFollowing = me?.value("is_following")?.toBooleanStrictOrNull(),
                     badges = badges.sortedBy { it.sortOrder }, isLoading = false,
-                    isMuted = chatter.username.lowercase(Locale.ROOT) in _mutedUsers.value,
-                    error = if (failures.isEmpty()) null else R.string.chatter_profile_partial_error)
+                    muteEnabled = !AccountGraph.auth.session.value.signedIn || id?.let { it > 0 } == true,
+                    error = current.error ?: if (failures.isEmpty()) null else R.string.chatter_profile_partial_error)
+                }
             }
         }
     }
@@ -204,8 +211,24 @@ class ChatCommunityViewModel : ViewModel() {
 
     fun toggleMute() {
         val current = _profile.value ?: return
-        val name = current.username.lowercase(Locale.ROOT)
-        _mutedUsers.update { if (current.isMuted) it - name else it + name }
-        _profile.update { it?.copy(isMuted = !current.isMuted) }
+        if (current.actionLoading || !current.muteEnabled) return
+        val generation = AccountGraph.auth.session.value.generation
+        _profile.update { it?.copy(actionLoading = true, error = null) }
+        viewModelScope.launch {
+            val error = try {
+                AccountGraph.silencedUsers.setMuted(current.userId, current.username, !current.isMuted)
+                null
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                R.string.chat_silenced_update_error
+            }
+            if (generation == AccountGraph.auth.session.value.generation) {
+                _profile.update {
+                    it?.takeIf { profile -> profile.slug == current.slug && profile.actionLoading }
+                        ?.copy(actionLoading = false, error = error) ?: it
+                }
+            }
+        }
     }
 }

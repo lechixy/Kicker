@@ -543,7 +543,7 @@ private fun ComposerContent(
         }
     }
     if (showIdentityDialog) {
-        LoadingChatIdentityDialog(channel.id, session.profile?.name.orEmpty(), channel.subscriberBadges,
+        LoadingChatIdentityDialog(channel.id, channel.slug, session.profile?.name.orEmpty(), channel.subscriberBadges,
             avatarUrl = session.profile?.avatar, onPreviewClick = onIdentityPreviewClick) { initial, updated ->
             showIdentityDialog = false
             if (updated != null) {

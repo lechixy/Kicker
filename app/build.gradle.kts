@@ -99,6 +99,7 @@ android {
 
 dependencies {
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.browser)
     implementation(libs.androidx.compose.adaptive)
     implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.material3)

@@ -1,4 +1,7 @@
 <resources>
+    <string name="web_link_open_failed">No compatible browser could open this link.</string>
+    <string name="settings_supported_links">Open supported links</string>
+    <string name="settings_supported_links_summary">Choose whether Android opens kick.com and www.kick.com links in Kicker.</string>
     <string name="active_chatters_partial_notice">Only some active chatters are displayed here</string>
     <string name="offline_banner_expand">Expand offline banner</string>
     <string name="channel_follow_failed">Could not update or load follow status, please try again</string>

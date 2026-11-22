@@ -5,6 +5,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -39,6 +40,7 @@ fun SettingCard(
     onClick: (() -> Unit)? = null,
     rowModifier: Modifier = Modifier,
     onReset: (() -> Unit)? = null,
+    badge: String? = null,
     action: @Composable (() -> Unit)? = null
 ) {
     val resolvedContainerColor = if (enabled) containerColor else containerColor.copy(alpha = containerColor.alpha * 0.5f)
@@ -79,11 +81,31 @@ fun SettingCard(
                     }
 
                     Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = title,
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = if (enabled) titleColor else titleColor.copy(alpha = 0.38f)
-                        )
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                            itemVerticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                text = title,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = if (enabled) titleColor else titleColor.copy(alpha = 0.38f)
+                            )
+                            if (badge != null) {
+                                val badgeColor = MaterialTheme.colorScheme.onSecondaryContainer
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = MaterialTheme.colorScheme.secondaryContainer,
+                                    contentColor = if (enabled) badgeColor else badgeColor.copy(alpha = 0.38f),
+                                ) {
+                                    Text(
+                                        text = badge,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                        style = MaterialTheme.typography.labelSmall,
+                                    )
+                                }
+                            }
+                        }
                         if (description != null) {
                             Text(
                                 text = description,

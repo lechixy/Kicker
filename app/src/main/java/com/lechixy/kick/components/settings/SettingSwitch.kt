@@ -39,7 +39,8 @@ fun SettingSwitch(
     modifier: Modifier = Modifier,
     description: String? = null,
     icon: Int? = null,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    badge: String? = null,
 ) {
     val repository = LocalSettingsRepository.current
     val coroutineScope = rememberCoroutineScope()
@@ -58,6 +59,7 @@ fun SettingSwitch(
         description = description,
         icon = icon,
         enabled = enabled,
+        badge = badge,
         onReset = if (value != default) ({ coroutineScope.launch { repository.reset(key) } }) else null
     )
 }
@@ -71,7 +73,8 @@ fun SettingSwitch(
     description: String? = null,
     icon: Int? = null,
     enabled: Boolean = true,
-    onReset: (() -> Unit)? = null
+    onReset: (() -> Unit)? = null,
+    badge: String? = null,
 ) {
     SettingCard(
         title = title,
@@ -80,6 +83,7 @@ fun SettingSwitch(
         icon = icon,
         enabled = enabled,
         onReset = onReset,
+        badge = badge,
         rowModifier = Modifier.toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = onCheckedChange),
         action = {
             DraggableSwitchTrack(checked, enabled, onCheckedChange)

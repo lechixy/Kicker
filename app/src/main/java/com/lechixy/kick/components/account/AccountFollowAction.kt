@@ -5,7 +5,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -14,6 +14,8 @@ import com.lechixy.kick.R
 import com.lechixy.kick.components.PredictiveAlertDialog
 import com.lechixy.kick.data.account.AccountGraph
 import com.lechixy.kick.data.account.remote.AccountApiException
+import com.lechixy.kick.util.openBrowserTab
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -24,7 +26,7 @@ fun rememberAccountFollowAction(slug: String, optimistic: Boolean = false): Acco
     val session by AccountGraph.auth.session.collectAsStateWithLifecycle()
     val repository = AccountGraph.following
     val scope = rememberCoroutineScope()
-    val uriHandler = LocalUriHandler.current
+    val context = LocalContext.current
     val generation = session.generation
     var following by remember(slug, generation) { mutableStateOf<Boolean?>(null) }
     var busy by remember(slug, generation) { mutableStateOf(session.signedIn) }
@@ -77,7 +79,9 @@ fun rememberAccountFollowAction(slug: String, optimistic: Boolean = false): Acco
                     if (blocked) {
                         TextButton(onClick = {
                             dialog = false
-                            openedKick = runCatching { uriHandler.openUri("https://kick.com/${Uri.encode(slug)}") }.isSuccess
+                            openedKick = runCatching {
+                                context.openBrowserTab("https://kick.com/${Uri.encode(slug)}".toHttpUrl())
+                            }.isSuccess
                         }) { Text(stringResource(R.string.channel_open_kick)) }
                     } else {
                         TextButton(onClick = ::retryStatus) {

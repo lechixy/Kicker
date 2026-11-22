@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="chat_silenced_users">Muted users</string>
+    <string name="chat_silenced_empty">No muted users</string>
+    <string name="chat_silenced_load_error">Couldn’t load muted users from Kick.</string>
+    <string name="chat_silenced_update_error">Couldn’t update muted users.</string>
+    <string name="chat_silenced_unmute">Unmute %1$s</string>
+    <string name="chat_silenced_unmute_action">Unmute</string>
+    <plurals name="chat_silenced_total">
+        <item quantity="one">%1$d muted user</item>
+        <item quantity="other">%1$d muted users</item>
+    </plurals>
+    <string name="leaderboard_title">Leaderboards</string>
+    <string name="leaderboard_open">Open leaderboards</string>
+    <string name="leaderboard_monthly_gifters">Monthly top Gifters</string>
+    <string name="leaderboard_lifetime_gifters">Lifetime top Gifters</string>
+    <string name="leaderboard_weekly_gifters">Weekly top Gifters</string>
+    <string name="leaderboard_monthly_kickers">Monthly top KICKers</string>
+    <string name="leaderboard_lifetime_kickers">Lifetime top KICKers</string>
+    <string name="leaderboard_weekly_kickers">Weekly top KICKers</string>
+    <string name="leaderboard_previous">Previous leaderboard</string>
+    <string name="leaderboard_next">Next leaderboard</string>
+    <string name="leaderboard_empty">No gifts yet</string>
+    <string name="leaderboard_load_error">Couldn’t load the leaderboards.</string>
+    <string name="leaderboard_unavailable">No leaderboards available</string>
+    <string name="leaderboard_rank">Rank %1$d</string>
+    <string name="leaderboard_gift_target">Gift %1$s to take %2$s</string>
+    <string name="leaderboard_kick_target">Send %1$s to take %2$s</string>
+    <string name="leaderboard_ordinal">{0,selectordinal,one{#st}two{#nd}few{#rd}other{#th}}</string>
+    <string name="leaderboard_kicks">%1$s KICKs</string>
+    <plurals name="leaderboard_subs">
+        <item quantity="one">%1$s sub</item>
+        <item quantity="other">%1$s subs</item>
+    </plurals>
+    <plurals name="leaderboard_resets_days">
+        <item quantity="one">Resets in %1$d day</item>
+        <item quantity="other">Resets in %1$d days</item>
+    </plurals>
+    <plurals name="leaderboard_resets_hours">
+        <item quantity="one">Resets in %1$d hour</item>
+        <item quantity="other">Resets in %1$d hours</item>
+    </plurals>
+    <string name="leaderboard_resets_soon">Resets in less than an hour</string>
+</resources>

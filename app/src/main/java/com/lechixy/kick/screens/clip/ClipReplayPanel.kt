@@ -44,7 +44,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalInspectionMode
-import androidx.compose.ui.platform.LocalUriHandler
+import com.lechixy.kick.util.openBrowserTab
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -121,7 +122,6 @@ private fun ClipChannelDetails(
     modifier: Modifier,
 ) {
     val context = LocalContext.current
-    val uriHandler = LocalUriHandler.current
     val preview = LocalInspectionMode.current
     val follow = if (preview) AccountFollowAction(true, stringResource(R.string.following), true) {}
         else rememberAccountFollowAction(clip.channel.slug, optimistic = true)
@@ -166,12 +166,11 @@ private fun ClipChannelDetails(
                         modifier = Modifier.weight(1f, fill = false),
                     )
                     if (clip.channel.isVerified) {
-                        Icon(
-                            painterResource(R.drawable.verified_badge),
-                            stringResource(R.string.clip_verified),
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(16.dp),
-                        )
+                        val label = stringResource(R.string.clip_verified)
+                        com.lechixy.kick.components.channel.chat.ChatTooltip(label) {
+                            Icon(painterResource(R.drawable.verified_badge), label,
+                                tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                        }
                     }
                 }
                 clip.video?.let {
@@ -216,7 +215,7 @@ private fun ClipChannelDetails(
                 DropdownMenu(expanded = showMore, onDismissRequest = { showMore = false }) {
                     DropdownMenuItem(text = { Text(stringResource(R.string.channel_open_kick)) }, onClick = {
                         showMore = false
-                        uriHandler.openUri(clip.shareUrl)
+                        runCatching { context.openBrowserTab(clip.shareUrl.toHttpUrl()) }
                     })
                 }
             }

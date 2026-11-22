@@ -349,6 +349,8 @@ fun KickPlayerView(
     })
 
     val settingsRepository = LocalSettingsRepository.current
+    val videoNoiseReduction by remember(settingsRepository) { settingsRepository.get(SettingsKeys.VIDEO_NOISE_REDUCTION) }
+        .collectAsStateWithLifecycle(false)
     val blurEffects = LocalBlurEffectsEnabled.current
     val ambientModeValue by remember(settingsRepository) { settingsRepository.get(SettingsKeys.AMBIENT_MODE) }
         .collectAsStateWithLifecycle(SettingsKeys.AMBIENT_MODE.defaultValue)
@@ -1023,6 +1025,7 @@ fun KickPlayerView(
                 player, isPlaying,
                 Modifier.fillMaxSize(),
                 zoom = playbackZoom,
+                reduceNoise = videoNoiseReduction,
                 onTextureChanged = { playerTexture = it },
             )
         }
@@ -1651,6 +1654,19 @@ fun KickPlayerView(
                                             title = stringResource(R.string.player_auto_fullscreen),
                                             description = stringResource(R.string.player_auto_fullscreen_description),
                                             icon = R.drawable.fullscreen_24dp_e3e3e3_fill0_wght400_grad0_opsz24
+                                        )
+
+                                        val supportsNoiseReduction = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                                        SettingSwitch(
+                                            key = SettingsKeys.VIDEO_NOISE_REDUCTION,
+                                            title = stringResource(R.string.player_video_noise_reduction),
+                                            description = stringResource(
+                                                if (supportsNoiseReduction) R.string.player_video_noise_reduction_description
+                                                else R.string.player_video_noise_reduction_requires_android_13
+                                            ),
+                                            icon = R.drawable.tune_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+                                            enabled = supportsNoiseReduction,
+                                            badge = stringResource(R.string.player_experimental),
                                         )
                                     }
                                 }

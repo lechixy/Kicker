@@ -10,6 +10,7 @@ import com.lechixy.kick.data.account.repository.AccountDashboardRepository
 import com.lechixy.kick.data.account.repository.AuthRepository
 import com.lechixy.kick.data.account.repository.ChallengesRepository
 import com.lechixy.kick.data.chat.repository.AccountChatRepository
+import com.lechixy.kick.data.chat.repository.SilencedUsersRepository
 import com.lechixy.kick.data.following.repository.FollowingRepository
 
 /** Application scoped account services, also usable by the existing non-Hilt player ViewModels. */
@@ -20,6 +21,8 @@ object AccountGraph {
     lateinit var following: FollowingRepository
         private set
     lateinit var chat: AccountChatRepository
+        private set
+    internal lateinit var silencedUsers: SilencedUsersRepository
         private set
     lateinit var dashboard: AccountDashboardRepository
         private set
@@ -32,6 +35,7 @@ object AccountGraph {
         auth = AuthRepository(SecureSessionStore(context.applicationContext))
         following = FollowingRepository(auth, scope)
         chat = AccountChatRepository(auth)
+        silencedUsers = SilencedUsersRepository(auth, context.getSharedPreferences("silenced_users", Context.MODE_PRIVATE), scope)
         dashboard = AccountDashboardRepository(auth, scope)
         challenges = ChallengesRepository(auth, scope)
         notifications = com.lechixy.kick.data.notifications.AccountNotificationsRepository(auth, challenges, scope)

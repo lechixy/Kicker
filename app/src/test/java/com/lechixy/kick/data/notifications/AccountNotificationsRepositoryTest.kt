@@ -54,6 +54,8 @@ class AccountNotificationsRepositoryTest {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val opened = CompletableDeferred<TestSocket>()
         val levelRequests = AtomicInteger()
+        val userFeedTokens = AtomicInteger()
+        val connectionTokens = AtomicInteger()
         val animatedBadge = "https://ext.cdn.kick.com/chat/badges/27.gif"
         val auth = signedInAuth(userId = 29081495) { request ->
             when (request.url.encodedPath) {
@@ -61,7 +63,11 @@ class AccountNotificationsRepositoryTest {
                     {"provider":"pusher","credentials":{"app_key":"key","cluster":"us2"}},
                     {"provider":"centrifugo","credentials":{"url":"wss://realtime.example/connection/websocket"}}
                 ]}}""")
-                "/api/v1/realtime/auth/connection" -> objectJson("""{"data":{"token":"connection-token"}}""")
+                "/api/v1/realtime/auth/connection" -> {
+                    val body = Buffer().also { request.body!!.writeTo(it) }
+                    assertEquals(objectJson("""{"client_id":"29081495"}"""), objectJson(body.readUtf8()))
+                    objectJson("""{"data":{"token":"connection-token-${connectionTokens.incrementAndGet()}"}}""")
+                }
                 "/api/v1/gamification/user/level" -> {
                     val level = if (levelRequests.incrementAndGet() == 1) 26 else 27
                     val animatedImage = if (level == 27) animatedBadge else "https://ext.cdn.kick.com/chat/badges/26.gif"
@@ -73,7 +79,10 @@ class AccountNotificationsRepositoryTest {
                     val body = Buffer().also { request.body!!.writeTo(it) }
                     val channel = objectJson(body.readUtf8()).getValue("channel").jsonPrimitive.content
                     assertTrue(channel == "private-userfeed.29081495" || channel == "private-29081495")
-                    objectJson("""{"data":{"token":"token-$channel"}}""")
+                    val token = if (channel.startsWith("private-userfeed.") && userFeedTokens.incrementAndGet() == 3) {
+                        "fresh-token-$channel"
+                    } else "token-$channel"
+                    objectJson("""{"data":{"token":"$token"}}""")
                 }
                 else -> objectJson("{}")
             }
@@ -90,9 +99,9 @@ class AccountNotificationsRepositoryTest {
                 assertEquals("realtime.example", socket.request().url.host)
                 socket.open()
                 val connect = socket.commands.receive()
-                assertEquals("connection-token", connect.getValue("connect").jsonObject.getValue("token").jsonPrimitive.content)
+                assertEquals("connection-token-1", connect.getValue("connect").jsonObject.getValue("token").jsonPrimitive.content)
                 assertNull(socket.commands.tryReceive().getOrNull())
-                socket.reply(connect, """"connect":{}""")
+                socket.reply(connect, """"connect":{"expires":true,"ttl":1}""")
 
                 val subscriptions = List(2) { socket.commands.receive() }.associateBy {
                     it.getValue("subscribe").jsonObject.getValue("channel").jsonPrimitive.content
@@ -100,6 +109,14 @@ class AccountNotificationsRepositoryTest {
                 subscriptions.forEach { (channel, command) ->
                     assertEquals("token-$channel", command.getValue("subscribe").jsonObject.getValue("token").jsonPrimitive.content)
                 }
+                val firstRefresh = socket.commands.receive()
+                assertEquals(objectJson("""{"token":"connection-token-2"}"""), firstRefresh.getValue("refresh"))
+                socket.reply(firstRefresh, """"refresh":{"expires":true,"ttl":1}""")
+
+                val secondRefresh = socket.commands.receive()
+                assertEquals(objectJson("""{"token":"connection-token-3"}"""), secondRefresh.getValue("refresh"))
+                socket.reply(secondRefresh, """"refresh":{"expires":true,"ttl":2700}""")
+                assertTrue(!socket.cancelled.isCompleted)
                 socket.reply(subscriptions.getValue("private-userfeed.29081495"), """"error":{"code":109}""")
                 socket.reply(subscriptions.getValue("private-29081495"), """"subscribe":{}""")
                 socket.push("""{"push":{"channel":"private-29081495","pub":{"data":{
@@ -111,7 +128,14 @@ class AccountNotificationsRepositoryTest {
 
                 val retry = socket.commands.receive()
                 assertEquals("private-userfeed.29081495", retry.getValue("subscribe").jsonObject.getValue("channel").jsonPrimitive.content)
-                socket.reply(retry, """"subscribe":{}""")
+                socket.reply(retry, """"subscribe":{"expires":true,"ttl":1}""")
+                val refresh = socket.commands.receive()
+                assertEquals(
+                    objectJson("""{"channel":"private-userfeed.29081495","token":"fresh-token-private-userfeed.29081495"}"""),
+                    refresh.getValue("sub_refresh"),
+                )
+                socket.reply(refresh, """"sub_refresh":{"expires":true,"ttl":3600}""")
+                assertTrue(!socket.cancelled.isCompleted)
                 socket.push("""{
                     "push":{"channel":"private-userfeed.29081495","pub":{
                         "data":{"event":"NotifyFollowersStreamHasStarted",
