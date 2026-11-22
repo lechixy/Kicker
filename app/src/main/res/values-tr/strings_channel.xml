@@ -207,6 +207,10 @@
     <string name="player_sleep_timer_stop">Zamanlayıcıyı durdur</string>
     <string name="player_sleep_timer_update">Süreyi güncelle</string>
     <string name="player_sleep_timer_running">Zamanlayıcı çalışıyor</string>
+    <string name="player_sleep_end_livestream">Canlı yayın bitince</string>
+    <string name="player_sleep_end_recording">Kayıt bitince</string>
+    <string name="player_sleep_end_clip">Klip bitince</string>
+    <string name="player_apply_speed">Hızı uygula</string>
     <string name="player_sleep_timer_minutes_unit">dakika</string>
     <string name="sleep_timer_started_title">Uyku zamanlayıcısı başladı</string>
     <string name="sleep_timer_started_description">Oynatma %1$d dakika sonra duraklatılacak</string>
@@ -283,6 +287,13 @@
     <string name="recording_download_cancel">İptal</string>
     <string name="recording_download_fallback_name">Yayın kaydı</string>
     <string name="drops_and_rewards">Drop’lar ve Ödüller</string>
+    <string name="drops_how_to_earn">Nasıl kazanılır?</string>
+    <string name="action_dismiss">Kapat</string>
+    <string name="action_view">Görüntüle</string>
+    <plurals name="drops_rewards_count">
+        <item quantity="one">Kazanılacak %d ödül</item>
+        <item quantity="other">Kazanılacak %d ödül</item>
+    </plurals>
     <string name="drops_eligibility">Bu ödülleri kazanmak için %1$s yayıncısını %2$s kategorisinde canlı yayındayken izle.</string>
     <string name="drops_empty">Bu canlı yayında aktif Drop yok.</string>
     <string name="drops_load_failed">Drop’lar yüklenemedi.</string>

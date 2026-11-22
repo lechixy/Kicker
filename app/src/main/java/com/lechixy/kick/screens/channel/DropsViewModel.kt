@@ -1,32 +1,45 @@
 package com.lechixy.kick.screens.channel
 
 import android.app.Application
+import android.content.Context
 import android.content.res.Configuration
 import android.content.res.Resources
 import android.os.SystemClock
 import androidx.annotation.StringRes
+import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.stringSetPreferencesKey
+import androidx.datastore.preferences.preferencesDataStore
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.lechixy.kick.R
+import com.lechixy.kick.data.account.AccountGraph
 import com.lechixy.kick.data.channel.model.ChannelDetail
 import com.lechixy.kick.data.channel.model.DropCampaignDto
+import com.lechixy.kick.data.channel.model.DropCampaignProgressDto
 import com.lechixy.kick.data.channel.model.resolveDropsImageUrl
+import com.lechixy.kick.data.channel.repository.getDropsProgressSummary
 import com.lechixy.kick.data.common.remote.KickNetwork
 import com.lechixy.kick.data.common.repository.KickRepository
 import com.lechixy.kick.data.player.remote.ViewerTrackingDiagnostics
+import java.io.IOException
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class DropCampaignUiModel(
     val id: String,
@@ -36,7 +49,26 @@ data class DropCampaignUiModel(
     val categoryName: String,
     val rewards: List<DropRewardUiModel>,
     val remainingDurationText: String,
-    val endsAtFormatted: String
+    val endsAtFormatted: String,
+    val banner: DropBannerUiModel? = null
+)
+
+data class DropBannerUiModel(
+    val id: String,
+    val title: String,
+    val rewardCountSubtitle: String,
+    val organizationLogoUrl: String,
+    val eligibilityDescription: String,
+    val rewards: List<DropRewardThumbnailUiModel>,
+    val endsAtFormatted: String,
+    val overallProgressFraction: Float
+)
+
+data class DropRewardThumbnailUiModel(
+    val id: String,
+    val name: String,
+    val fullImageUrl: String,
+    val progressFraction: Float
 )
 
 data class DropRewardUiModel(
@@ -44,20 +76,92 @@ data class DropRewardUiModel(
     val name: String,
     val fullImageUrl: String,
     val progressFraction: Float,
-    val isUnlocked: Boolean
+    val isUnlocked: Boolean,
+    val requiredUnits: Int = 0,
+    val remainingDurationText: String? = null
 )
+
+internal data class DropRewardProgress(val fraction: Float, val remainingMinutes: Long)
+
+internal fun DropRewardUiModel.progressFrom(summary: DropCampaignProgressDto?): DropRewardProgress {
+    val watched = (summary?.progressUnits ?: 0L).coerceAtLeast(0)
+    val reward = summary?.rewards?.firstOrNull { it.id == id }
+    val fraction = when {
+        requiredUnits <= 0 || reward?.claimed == true -> 1f
+        reward != null -> reward.progress.coerceIn(0f, 1f)
+        else -> (watched.toFloat() / requiredUnits).coerceIn(0f, 1f)
+    }
+    val remaining = if (fraction >= 1f) 0L else (requiredUnits - watched).coerceAtLeast(0L)
+    return DropRewardProgress(fraction, remaining)
+}
 
 sealed interface DropsUiState {
     data object Loading : DropsUiState
-    data class Success(val campaigns: List<DropCampaignUiModel>) : DropsUiState
+    data class Success(
+        val campaigns: List<DropCampaignUiModel>,
+        val channelId: Long? = null,
+        val livestreamId: Long? = null,
+        val accountGeneration: Long? = null
+    ) : DropsUiState
     data object Empty : DropsUiState
     data object Error : DropsUiState
 }
+
+private val Context.dropsPreferences by preferencesDataStore(name = "drops_banner")
+private val dismissedCampaigns = stringSetPreferencesKey("dismissed_campaigns")
 
 class DropsViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = KickRepository(KickNetwork.api)
     private val _uiState = MutableStateFlow<DropsUiState>(DropsUiState.Empty)
     val uiState = _uiState.asStateFlow()
+    private val preferences = application.dropsPreferences
+    private val _dismissals = MutableStateFlow<Set<String>?>(null)
+    val dismissals = _dismissals.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            preferences.data
+                .map { it[dismissedCampaigns].orEmpty() }
+                .catch { if (it is IOException) emit(emptySet()) else throw it }
+                .collect { saved -> _dismissals.update { it.orEmpty() + saved } }
+        }
+    }
+
+    fun dismissBanner(channelId: Long, campaignId: String) {
+        val key = dismissalKey(channelId, campaignId)
+        _dismissals.update { it.orEmpty() + key }
+        viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
+            // Finish saving the user's dismissal even if they leave the channel immediately.
+            withContext(NonCancellable) {
+                try {
+                    preferences.edit { it[dismissedCampaigns] = it[dismissedCampaigns].orEmpty() + key }
+                } catch (_: IOException) {
+                    // The banner stays dismissed for this ViewModel.
+                }
+            }
+        }
+    }
+
+    internal fun dismissalKey(channelId: Long, campaignId: String): String = "$channelId:$campaignId"
+
+    internal suspend fun loadDialogProgress(state: DropsUiState.Success): DropsUiState.Success {
+        val summaries = AccountGraph.auth.getDropsProgressSummary(state.campaigns.map { it.id })
+        return state.copy(campaigns = state.campaigns.map { campaign ->
+            val summary = summaries[campaign.id]
+            val progress = campaign.rewards.map { it.progressFrom(summary) }
+            val remaining = progress.map { it.remainingMinutes }.filter { it > 0 }.minOrNull() ?: 0L
+            campaign.copy(
+                rewards = campaign.rewards.zip(progress).map { (reward, value) ->
+                    reward.copy(
+                        progressFraction = value.fraction,
+                        isUnlocked = value.remainingMinutes == 0L,
+                        remainingDurationText = formatRemainingDuration(value.remainingMinutes)
+                    )
+                },
+                remainingDurationText = formatRemainingDuration(remaining)
+            )
+        })
+    }
 
     private data class Target(
         val channelId: Long,
@@ -157,7 +261,8 @@ class DropsViewModel(application: Application) : AndroidViewModel(application) {
                             }
                             model
                         }
-                        _uiState.value = if (models.isEmpty()) DropsUiState.Empty else DropsUiState.Success(models)
+                        _uiState.value = if (models.isEmpty()) DropsUiState.Empty
+                            else DropsUiState.Success(models, current.channelId, current.livestreamId, generation)
                         val nextBoundary = campaigns.flatMap { listOf(it.starts, it.ends) }
                             .filter { it > now }.minOrNull() ?: break
                         val untilBoundary = (nextBoundary.toEpochMilli() - now.toEpochMilli()).coerceAtLeast(1L)
@@ -191,18 +296,36 @@ class DropsViewModel(application: Application) : AndroidViewModel(application) {
             val required = reward.requiredUnits.coerceAtLeast(0)
             DropRewardUiModel(reward.id, reward.name, resolveDropsImageUrl(reward.imageUrl),
                 if (required == 0) 1f else (watchedUnits.toFloat() / required).coerceIn(0f, 1f),
-                watchedUnits >= required)
+                watchedUnits >= required,
+                requiredUnits = required)
         }
         val remaining = dto.rewards.map { (it.requiredUnits - watchedUnits).coerceAtLeast(0L) }
             .filter { it > 0 }.minOrNull() ?: 0L
-        val duration = when {
-            remaining == 0L -> text(R.string.drops_unlocked)
-            remaining < 60L -> text(R.string.drops_unlock_minutes, remaining)
-            else -> text(R.string.drops_unlock_hours, remaining / 60, remaining % 60)
-        }
         val date = DateTimeFormatter.ofPattern("MMM d, yyyy", locale).withZone(ZoneId.systemDefault()).format(ends)
-        return DropCampaignUiModel(dto.id, dto.name, resolveDropsImageUrl(dto.organizationLogoUrl),
-            target.channelName, target.categoryName, rewards, duration, text(R.string.drops_ends_on, date))
+        val endsAt = text(R.string.drops_ends_on, date)
+        val logo = resolveDropsImageUrl(dto.organizationLogoUrl)
+        val maxRequiredUnits = dto.rewards.maxOf { it.requiredUnits }
+        val banner = DropBannerUiModel(
+            id = dto.id,
+            title = dto.name,
+            rewardCountSubtitle = resources.getQuantityString(R.plurals.drops_rewards_count, rewards.size, rewards.size),
+            organizationLogoUrl = logo,
+            eligibilityDescription = text(R.string.drops_eligibility, target.channelName, target.categoryName),
+            rewards = rewards.map {
+                DropRewardThumbnailUiModel(it.id, it.name, it.fullImageUrl, it.progressFraction)
+            },
+            endsAtFormatted = endsAt,
+            overallProgressFraction = if (maxRequiredUnits <= 0) 1f
+                else (watchedUnits.toFloat() / maxRequiredUnits).coerceIn(0f, 1f)
+        )
+        return DropCampaignUiModel(dto.id, dto.name, logo,
+            target.channelName, target.categoryName, rewards, formatRemainingDuration(remaining), endsAt, banner)
+    }
+
+    private fun formatRemainingDuration(remaining: Long): String = when {
+        remaining == 0L -> text(R.string.drops_unlocked)
+        remaining < 60L -> text(R.string.drops_unlock_minutes, remaining)
+        else -> text(R.string.drops_unlock_hours, remaining / 60, remaining % 60)
     }
 
     private fun text(@StringRes resId: Int, vararg arguments: Any): String = resources.getString(resId, *arguments)

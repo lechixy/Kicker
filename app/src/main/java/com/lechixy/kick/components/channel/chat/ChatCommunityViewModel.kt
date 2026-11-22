@@ -43,7 +43,8 @@ data class UserProfileCardUiState(
     val subscribedMonths: Int? = null, val isFollowing: Boolean? = null,
     val badges: List<ResolvedChatBadge> = emptyList(), val isLoading: Boolean = true,
     val actionLoading: Boolean = false, @get:StringRes val error: Int? = null,
-    val isMuted: Boolean = false
+    val isMuted: Boolean = false,
+    val fullSizeProfilePicUrl: String? = null,
 )
 
 internal fun profileDate(raw: String?, locale: Locale = Locale.ENGLISH): String? = raw?.let {
@@ -140,6 +141,8 @@ class ChatCommunityViewModel : ViewModel() {
                 val user = userRequest.await()
                 val channel = channelRequest.await()
                 val channelUser = channel?.obj("user")
+                val fullSizeProfilePicUrl = channelUser?.value("profile_pic")?.takeIf(String::isNotBlank)
+                _profile.update { it?.copy(fullSizeProfilePicUrl = fullSizeProfilePicUrl) }
                 val id = user?.value("id")?.toLongOrNull() ?: channelUser?.value("id")?.toLongOrNull() ?: sender?.id
                 val streak = id?.let { userId -> optional("streak") {
                     if (AccountGraph.auth.session.value.signedIn)
@@ -168,7 +171,8 @@ class ChatCommunityViewModel : ViewModel() {
                 val level = user?.value("level")?.toIntOrNull() ?: user?.obj("gamification")?.value("level")?.toIntOrNull()
                     ?: identity?.badgesV2?.firstNotNullOfOrNull { it.levelNumber() }
                 _profile.value = initial.copy(userId = id,
-                    profilePicUrl = user?.value("profile_pic") ?: user?.value("profile_picture") ?: channelUser?.value("profile_pic") ?: initial.profilePicUrl,
+                    profilePicUrl = user?.value("profile_pic") ?: user?.value("profile_picture") ?: fullSizeProfilePicUrl ?: initial.profilePicUrl,
+                    fullSizeProfilePicUrl = fullSizeProfilePicUrl,
                     bannerPicUrl = channel?.obj("banner_image")?.let { it.value("src") ?: it.value("url") },
                     level = level, streakDays = streak?.value("length_days")?.toIntOrNull(),
                     createdAt = user?.value("created_at") ?: channelUser?.value("created_at"),

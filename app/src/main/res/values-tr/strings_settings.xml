@@ -9,6 +9,13 @@
     <string name="developer_floating_menu">Yüzen geliştirici menüsü</string>
     <string name="developer_trigger_live">Yayın başladı animasyonunu tetikle</string>
     <string name="developer_live_required">Animasyonu denemek için canlı yayın aç</string>
+    <string name="developer_drops_test">Drops banner testi</string>
+    <string name="developer_drops_show">Test banner’ını göster</string>
+    <string name="developer_drops_hide">Test banner’ını gizle</string>
+    <string name="developer_drops_chat_required">Test banner’ını görmek için canlı yayın sohbetini aç.</string>
+    <string name="developer_drops_sample_title">Test Drops kampanyası</string>
+    <string name="developer_drops_sample_reward">Test ödülü %1$d</string>
+    <string name="developer_drops_sample_category">Test kategorisi</string>
     <string name="developer_viewer_socket">İzleyici websocket bağlantısı</string>
     <string name="developer_status_idle">Beklemede · aktif canlı oynatma yok</string>
     <string name="developer_status_token">Token alınıyor</string>
@@ -64,6 +71,8 @@
     <string name="settings_light">Açık</string>
     <string name="settings_dark">Koyu</string>
     <string name="settings_dynamic_color">Dinamik renkler</string>
+    <string name="settings_blur_effects">Bulanıklık efektleri</string>
+    <string name="settings_blur_effects_description">Oynatıcı kontrollerinde, sohbette, kanal görsellerinde ve diğer efektlerde bulanıklık kullan.</string>
     <string name="settings_group_seasonal_effects">Mevsimsel efektler</string>
     <string name="settings_winter_snow">Kış modu</string>
     <string name="settings_winter_snow_description">Video oynatıcısının dışında kar yağışı gösterir</string>

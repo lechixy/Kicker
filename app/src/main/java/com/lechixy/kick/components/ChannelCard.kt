@@ -98,6 +98,7 @@ fun ChannelCard(
                     .onGloballyPositioned { avatarCoordinates = it }
                     .then(mediaZoom),
                 expandOnClick = true,
+                channelSlug = channel.slug,
             )
 
             Column(modifier = Modifier.weight(1f)) {

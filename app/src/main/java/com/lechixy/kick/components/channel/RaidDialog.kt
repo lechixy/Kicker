@@ -24,7 +24,13 @@ import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun RaidDialog(sourceName: String, raid: ChannelRaid, onStay: () -> Unit, onJoin: () -> Unit) {
+internal fun RaidDialog(
+    sourceName: String,
+    raid: ChannelRaid,
+    onStay: () -> Unit,
+    onJoin: () -> Unit,
+    canAutoJoin: () -> Boolean,
+) {
     var remaining by remember(raid) { mutableIntStateOf(10) }
     var stream by remember(raid) { mutableStateOf(raid.toLivestream()) }
     var resolved by remember(raid) { mutableStateOf(false) }
@@ -34,13 +40,15 @@ internal fun RaidDialog(sourceName: String, raid: ChannelRaid, onStay: () -> Uni
     val stay = {
         if (!resolved) { resolved = true; onStay() }
     }
-    val join by rememberUpdatedState(accept)
+    val resolveCountdown by rememberUpdatedState({
+        if (canAutoJoin()) accept() else stay()
+    })
     LaunchedEffect(raid) {
         repeat(10) {
             delay(1000.milliseconds)
             remaining--
         }
-        join()
+        resolveCountdown()
     }
     LaunchedEffect(raid) {
         try {

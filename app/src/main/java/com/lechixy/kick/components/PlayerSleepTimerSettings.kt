@@ -1,6 +1,12 @@
 package com.lechixy.kick.components
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -55,6 +61,8 @@ internal fun PlayerSleepTimerSettings(
     timer: SleepTimerState,
     lastMinutes: Int,
     enabled: Boolean,
+    mediaEndLabel: String? = null,
+    onMediaEnd: () -> Unit = {},
     onApply: (Int) -> Unit,
 ) {
     val slider = remember {
@@ -63,8 +71,8 @@ internal fun PlayerSleepTimerSettings(
     }
     val minutes = slider.value.roundToInt()
     val duration = stringResource(R.string.player_minutes, minutes)
-    val running = timer.remainingSeconds > 0
-    val canUpdate = running && minutes != timer.selectedMinutes
+    val running = timer.active
+    val canUpdate = running && (timer.atMediaEnd || minutes != timer.selectedMinutes)
 
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp).verticalScroll(rememberScrollState()),
@@ -82,7 +90,8 @@ internal fun PlayerSleepTimerSettings(
                 )
                 Column {
                     Text(stringResource(R.string.player_sleep_timer_running), style = MaterialTheme.typography.titleSmall)
-                    Text(sleepTimerRemainingText(LocalResources.current, timer.remainingSeconds),
+                    Text(if (timer.atMediaEnd) mediaEndLabel.orEmpty()
+                        else sleepTimerRemainingText(LocalResources.current, timer.remainingSeconds),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -92,6 +101,11 @@ internal fun PlayerSleepTimerSettings(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
+            if (mediaEndLabel != null && !timer.atMediaEnd) {
+                OutlinedButton(onClick = onMediaEnd, enabled = enabled) {
+                    Text(mediaEndLabel)
+                }
+            }
             AnimatedCounterText(
                 count = minutes,
                 style = MaterialTheme.typography.headlineMedium,
@@ -125,6 +139,52 @@ internal fun PlayerSleepTimerSettings(
                     Text(stringResource(if (running) R.string.player_sleep_timer_update else R.string.player_sleep_timer_start))
                 }
             }
+        }
+    }
+}
+
+private val playbackSpeedOptions = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f)
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+internal fun PlayerPlaybackSpeedSettings(
+    currentSpeed: Float,
+    enabled: Boolean,
+    speedLabel: (Float) -> String,
+    onApply: (Float) -> Unit,
+) {
+    val slider = remember(currentSpeed) {
+        val index = playbackSpeedOptions.indices.minBy { kotlin.math.abs(playbackSpeedOptions[it] - currentSpeed) }
+        SliderState(value = index.toFloat(), steps = playbackSpeedOptions.size - 2,
+            trackRange = 0f..playbackSpeedOptions.lastIndex.toFloat())
+    }
+    val speed = playbackSpeedOptions[slider.value.roundToInt()]
+    val label = speedLabel(speed)
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp).verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        AnimatedContent(
+            targetState = speed,
+            modifier = Modifier.clearAndSetSemantics { contentDescription = label },
+            transitionSpec = {
+                val direction = if (targetState > initialState) 1 else -1
+                (slideInVertically(tween(180)) { direction * it / 2 } + fadeIn(tween(180)))
+                    .togetherWith(slideOutVertically(tween(150)) { -direction * it / 2 } + fadeOut(tween(150)))
+            },
+            label = "playback speed",
+        ) {
+            Text(speedLabel(it), style = MaterialTheme.typography.headlineMedium)
+        }
+        Slider(
+            state = slider,
+            onValueChange = { slider.value = it },
+            enabled = enabled,
+            modifier = Modifier.semantics { stateDescription = label },
+        )
+        Button(onClick = { onApply(speed) }, enabled = enabled && speed != currentSpeed,
+            modifier = Modifier.align(Alignment.End)) {
+            Text(stringResource(R.string.player_apply_speed))
         }
     }
 }

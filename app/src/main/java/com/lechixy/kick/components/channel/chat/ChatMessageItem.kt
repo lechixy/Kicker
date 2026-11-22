@@ -1,5 +1,7 @@
 package com.lechixy.kick.components.channel.chat
 
+import com.lechixy.kick.data.settings.repository.LocalBlurEffectsEnabled
+
 import androidx.annotation.DrawableRes
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -587,15 +589,18 @@ internal fun rememberStreamerMentionEffects(fontSizeSp: Int): Pair<Brush, Shadow
         label = "streamer_mention_offset"
     )
 
-    val glowRadius by transition.animateFloat(
-        initialValue = 12f,
-        targetValue = 30f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "streamer_mention_blur"
-    )
+    val shadow = if (LocalBlurEffectsEnabled.current) {
+        val glowRadius by transition.animateFloat(
+            initialValue = 12f,
+            targetValue = 30f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1000, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "streamer_mention_blur"
+        )
+        Shadow(MaterialTheme.colorScheme.primary.copy(alpha = 0.85f), blurRadius = glowRadius)
+    } else Shadow.None
 
     val gradientColors = listOf(
         MaterialTheme.colorScheme.primary,
@@ -608,12 +613,6 @@ internal fun rememberStreamerMentionEffects(fontSizeSp: Int): Pair<Brush, Shadow
         start = Offset(offset, offset),
         end = Offset(offset + spanWidthPx, offset + spanWidthPx),
         tileMode = TileMode.Mirror
-    )
-
-    val shadow = Shadow(
-        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
-        offset = Offset.Zero,
-        blurRadius = glowRadius
     )
 
     return brush to shadow

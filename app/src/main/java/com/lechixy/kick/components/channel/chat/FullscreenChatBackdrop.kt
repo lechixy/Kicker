@@ -1,5 +1,7 @@
 package com.lechixy.kick.components.channel.chat
 
+import com.lechixy.kick.data.settings.repository.LocalBlurEffectsEnabled
+
 import android.graphics.Bitmap
 import android.graphics.BlendMode as AndroidBlendMode
 import android.graphics.Canvas
@@ -152,6 +154,7 @@ internal fun rememberLegacyFullscreenChatFrame(
     frosted: Boolean = false,
     mediaKey: Any? = null,
 ): State<FullscreenChatVideoFrame?> {
+    if (!LocalBlurEffectsEnabled.current) return remember { mutableStateOf(null) }
     val frame = remember(texture, soft, frosted, mediaKey) { mutableStateOf<FullscreenChatVideoFrame?>(null) }
     val isPlaying by rememberUpdatedState(playing)
     val radius = with(LocalDensity.current) { frostedRadius.toPx() }
@@ -227,9 +230,10 @@ internal fun BoxScope.FullscreenChatBackdrop(
     blur: FullscreenChatBlur?,
     edges: FullscreenChatEdges? = null,
 ) {
+    val activeBlur = blur.takeIf { LocalBlurEffectsEnabled.current }
     val dock = LocalFullscreenChatDock.current
     val shape = LocalFullscreenChatShape.current
-    if (blur == null && edges == null && dock?.edges?.isDocked != true) {
+    if (activeBlur == null && edges == null && dock?.edges?.isDocked != true) {
         Box(Modifier.matchParentSize().background(Color.Black.copy(alpha = opacity), shape.backgroundShape()))
         return
     }
@@ -240,9 +244,9 @@ internal fun BoxScope.FullscreenChatBackdrop(
             dock != null -> dock.extend(it)
             else -> FullscreenChatBackdropRegion(it)
         }
-        bounds.copy(shape = shape, style = blur?.style ?: FullscreenChatBlurStyle.Soft)
+        bounds.copy(shape = shape, style = activeBlur?.style ?: FullscreenChatBlurStyle.Soft)
     }
-    val onBoundsChanged = blur?.onBoundsChanged
+    val onBoundsChanged = activeBlur?.onBoundsChanged
     DisposableEffect(onBoundsChanged) {
         onDispose { onBoundsChanged?.invoke(null) }
     }
@@ -273,7 +277,7 @@ internal fun BoxScope.FullscreenChatBackdrop(
                             CornerRadius(corners[0]), CornerRadius(corners[1]), CornerRadius(corners[2]), CornerRadius(corners[3])))
                     } else null
                     fun DrawScope.drawBackdrop() {
-                        val frame = blur?.legacyFrame?.value
+                        val frame = activeBlur?.legacyFrame?.value
                         val bitmap = if (frosted) frame?.frostedBitmap else frame?.bitmap
                         if (frame != null && bitmap != null) {
                             drawImage(
@@ -305,7 +309,7 @@ internal fun VideoBackdropBlur(
     controlOpacity: () -> Float = { 1f },
     opacity: () -> Float = { 1f },
 ) {
-    if (Build.VERSION.SDK_INT < 31 || texture == null || regions.isEmpty()) return
+    if (!LocalBlurEffectsEnabled.current || Build.VERSION.SDK_INT < 31 || texture == null || regions.isEmpty()) return
     val radius = with(LocalDensity.current) { 15.dp.toPx() }
     val maxFeather = with(LocalDensity.current) { 28.dp.toPx() }
     val glassRadius = with(LocalDensity.current) { frostedRadius.toPx() }

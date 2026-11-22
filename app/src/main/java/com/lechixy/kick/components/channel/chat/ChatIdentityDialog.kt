@@ -42,6 +42,7 @@ import com.lechixy.kick.components.channel.ExpandableProfilePhoto
 import com.lechixy.kick.components.dialogEntrance
 import com.lechixy.kick.data.channel.model.SubscriberBadge
 import com.lechixy.kick.data.chat.model.ChatIdentity
+import java.util.Locale
 
 internal val identityColors = listOf("#00F1FF", "#4CFF75", "#55FFC7", "#6F87FF", "#AAA9FF", "#BDFF28", "#E26EFF", "#E4D88F",
     "#E5FFAB", "#FEA0CF", "#FF2C56", "#FF4117", "#FF55B3", "#FFA600", "#FFAE76", "#FFFFFF")
@@ -89,7 +90,11 @@ internal fun ChatIdentityDialog(
                 ) {
                     Text(stringResource(R.string.chat_identity), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                     if (!avatarUrl.isNullOrBlank()) {
-                        ExpandableProfilePhoto(avatarUrl, username, Modifier.size(32.dp), expandOnClick = true)
+                        ExpandableProfilePhoto(
+                            avatarUrl, username, Modifier.size(32.dp),
+                            expandOnClick = true,
+                            channelSlug = username.lowercase(Locale.ROOT),
+                        )
                     }
                 }
                 Surface(modifier = Modifier.clickable(enabled = onPreviewClick != null,

@@ -30,6 +30,23 @@ data class DropRewardDto(
     @SerialName("required_units") val requiredUnits: Int
 )
 
+@Serializable
+internal data class DropsProgressSummaryResponseDto(val data: List<DropCampaignProgressDto>)
+
+@Serializable
+internal data class DropCampaignProgressDto(
+    val id: String,
+    @SerialName("progress_units") val progressUnits: Long,
+    val rewards: List<DropRewardProgressDto>
+)
+
+@Serializable
+internal data class DropRewardProgressDto(
+    val id: String,
+    val progress: Float,
+    val claimed: Boolean
+)
+
 private val dropsCdn = "https://ext.kick.com/".toHttpUrl()
 
 internal fun resolveDropsImageUrl(url: String): String =

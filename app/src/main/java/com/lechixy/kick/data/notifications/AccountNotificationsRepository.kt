@@ -3,9 +3,12 @@ package com.lechixy.kick.data.notifications
 import android.os.SystemClock
 import com.lechixy.kick.data.account.repository.AuthRepository
 import com.lechixy.kick.data.account.repository.ChallengesRepository
+import com.lechixy.kick.data.account.repository.fetchAccountLevel
 import com.lechixy.kick.data.account.remote.accountDiagnostic
 import com.lechixy.kick.data.chat.model.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
 import okhttp3.*
@@ -45,13 +48,28 @@ class AccountNotificationsRepository internal constructor(
             }.distinctUntilChanged().collectLatest { (active, generation, userId) ->
                 queue.clearAccountNotifications()
                 if (!active || userId == null) return@collectLatest
-                var backoff = 1_000L
-                while (currentCoroutineContext().isActive) {
-                    try { connect(userId, generation) }
-                    catch (cancelled: CancellationException) { throw cancelled }
-                    catch (error: Exception) { accountDiagnostic(TAG, "Feed connection failed: ${error.javaClass.simpleName}") }
-                    delay(backoff.milliseconds)
-                    backoff = (backoff * 2).coerceAtMost(30_000)
+                coroutineScope {
+                    val levelUps = Channel<AppNotification>(capacity = 5)
+                    launch {
+                        var lastNotifiedLevel = 0
+                        for (item in levelUps) {
+                            if (item.level > lastNotifiedLevel) {
+                                val badgeUrl = fetchLevelBadge(item.level)
+                                if (foreground.value && accepts(item)) {
+                                    lastNotifiedLevel = item.level
+                                    queue.add(item.copy(animatedBadgeUrl = badgeUrl), elapsedRealtime())
+                                }
+                            }
+                        }
+                    }
+                    var backoff = 1_000L
+                    while (isActive) {
+                        try { connect(userId, generation, levelUps) }
+                        catch (cancelled: CancellationException) { throw cancelled }
+                        catch (error: Exception) { accountDiagnostic(TAG, "Feed connection failed: ${error.javaClass.simpleName}") }
+                        delay(backoff.milliseconds)
+                        backoff = (backoff * 2).coerceAtMost(30_000)
+                    }
                 }
             }
         }
@@ -74,7 +92,29 @@ class AccountNotificationsRepository internal constructor(
         return item.kind.isSleepTimer || item.preview ||
             (session.signedIn && session.generation == item.generation && session.profile?.userId == item.userId)
     }
-    private suspend fun connect(userId: Long, generation: Long) = coroutineScope {
+    private suspend fun fetchLevelBadge(level: Int): String? = withTimeoutOrNull(4_000) {
+        repeat(3) { attempt ->
+            val current = try {
+                auth.fetchAccountLevel()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+            if (current != null && current.level >= level) {
+                return@withTimeoutOrNull current.badge?.animatedImage
+                    ?.takeIf { current.level == level && it.isNotBlank() }
+            }
+            if (attempt < 2) delay(500)
+        }
+        null
+    }
+
+    private suspend fun connect(
+        userId: Long,
+        generation: Long,
+        levelUps: SendChannel<AppNotification>
+    ) = coroutineScope {
         val metadata = auth.request("$REALTIME_URL/connection", "POST",
             json.encodeToJsonElement(RealtimeConnectionRequest(RealtimeClientInfo(userId.toString()))).jsonObject)
         val response = json.decodeFromJsonElement<RealtimeConnectionResponse>(metadata)
@@ -116,6 +156,10 @@ class AccountNotificationsRepository internal constructor(
                         val session = auth.session.value
                         if (!foreground.value || !session.signedIn || session.generation != generation || session.profile?.userId != userId) return@forEach
                         val item = decodeAccountNotification(source, event, raw, userId, generation) ?: return@forEach
+                        if (item.kind == NotificationKind.LevelUp) {
+                            levelUps.trySend(item)
+                            return@forEach
+                        }
                         if (item.kind == NotificationKind.WatchTimeGoal) challenges.onGoalReached(source, raw)
                         queue.add(item, elapsedRealtime())
                     }

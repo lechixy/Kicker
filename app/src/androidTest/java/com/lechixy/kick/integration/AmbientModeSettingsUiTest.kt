@@ -7,17 +7,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.junit4.v2.createComposeRule
-import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.test.platform.app.InstrumentationRegistry
-import com.lechixy.kick.R
 import com.lechixy.kick.components.settings.AmbientModeSettings
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 import com.lechixy.kick.data.settings.repository.SettingsRepository
-import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -27,6 +22,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
+import java.io.File
 
 class AmbientModeSettingsUiTest {
     @get:Rule val compose = createComposeRule()
@@ -52,9 +48,6 @@ class AmbientModeSettingsUiTest {
                     }
                 }
             }
-            compose.onNodeWithText(context.getString(R.string.player_ambient_reset_levels))
-                .performScrollTo()
-                .performClick()
             compose.waitUntil(5_000) {
                 runBlocking {
                     settings.get(SettingsKeys.AMBIENT_INTENSITY).first() == 100 &&

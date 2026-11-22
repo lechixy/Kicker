@@ -110,7 +110,6 @@
     <string name="player_ambient_battery_saver_description">Switch from Live to Dynamic while Android Battery Saver is on.</string>
     <string name="player_ambient_chat_opacity">Chat background opacity</string>
     <string name="player_ambient_navigation_opacity">Navigation background opacity</string>
-    <string name="player_ambient_reset_levels">Reset intensity and spread to 100%</string>
     <string name="player_ambient_preserve_black_bars">Preserve black bars</string>
     <string name="player_ambient_preserve_black_bars_description">Keep player bars black and prevent light bleed from detected black video edges.</string>
     <string name="settings_backup_account_title">Kick sign-in stays on this device</string>

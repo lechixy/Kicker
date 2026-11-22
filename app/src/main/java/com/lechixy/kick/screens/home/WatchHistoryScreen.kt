@@ -78,6 +78,7 @@ internal fun WatchHistoryScreen(viewModel: HomeViewModel, onBack: () -> Unit) {
                             ContinueWatchingCard(
                                 entry = entry,
                                 enabled = !openingHistory,
+                                onThumbnailUnavailable = { viewModel.refreshHistoryArtwork(entry) },
                                 onRemove = { viewModel.removeHistory(entry.key) },
                                 onClick = { playHistory(entry, it) },
                             )

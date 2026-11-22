@@ -1,5 +1,7 @@
 package com.lechixy.kick.components.channel
 
+import com.lechixy.kick.data.settings.repository.LocalBlurEffectsEnabled
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -10,8 +12,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.BlurredEdgeTreatment
@@ -96,7 +100,7 @@ internal fun OfflineChannelBanner(
                 if (dismissGesture == true) dismissDrag?.invoke(amount) else drag(-amount)
             }
         }.background(Color.Black), contentAlignment = Alignment.Center) {
-        FittedBannerImage(bannerUrl)
+        FittedBannerImage(bannerUrl, channel.user?.profilePic)
 
         val compactBanner = remember(channel.bannerImage, bannerUrl, targetWidthPx) {
             channel.bannerImage?.let {
@@ -104,7 +108,7 @@ internal fun OfflineChannelBanner(
             } ?: bannerUrl
         }
         Box(Modifier.matchParentSize().graphicsLayer { alpha = collapseProgress.value }.background(Color.Black)) {
-            FittedBannerImage(compactBanner)
+            FittedBannerImage(compactBanner, channel.user?.profilePic)
             val username = channel.user?.username?.takeIf { it.isNotBlank() } ?: channel.slug
             Row(
                 Modifier.align(Alignment.Center)
@@ -134,12 +138,17 @@ internal fun OfflineChannelBanner(
 }
 
 @Composable
-private fun FittedBannerImage(url: String?) {
-    if (url.isNullOrBlank()) return
+private fun FittedBannerImage(url: String?, fallbackUrl: String?) {
+    var failed by remember(url, fallbackUrl) { mutableStateOf(false) }
+    val artwork = url?.takeIf { it.isNotBlank() && !failed } ?: fallbackUrl
+    if (artwork.isNullOrBlank()) return
     // Keep the artwork's proportions and let the blurred copy fill the remaining space.
-    AsyncImage(url, null,
-        Modifier.fillMaxSize().blur(24.dp, BlurredEdgeTreatment.Unbounded).graphicsLayer { alpha = 0.75f },
-        alignment = Alignment.Center, contentScale = ContentScale.Crop)
-    AsyncImage(url, null, Modifier.fillMaxSize().graphicsLayer { scaleX = 1.1f; scaleY = 1.1f },
-        alignment = Alignment.Center, contentScale = ContentScale.Fit)
+    if (LocalBlurEffectsEnabled.current) {
+        AsyncImage(artwork, null,
+            Modifier.fillMaxSize().blur(24.dp, BlurredEdgeTreatment.Unbounded).graphicsLayer { alpha = 0.75f },
+            alignment = Alignment.Center, contentScale = ContentScale.Crop)
+    }
+    AsyncImage(artwork, null, Modifier.fillMaxSize().graphicsLayer { scaleX = 1.1f; scaleY = 1.1f },
+        alignment = Alignment.Center, contentScale = ContentScale.Fit,
+        onError = { failed = true })
 }

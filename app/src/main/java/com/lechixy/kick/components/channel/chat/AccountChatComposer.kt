@@ -131,13 +131,28 @@ private fun ComposerContent(
     var kicks by remember { mutableStateOf<Long?>(null) }
     var showPointsDialog by remember { mutableStateOf(false) }
     var showIdentityDialog by remember { mutableStateOf(false) }
-    var showDropsDialog by remember { mutableStateOf(false) }
-    val dropsState = if (channel.livestream != null) {
-        drops?.uiState?.collectAsChatState()?.value ?: DropsUiState.Empty
-    } else DropsUiState.Empty
+    var showDropsDialog by remember(channel.livestream?.id) { mutableStateOf(false) }
+    var dropsSelection by remember(channel.livestream?.id) { mutableStateOf<Pair<String, String?>?>(null) }
+    val previewId = if (chatActive && drops != null && channel.livestream != null) {
+        DeveloperDropsPreview.requestId.collectAsChatState().value
+    } else null
+    val previewCampaign = if (previewId != null || dropsSelection?.first == DeveloperDropsPreview.campaignId) {
+        developerDropsCampaign(
+            channel.user?.username ?: channel.slug,
+            channel.livestream?.categories?.firstOrNull()?.name ?: stringResource(R.string.developer_drops_sample_category)
+        )
+    } else null
+    val dropsState = drops?.uiState?.collectAsChatState()?.value?.takeIf {
+        channel.livestream != null && (it !is DropsUiState.Success ||
+            (it.channelId == channel.id && it.livestreamId == channel.livestream.id &&
+                it.accountGeneration == session.generation))
+    } ?: DropsUiState.Empty
     val dropsButton: @Composable () -> Unit = {
         if (drops != null) {
-            DropsRewardsButton(dropsState, onClick = { showDropsDialog = true })
+            DropsRewardsButton(dropsState, onClick = {
+                dropsSelection = null
+                showDropsDialog = true
+            })
         }
     }
     var showEmotes by rememberSaveable { mutableStateOf(false) }
@@ -354,7 +369,30 @@ private fun ComposerContent(
                 dropsButton()
             }
         } else null,
-        chatContent = chatContent,
+        chatContent = {
+            val dismissals = drops?.dismissals?.collectAsChatState()?.value
+            val realBanner = if (drops != null && dismissals != null && chatActive) {
+                (dropsState as? DropsUiState.Success)?.campaigns?.firstOrNull {
+                    it.banner != null && drops.dismissalKey(channel.id, it.id) !in dismissals
+                }?.banner
+            } else null
+            key(channel.livestream?.id) {
+                DropsChatContent(
+                    banner = if (previewId != null) previewCampaign?.banner else realBanner,
+                    previewId = previewId,
+                    onDismiss = { campaignId ->
+                        if (campaignId == DeveloperDropsPreview.campaignId) DeveloperDropsPreview.hide()
+                        else drops?.dismissBanner(channel.id, campaignId)
+                    },
+                    onOpen = { campaignId, rewardId ->
+                        dropsSelection = campaignId to rewardId
+                        showDropsDialog = true
+                    },
+                    chatActive = chatActive,
+                    chatContent = chatContent
+                )
+            }
+        },
         rulesFooter = rulesFooter
     ) {
         Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = 10.dp, vertical = 8.dp),
@@ -532,7 +570,41 @@ private fun ComposerContent(
         if (!chatActive) showDropsDialog = false
     }
     if (chatActive && showDropsDialog && drops != null && channel.livestream != null) {
-        DropsCampaignDialog(dropsState, onRetry = drops::retry, onDismiss = { showDropsDialog = false })
+        val selection = dropsSelection
+        val dialogState = when {
+            selection?.first == DeveloperDropsPreview.campaignId && previewCampaign != null ->
+                DropsUiState.Success(listOf(previewCampaign))
+            selection != null && dropsState is DropsUiState.Success -> {
+                val campaign = dropsState.campaigns.firstOrNull { it.id == selection.first }
+                if (campaign == null) DropsUiState.Empty else dropsState.copy(campaigns = listOf(campaign))
+            }
+            else -> dropsState
+        }
+        val (displayedState, retry) = if (session.signedIn && dialogState is DropsUiState.Success &&
+            selection?.first != DeveloperDropsPreview.campaignId
+        ) {
+            val campaignIds = dialogState.campaigns.map { it.id }
+            var attempt by remember { mutableIntStateOf(0) }
+            var progressState by remember(campaignIds, attempt) { mutableStateOf<DropsUiState>(DropsUiState.Loading) }
+            LaunchedEffect(campaignIds, attempt) {
+                progressState = try {
+                    drops.loadDialogProgress(dialogState)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    DropsUiState.Error
+                }
+            }
+            progressState to { attempt += 1 }
+        } else {
+            dialogState to drops::retry
+        }
+        DropsCampaignDialog(
+            displayedState,
+            onRetry = retry,
+            onDismiss = { showDropsDialog = false },
+            initialSelection = selection?.let { (campaignId, rewardId) -> rewardId?.let { campaignId to it } }
+        )
     }
     if (showPointsDialog && session.signedIn) {
         ChannelPointsDialog(channel, points, kicks, onDismiss = { showPointsDialog = false }, ownChannel = ownChannel, pointsEnabled = pointsEnabled,

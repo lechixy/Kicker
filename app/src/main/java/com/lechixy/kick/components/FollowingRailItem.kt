@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -34,8 +35,15 @@ import androidx.compose.ui.window.PopupProperties
 import com.lechixy.kick.R
 import com.lechixy.kick.components.account.AccountAvatar
 import com.lechixy.kick.data.following.model.FollowedChannel
+import com.lechixy.kick.util.FormatUtils
 import kotlinx.coroutines.delay
-import java.text.NumberFormat
+
+@Composable
+private fun followingViewerLabel(channel: FollowedChannel): String? {
+    val count = channel.viewers?.takeIf { channel.live && channel.showViewers } ?: return null
+    val locale = LocalConfiguration.current.locales[0]
+    return stringResource(R.string.navigation_following_viewers, FormatUtils.formatViewersCount(count, locale))
+}
 
 @Composable
 internal fun FollowingRailItem(channel: FollowedChannel, selected: Boolean, onClick: () -> Unit,
@@ -59,7 +67,8 @@ internal fun FollowingRailItem(channel: FollowedChannel, selected: Boolean, onCl
             description = description, onClick = {
                 showPreview = false
                 onClick()
-            }, supportingText = channel.title?.takeIf { channel.live }.orEmpty(),
+            }, supportingText = channel.category?.takeIf { channel.live }.orEmpty(),
+            detailText = followingViewerLabel(channel),
             muted = !channel.live,
             icon = { FollowingAvatar(channel) })
         if (showPreview && hovered && channel.live) FollowingRailPreview(channel)
@@ -98,9 +107,8 @@ private fun FollowingRailPreview(channel: FollowedChannel) {
                 verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(channel.title?.takeIf { it.isNotBlank() } ?: channel.username,
                     style = MaterialTheme.typography.titleSmall, maxLines = 3, overflow = TextOverflow.Ellipsis)
-                channel.viewers?.takeIf { channel.showViewers }?.let { count ->
-                    val locale = androidx.compose.ui.platform.LocalConfiguration.current.locales[0]
-                    Text(stringResource(R.string.navigation_following_viewers, NumberFormat.getIntegerInstance(locale).format(count)),
+                followingViewerLabel(channel)?.let { viewers ->
+                    Text(viewers,
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }

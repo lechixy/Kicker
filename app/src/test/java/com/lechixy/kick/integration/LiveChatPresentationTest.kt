@@ -2,6 +2,7 @@ package com.lechixy.kick.integration
 
 import com.lechixy.kick.components.channel.chat.kicksGiftArtworkTier
 import com.lechixy.kick.data.channel.model.DropsCampaignsResponseDto
+import com.lechixy.kick.data.channel.model.DropsProgressSummaryResponseDto
 import com.lechixy.kick.data.channel.model.KickGoalDto
 import com.lechixy.kick.data.channel.model.resolveDropsImageUrl
 import com.lechixy.kick.data.chat.model.ChatPointsUpdate
@@ -15,6 +16,8 @@ import com.lechixy.kick.data.chat.model.StreamHostedMessage
 import com.lechixy.kick.data.chat.model.StreamHostedUser
 import com.lechixy.kick.data.chat.model.TimedChatEvent
 import com.lechixy.kick.data.chat.model.tickerDurationMillis
+import com.lechixy.kick.screens.channel.DropRewardUiModel
+import com.lechixy.kick.screens.channel.progressFrom
 import java.time.Instant
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
@@ -114,5 +117,23 @@ class LiveChatPresentationTest {
         assertEquals(15_000, reward.requiredUnits)
         assertEquals("https://ext.kick.com/drops/reward-image/sunset.png", resolveDropsImageUrl(reward.imageUrl))
         assertEquals(response.data.single().organizationLogoUrl, resolveDropsImageUrl(response.data.single().organizationLogoUrl))
+    }
+
+    @Test fun dropsSummaryUsesServerProgressAndRemainingWatchMinutes() {
+        val summary = json.decodeFromString<DropsProgressSummaryResponseDto>(
+            """{"data":[{"id":"01M7NSNCG7V3T2W54EHBWD1J3W",
+                "organization_logo_url":"https://ext.kick.com/drops/organization/kickdrops.png",
+                "progress_units":1082,"rewards":[
+                {"id":"01M7NS7WFPJJ7FSSE92S00DCGF","progress":0.07213333,"claimed":false},
+                {"id":"claimed","progress":0.5,"claimed":true}]}],"message":"Success"}"""
+        ).data.single()
+        val reward = DropRewardUiModel("01M7NS7WFPJJ7FSSE92S00DCGF", "SunsetK Badge", "",
+            progressFraction = 0f, isUnlocked = false, requiredUnits = 15_000)
+
+        val progress = reward.progressFrom(summary)
+        assertEquals(0.07213333f, progress.fraction, 0.000001f)
+        assertEquals(13_918L, progress.remainingMinutes)
+        assertEquals(0L, reward.copy(id = "claimed").progressFrom(summary).remainingMinutes)
+        assertEquals(15_000L, reward.progressFrom(null).remainingMinutes)
     }
 }

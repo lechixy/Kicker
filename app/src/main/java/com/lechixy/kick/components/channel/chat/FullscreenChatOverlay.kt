@@ -1,5 +1,7 @@
 package com.lechixy.kick.components.channel.chat
 
+import com.lechixy.kick.data.settings.repository.LocalBlurEffectsEnabled
+
 import android.database.ContentObserver
 import android.os.Handler
 import android.os.Looper
@@ -779,7 +781,9 @@ internal fun OverlayMessage(message: ChatMessage, fontSize: Int, lines: Int, ide
     )
     Text(
         parsed.annotatedString, inlineContent = parsed.inlineContent, color = Color.White,
-        style = MaterialTheme.typography.bodySmall.copy(shadow = Shadow(color = Color.Black, blurRadius = 3f)),
+        style = MaterialTheme.typography.bodySmall.copy(
+            shadow = if (LocalBlurEffectsEnabled.current) Shadow(color = Color.Black, blurRadius = 3f) else null,
+        ),
         fontSize = fontSize.sp, lineHeight = (fontSize + 4).sp, maxLines = lines,
         textAlign = if (LocalFullscreenChatAlignRight.current) TextAlign.Right else TextAlign.Left,
         overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),

@@ -1,5 +1,7 @@
 package com.lechixy.kick.components.channel.chat
 
+import com.lechixy.kick.data.settings.repository.LocalBlurEffectsEnabled
+
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -136,14 +138,15 @@ internal fun fullscreenChatOptions(
     })
     add(FullscreenChatOption(R.string.fullscreen_chat_blur, appearance) { enabled ->
         SettingSwitch(SettingsKeys.FULLSCREEN_CHAT_BLUR, stringResource(R.string.fullscreen_chat_blur),
-            icon = R.drawable.blur_on_24dp_e3e3e3_fill0_wght400_grad0_opsz24, enabled = enabled)
+            icon = R.drawable.blur_on_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+            enabled = enabled && LocalBlurEffectsEnabled.current)
     })
     add(FullscreenChatOption(R.string.fullscreen_chat_blur_style, appearance) { enabled ->
         val blurEnabled by fullscreenChatSetting(SettingsKeys.FULLSCREEN_CHAT_BLUR)
         SettingDropdown(
             key = SettingsKeys.FULLSCREEN_CHAT_BLUR_STYLE,
             title = stringResource(R.string.fullscreen_chat_blur_style),
-            enabled = enabled && blurEnabled,
+            enabled = enabled && blurEnabled && LocalBlurEffectsEnabled.current,
             options = listOf(
                 FullscreenChatBlurStyle.Soft.value to stringResource(R.string.fullscreen_chat_blur_style_soft),
                 FullscreenChatBlurStyle.FrostedGlass.value to stringResource(R.string.fullscreen_chat_blur_style_frosted_glass),

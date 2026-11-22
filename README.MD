@@ -1,8 +1,6 @@
-[//]: # (<p align="center">)
-
-[//]: # (  <img src=".github/assets/banner-placeholder.svg" alt="Kicker — banner placeholder" width="100%">)
-
-[//]: # (</p>)
+<p align="center">
+  <img width="65%" alt="Kicker banner" src=".github/assets/banner.webp">
+</p>
 
 <h1 align="center">Kicker</h1>
 

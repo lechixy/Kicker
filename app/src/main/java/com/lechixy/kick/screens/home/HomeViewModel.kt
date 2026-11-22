@@ -13,6 +13,9 @@ import kotlinx.serialization.json.decodeFromJsonElement
 import javax.inject.Inject
 
 import com.lechixy.kick.data.player.model.toRecording
+import com.lechixy.kick.data.player.local.WatchHistoryEntry
+import com.lechixy.kick.data.player.local.WatchHistoryStore
+import com.lechixy.kick.data.player.model.RecordedPlayback
 import com.lechixy.kick.data.account.AccountGraph
 import com.lechixy.kick.data.account.remote.userMessage
 import com.lechixy.kick.data.common.model.FollowedLivestream
@@ -43,28 +46,46 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    val watchHistory = com.lechixy.kick.data.player.local.WatchHistoryStore.entries
+    val watchHistory = WatchHistoryStore.entries
+    private val requestedHistoryArtwork = mutableSetOf<String>()
 
     fun removeHistory(key: String) = com.lechixy.kick.data.player.local.WatchHistoryStore.remove(key)
 
     fun clearHistory() = com.lechixy.kick.data.player.local.WatchHistoryStore.clear()
 
-    suspend fun resolveHistoryRecording(entry: com.lechixy.kick.data.player.local.WatchHistoryEntry): com.lechixy.kick.data.player.model.RecordedPlayback? {
-        val recording = entry.recording ?: run {
-            entry.vodId?.takeIf { it.isNotBlank() }?.let {
-                com.lechixy.kick.data.player.model.RecordedPlayback(id = it, title = entry.title,
-                    durationMs = 0, thumbnail = entry.thumbnail, startTime = entry.startTime)
-            } ?: kickRepository.getChannelVideos(entry.channelSlug)
-                .firstOrNull { it.id == entry.livestreamId }?.toRecording()
-        } ?: return null
-        com.lechixy.kick.data.player.local.PlaybackProgressStore.save(
-            recording.progressId, entry.positionMs, recording.durationMs)
-        return recording
+    fun refreshHistoryArtwork(entry: WatchHistoryEntry) {
+        if (entry.recording != null || entry.livestreamId == null ||
+            !requestedHistoryArtwork.add(entry.channelSlug)) return
+        viewModelScope.launch {
+            try {
+                loadHistoryRecordings(entry.channelSlug)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // The card can still use the stored channel artwork.
+            }
+        }
+    }
+
+    suspend fun resolveHistoryRecording(entry: WatchHistoryEntry): RecordedPlayback? {
+        entry.recording?.let { return it }
+        entry.vodId?.takeIf { it.isNotBlank() }?.let {
+            return RecordedPlayback(id = it, title = entry.title, durationMs = 0,
+                thumbnail = entry.thumbnail, startTime = entry.startTime, livestreamId = entry.livestreamId)
+        }
+        return loadHistoryRecordings(entry.channelSlug).firstOrNull { it.livestreamId == entry.livestreamId }
+    }
+
+    private suspend fun loadHistoryRecordings(slug: String): List<RecordedPlayback> {
+        val recordings = kickRepository.getChannelVideos(slug).filterNot { it.isLive }.mapNotNull { it.toRecording() }
+        WatchHistoryStore.attachRecordings(slug, recordings)
+        return recordings
     }
 
     fun loadStreams() = loadHome(refreshing = false)
 
     fun refresh() {
+        requestedHistoryArtwork.clear()
         loadHome(refreshing = true)
         loadFollowing()
     }

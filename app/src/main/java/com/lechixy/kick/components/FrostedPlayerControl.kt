@@ -35,6 +35,7 @@ import com.lechixy.kick.components.channel.chat.FullscreenChatBackdropRegion
 import com.lechixy.kick.components.channel.chat.FullscreenChatVideoFrame
 import com.lechixy.kick.data.settings.model.FullscreenChatBlurStyle
 import com.lechixy.kick.data.settings.model.FullscreenChatShape
+import com.lechixy.kick.data.settings.repository.LocalBlurEffectsEnabled
 import kotlin.math.roundToInt
 
 internal val playbackButtonEnter = scaleIn(
@@ -72,11 +73,13 @@ internal fun BoxScope.FrostedPlayerControl(
 ) {
     var origin by remember { mutableStateOf(Offset.Zero) }
     val key = remember { Any() }
-    DisposableEffect(backdrop) { onDispose { backdrop?.regions?.remove(key) } }
+    val blurEnabled = LocalBlurEffectsEnabled.current
+    val activeBackdrop = backdrop.takeIf { blurEnabled }
+    DisposableEffect(activeBackdrop) { onDispose { activeBackdrop?.regions?.remove(key) } }
     Box(Modifier.matchParentSize().onGloballyPositioned {
         origin = it.positionInWindow()
-        if (backdrop != null) {
-            backdrop.regions[key] = FullscreenChatBackdropRegion(
+        if (activeBackdrop != null) {
+            activeBackdrop.regions[key] = FullscreenChatBackdropRegion(
                 it.boundsInWindow(),
                 shape = FullscreenChatShape.Pill,
                 frostedControl = true,
@@ -85,7 +88,7 @@ internal fun BoxScope.FrostedPlayerControl(
             )
         }
     }.clip(CircleShape).border(1.5.dp, Color.White.copy(alpha = 0.1f), CircleShape).drawBehind {
-        val sample = frame?.value
+        val sample = if (blurEnabled) frame?.value else null
         val bitmap = sample?.frostedBitmap
         if (sample != null && bitmap != null) {
             drawImage(
@@ -98,7 +101,7 @@ internal fun BoxScope.FrostedPlayerControl(
                 filterQuality = FilterQuality.Low,
             )
         }
-        val hasBackdrop = videoReady && (frame == null || bitmap != null)
+        val hasBackdrop = blurEnabled && videoReady && (frame == null || bitmap != null)
         drawRect(Color.Black.copy(alpha = if (hasBackdrop) 0.24f else 0.38f))
     })
 }

@@ -4,6 +4,8 @@
     <string name="settings_clear_search">Aramayı temizle</string>
     <string name="settings_no_results">Eşleşen ayar bulunamadı</string>
     <string name="notification_reward_title">Ödülün hazır</string>
+    <string name="notification_level_up_title">%1$d. seviyeye ulaştın!</string>
+    <string name="notification_level_up_description">Kick’te seviye atladın.</string>
     <string name="notification_reward_description">%1$d dakika izleme hedefine ulaştın, görevlerini görmek için dokun</string>
     <string name="notification_live_title">%1$s yayına başladı</string>
     <string name="notification_live_description">Yayına katılmak için dokun</string>

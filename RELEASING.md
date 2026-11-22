@@ -70,10 +70,14 @@ sha256sums.txt
 Release APK'ları Secrets'taki kalıcı anahtarla imzalanır. Workflow APK imzalarını,
 release sertifikalarının aynı olduğunu, sürümü ve beklenen mimarileri doğrular.
 Secrets verilmeden yerel debug derlemesi çalışmaya devam eder. İmzalama ortam değişkenleri
-verilmezse yerel release çıktısı imzasız olur; debug anahtarına otomatik dönüş yapılmaz.
-F-Droid'in kendi derleme ortamı da böylece imzasız derleme alıp kendi yayın sürecini uygulayabilir.
+verilmezse yerel release çıktısı debug anahtarıyla imzalanır. GitHub iş akışı yayın için
+release anahtarını zorunlu tutar. F-Droid, kaynak kodu derlemeden önce Gradle imza ayarlarını kaldırır.
 
 Yerel imzalı derleme için `ANDROID_KEYSTORE_PATH`, `ANDROID_KEYSTORE_PASSWORD`,
 `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` ortam değişkenlerinin tamamını ayarlayın.
 Parolaların Gradle configuration cache'e yazılmaması için `--no-configuration-cache` kullanın.
 CI bunu zaten uygular ve geçici keystore'u derleme sonunda siler.
+
+## F-Droid ve IzzyOnDroid
+
+Başvuru koşulları, derleme doğrulaması ve başvuru dosyaları için [dağıtım kılavuzuna](distribution/README.md) bakın.

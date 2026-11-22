@@ -33,6 +33,9 @@ import com.lechixy.kick.data.chat.model.StreamerIsLiveEvent
 import com.lechixy.kick.data.chat.remote.ChatConnectionState
 import com.lechixy.kick.data.common.remote.KickNetwork
 import com.lechixy.kick.data.common.repository.KickRepository
+import com.lechixy.kick.data.player.local.WatchHistoryStore
+import com.lechixy.kick.data.player.model.toRecording
+import com.lechixy.kick.service.player.SleepTimer
 
 data class ChannelUiState(
     val isLoading: Boolean = true,
@@ -267,6 +270,11 @@ class ChannelViewModel(
         val currentChannel = _uiState.value.channel ?: return
         val targetChannelId = event.livestream?.channel?.id
         if (targetChannelId != null && targetChannelId != currentChannel.id) return
+        val targetLivestreamId = event.livestream?.id
+        if (targetLivestreamId != null && targetLivestreamId != currentChannel.livestream?.id) return
+        currentChannel.livestream?.let {
+            SleepTimer.onLivestreamEnded(currentChannel.id, it.id)
+        }
 
         liveRefreshJob?.cancel()
         viewersPollingJob?.cancel()
@@ -287,7 +295,8 @@ class ChannelViewModel(
         viewModelScope.launch {
             try {
                 val updatedVideos = repository.getChannelVideos(slug).filterNot { it.isLive }
-                _uiState.update { it.copy(videos = updatedVideos) }
+                WatchHistoryStore.attachRecordings(slug, updatedVideos.mapNotNull { it.toRecording() })
+                _uiState.update { if (it.channel?.slug == slug) it.copy(videos = updatedVideos) else it }
             } catch (_: Exception) {
             }
         }
@@ -347,6 +356,7 @@ class ChannelViewModel(
                 val history = historyDeferred.await()
 
                 if (loadedSlug != slug) return@launch
+                WatchHistoryStore.attachRecordings(slug, videos.mapNotNull { it.toRecording() })
                 _uiState.value = ChannelUiState(
                     isLoading = false,
                     channel = channel,

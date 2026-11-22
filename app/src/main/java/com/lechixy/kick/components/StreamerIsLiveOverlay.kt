@@ -1,5 +1,7 @@
 package com.lechixy.kick.components
 
+import com.lechixy.kick.data.settings.repository.LocalBlurEffectsEnabled
+
 import android.animation.ValueAnimator
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.foundation.Canvas
@@ -172,7 +174,9 @@ fun StreamerIsLiveOverlay(username: String, announcementId: Long, onFinished: ()
             Text(stringResource(R.string.live_signal_connected), fontFamily = FontFamily.Monospace,
                 color = signalColor, fontSize = if (compact) 9.sp else 12.sp, letterSpacing = 3.sp)
             Text(stringResource(R.string.live_reveal_headline),
-                style = TextStyle(brush = headlineBrush, shadow = Shadow(signalColor.copy(alpha = .45f), Offset.Zero, 14f)),
+                style = TextStyle(brush = headlineBrush, shadow = if (LocalBlurEffectsEnabled.current) {
+                    Shadow(signalColor.copy(alpha = .45f), Offset.Zero, 14f)
+                } else null),
                 fontWeight = FontWeight.Black, fontFamily = FontFamily.SansSerif,
                 fontSize = headlineSp.sp, lineHeight = (headlineSp * .95f).sp,
                 maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,

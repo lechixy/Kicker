@@ -35,6 +35,7 @@ object SettingsKeys {
     val WELCOME_COMPLETED = SettingKey(booleanPreferencesKey("welcome_completed"), false, SettingType.BooleanType, isExportable = false)
     val LAST_USED_VERSION = SettingKey(stringPreferencesKey("last_used_version"), "", SettingType.StringType, isExportable = false)
     val NAVIGATION_RAIL_EXPANDED = SettingKey(booleanPreferencesKey("navigation_rail_expanded"), false, SettingType.BooleanType)
+    val BLUR_EFFECTS = SettingKey(booleanPreferencesKey("blur_effects"), true, SettingType.BooleanType)
     val DEVELOPER_ENABLED = SettingKey(booleanPreferencesKey("developer_enabled"), false, SettingType.BooleanType, isExportable = false)
     val DEVELOPER_FLOATING_MENU = SettingKey(booleanPreferencesKey("developer_floating_menu"), true, SettingType.BooleanType, isExportable = false)
     val DEVELOPER_MENU_X = SettingKey(floatPreferencesKey("developer_menu_x"), 0.5f, SettingType.FloatType, isExportable = false)
@@ -258,6 +259,7 @@ object SettingsKeys {
             APP_LANGUAGE,
             THEME,
             DYNAMIC_COLOR,
+            BLUR_EFFECTS,
             WINTER_SNOW,
             WINTER_SNOW_STYLE,
             WINTER_SNOW_INTENSITY,

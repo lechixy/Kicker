@@ -2,6 +2,9 @@ package com.lechixy.kick.data.common.repository
 
 import retrofit2.HttpException
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 import com.lechixy.kick.data.browse.model.SearchData
 import com.lechixy.kick.data.channel.model.ChannelDetail
@@ -161,6 +164,13 @@ class KickRepository(
     suspend fun getChannel(slug: String): ChannelDetail {
         val fullUrl = "https://kick.com/api/v2/channels/$slug"
         return api.getChannel(fullUrl)
+    }
+
+    suspend fun getChannelProfilePhoto(slug: String): String? {
+        val response = api.getChatterChannel(slug)
+        val channel = response["data"] as? JsonObject ?: response
+        val user = channel["user"] as? JsonObject
+        return (user?.get("profile_pic") as? JsonPrimitive)?.contentOrNull?.takeIf(String::isNotBlank)
     }
 
     suspend fun getChannelEvent(channelId: Long): ChannelEvent? {

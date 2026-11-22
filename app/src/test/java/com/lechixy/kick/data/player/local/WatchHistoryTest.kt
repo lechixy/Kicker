@@ -22,7 +22,32 @@ class WatchHistoryTest {
         assertEquals(20, mergeWatchHistory((0..30).map { entry("$it") }, entry("new")).size)
         val live = entry("live").copy(vodId = "vod", livestreamId = 42)
         val recording = entry("recording").copy(recording = RecordedPlayback("vod", "Title", 100_000))
-        assertEquals(listOf(recording), mergeWatchHistory(listOf(live), recording))
+        val merged = mergeWatchHistory(listOf(live), recording).single()
+        assertEquals(recording.key, merged.key)
+        assertEquals(recording.recording, merged.recording)
+        assertEquals(42L, merged.livestreamId)
+    }
+
+    @Test fun archiveWithDifferentPlaybackIdsMatchesLiveByLivestreamId() {
+        val live = entry("live").copy(livestreamId = 42, positionMs = 85_000, fallbackThumbnail = "banner")
+        val archived = entry("recording").copy(positionMs = 95_000,
+            recording = RecordedPlayback("vod", "Title", 100_000, thumbnail = "archive",
+                progressId = "video-uuid", livestreamId = 42))
+        assertTrue(live.matchesBroadcast(archived))
+        val merged = mergeWatchHistory(listOf(live), archived).single()
+        assertEquals(95_000L, merged.positionMs)
+        assertEquals("archive", merged.thumbnail)
+        assertEquals("banner", merged.fallbackThumbnail)
+    }
+
+    @Test fun legacyArchiveMatchesByBroadcastTimeWithoutMergingClipsOrOtherChannels() {
+        val live = entry("live").copy(livestreamId = 42, startTime = "2026-10-09 16:29:59")
+        val archived = entry("recording").copy(
+            recording = RecordedPlayback("video-uuid", "Title", 100_000, startTime = "2026-10-09T16:29:59Z"))
+        assertTrue(live.matchesBroadcast(archived))
+        assertFalse(live.matchesBroadcast(archived.copy(channelSlug = "another-channel")))
+        assertFalse(live.matchesBroadcast(archived.copy(recording = archived.recording!!.copy(id = "clip_123"))))
+        assertFalse(live.matchesBroadcast(archived.copy(recording = archived.recording.copy(livestreamId = 43))))
     }
 
     @Test fun savedHistoryRestoresMetadataAndExactPosition() {

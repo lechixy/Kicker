@@ -110,6 +110,7 @@ import com.lechixy.kick.data.account.AccountGraph
 import com.lechixy.kick.data.settings.local.SettingsBackupManager
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
+import com.lechixy.kick.data.settings.repository.LocalBlurEffectsEnabled
 import com.lechixy.kick.data.settings.repository.SettingsRepository
 import com.lechixy.kick.screens.search.SearchScreen
 import com.lechixy.kick.screens.channel.ChannelScreen
@@ -242,6 +243,8 @@ class MainActivity : ComponentActivity() {
                 }.collectAsStateWithLifecycle(initialValue = null)
                 val theme = themeSettings?.first ?: SettingsKeys.THEME.defaultValue
                 val dynamicColor = themeSettings?.second ?: SettingsKeys.DYNAMIC_COLOR.defaultValue
+                val blurEffects by remember(repository) { repository.get(SettingsKeys.BLUR_EFFECTS) }
+                    .collectAsStateWithLifecycle(SettingsKeys.BLUR_EFFECTS.defaultValue)
                 val themeEnum = when (theme) {
                     "system" -> Theme.SYSTEM
                     "light" -> Theme.LIGHT
@@ -255,8 +258,10 @@ class MainActivity : ComponentActivity() {
                     dynamicColor = dynamicColor,
                     launchSplashVisible = !nativeSplashDismissed
                 ) {
-                    WelcomeHost(settingsBackupManager) { restorePending ->
-                        KickApp(restorePending)
+                    CompositionLocalProvider(LocalBlurEffectsEnabled provides blurEffects) {
+                        WelcomeHost(settingsBackupManager) { restorePending ->
+                            KickApp(restorePending)
+                        }
                     }
                 }
             }
@@ -750,6 +755,7 @@ fun KickApp(restorePending: Boolean = false) {
                                         null
                                     )
                                 }
+                                com.lechixy.kick.data.notifications.NotificationKind.LevelUp,
                                 com.lechixy.kick.data.notifications.NotificationKind.SleepTimerStarted,
                                 com.lechixy.kick.data.notifications.NotificationKind.SleepTimerStopped -> Unit
                             }

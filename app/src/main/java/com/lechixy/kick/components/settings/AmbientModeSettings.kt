@@ -19,7 +19,7 @@ internal val ambientModeSearchTerms = listOf(
     R.string.player_ambient_intensity, R.string.player_ambient_spread, R.string.player_ambient_fullscreen,
     R.string.player_ambient_through_ui, R.string.player_ambient_preserve_black_bars,
     R.string.player_ambient_battery_saver, R.string.player_ambient_chat_opacity,
-    R.string.player_ambient_navigation_opacity, R.string.player_ambient_reset_levels,
+    R.string.player_ambient_navigation_opacity,
 )
 
 internal val PlayerAmbientMode.titleResource: Int
@@ -87,7 +87,6 @@ internal fun AmbientModeSettings() {
 @Composable
 private fun AmbientModeControls(mode: PlayerAmbientMode) {
     val repository = LocalSettingsRepository.current
-    val scope = rememberCoroutineScope()
     val throughUiKey = SettingsKeys.AMBIENT_THROUGH_UI
     val throughUi by remember(repository) { repository.get(throughUiKey) }
         .collectAsStateWithLifecycle(throughUiKey.defaultValue)
@@ -117,18 +116,6 @@ private fun AmbientModeControls(mode: PlayerAmbientMode) {
         valueRange = SettingsKeys.AMBIENT_SPREAD_RANGE.let { it.first.toFloat()..it.last.toFloat() },
         steps = 34,
         valueFormatter = { resources.getString(R.string.player_ambient_percent, it) },
-    )
-    SettingCard(
-        title = stringResource(R.string.player_ambient_reset_levels),
-        icon = R.drawable.restart_alt_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
-        onClick = {
-            scope.launch {
-                repository.editSettings {
-                    remove(SettingsKeys.AMBIENT_INTENSITY.key)
-                    remove(SettingsKeys.AMBIENT_SPREAD.key)
-                }
-            }
-        },
     )
     SettingSwitch(
         key = SettingsKeys.AMBIENT_BATTERY_SAVER,

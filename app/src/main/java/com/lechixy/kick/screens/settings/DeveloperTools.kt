@@ -54,6 +54,7 @@ import kotlin.time.Duration.Companion.milliseconds
 
 import com.lechixy.kick.BuildConfig
 import com.lechixy.kick.R
+import com.lechixy.kick.components.channel.chat.DeveloperDropsPreview
 import com.lechixy.kick.components.settings.SettingSwitch
 import com.lechixy.kick.data.player.remote.ViewerTrackingDiagnostics
 import com.lechixy.kick.data.settings.model.SettingsKeys
@@ -89,6 +90,8 @@ private fun DeveloperToolsContent(onTriggerLive: () -> Unit, canTriggerLive: Boo
     Button(onClick = onTriggerLive, enabled = canTriggerLive) { Text(stringResource(R.string.developer_trigger_live)) }
     if (!canTriggerLive) Text(stringResource(R.string.developer_live_required), style = MaterialTheme.typography.bodySmall)
     HorizontalDivider()
+    DropsBannerPreviewControls()
+    HorizontalDivider()
     Text(stringResource(R.string.developer_viewer_socket), style = MaterialTheme.typography.titleMedium)
     val status = when (state.status) {
         "metadata" -> R.string.developer_status_metadata
@@ -103,6 +106,21 @@ private fun DeveloperToolsContent(onTriggerLive: () -> Unit, canTriggerLive: Boo
     Text(stringResource(R.string.developer_socket_times, time(state.connectedAt), time(state.lastPing), time(state.lastPong),
         state.latencyMs?.toString() ?: "—", time(state.lastHandshake), time(state.lastWatchEvent), state.reconnects), style = MaterialTheme.typography.bodySmall)
     state.error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+}
+
+@Composable
+internal fun DropsBannerPreviewControls() {
+    val previewId by DeveloperDropsPreview.requestId.collectAsStateWithLifecycle()
+    Text(stringResource(R.string.developer_drops_test), style = MaterialTheme.typography.titleMedium)
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Button(onClick = DeveloperDropsPreview::show) {
+            Text(stringResource(R.string.developer_drops_show))
+        }
+        OutlinedButton(onClick = DeveloperDropsPreview::hide, enabled = previewId != null) {
+            Text(stringResource(R.string.developer_drops_hide))
+        }
+    }
+    Text(stringResource(R.string.developer_drops_chat_required), style = MaterialTheme.typography.bodySmall)
 }
 
 @Composable

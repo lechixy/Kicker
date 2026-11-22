@@ -222,10 +222,11 @@ fun KickUserProfileCard(
                 Box(Modifier.offset(y = (-36).dp).size(96.dp), contentAlignment = Alignment.Center) {
                     LevelAvatarAnimation(uiState.level, Modifier.requiredWidth(216.dp).aspectRatio(688f / 306f))
                     com.lechixy.kick.components.channel.ExpandableProfilePhoto(
-                        uiState.profilePicUrl, uiState.username,
+                        uiState.profilePicUrl ?: uiState.fullSizeProfilePicUrl, uiState.username,
                         Modifier.size(64.dp).background(Color(0xFF181B1E), CircleShape)
                             .then(LevelBorderModifier(accent, CircleShape, 2.dp)),
                         expandOnClick = true,
+                        fullSizeUrl = uiState.fullSizeProfilePicUrl,
                         placeholder = painterResource(R.drawable.person_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
                     )
                 }

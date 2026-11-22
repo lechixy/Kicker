@@ -187,7 +187,8 @@ fun HomeScreen(
                                                 scaleY = scale
                                                 alpha = scale
                                             }) {
-                                                ContinueWatchingCard(entry, enabled = !openingHistory && exit == null, onRemove = {
+                                                ContinueWatchingCard(entry, enabled = !openingHistory && exit == null,
+                                                    onThumbnailUnavailable = { viewModel.refreshHistoryArtwork(entry) }, onRemove = {
                                                     val removal = ExitingHistoryCard(index, entry)
                                                     exitingHistory.add(removal)
                                                     viewModel.removeHistory(entry.key)

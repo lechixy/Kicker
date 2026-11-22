@@ -37,6 +37,7 @@ internal fun RailNavigationItem(
     modifier: Modifier = Modifier,
     description: String = label,
     supportingText: String? = null,
+    detailText: String? = null,
     muted: Boolean = false,
     icon: @Composable () -> Unit,
 ) {
@@ -65,8 +66,13 @@ internal fun RailNavigationItem(
     val supportingSize = if (hasSupportingText) textMeasurer.measure(supportingText.orEmpty(),
         style = MaterialTheme.typography.bodySmall, maxLines = 2,
         overflow = TextOverflow.Ellipsis, constraints = Constraints(maxWidth = textWidth)) else null
-    val textHeight = with(density) { (labelSize.size.height + (supportingSize?.size?.height ?: 0)).toDp().value } +
-        if (hasSupportingText) 4f else 0f
+    val detailSize = detailText?.let {
+        textMeasurer.measure(it, style = MaterialTheme.typography.bodySmall, maxLines = 1,
+            constraints = Constraints(maxWidth = textWidth))
+    }
+    val textHeight = with(density) { labelSize.size.height.toDp().value } +
+        with(density) { supportingSize?.size?.height?.toDp()?.value?.plus(4f) ?: 0f } +
+        with(density) { detailSize?.size?.height?.toDp()?.value?.plus(4f) ?: 0f }
     val collapsedLabelHeight = with(density) { MaterialTheme.typography.labelMedium.lineHeight.toDp().value }
     // M3: 64 dp destination, 56 x 32 dp indicator, 4 dp indicator-to-label gap.
     // Avatars need a 40 dp indicator rather than the destination icon's 32 dp.
@@ -104,7 +110,10 @@ internal fun RailNavigationItem(
             .padding(start = expandedTextStart.dp, end = 36.dp)
             .graphicsLayer { alpha = ((progress - .25f) / .75f).coerceIn(0f, 1f) }
             .clearAndSetSemantics {
-                if (expanded && hasSupportingText) text = androidx.compose.ui.text.AnnotatedString(supportingText)
+                if (expanded) {
+                    val details = listOfNotNull(supportingText?.takeIf { it.isNotBlank() }, detailText)
+                    if (details.isNotEmpty()) text = androidx.compose.ui.text.AnnotatedString(details.joinToString("\n"))
+                }
             }, contentAlignment = Alignment.CenterStart) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(label, style = MaterialTheme.typography.labelLarge,
@@ -113,6 +122,9 @@ internal fun RailNavigationItem(
                     maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                 if (hasSupportingText) Text(supportingText.orEmpty(),
                     style = MaterialTheme.typography.bodySmall, maxLines = 2,
+                    overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (detailText != null) Text(detailText,
+                    style = MaterialTheme.typography.bodySmall, maxLines = 1,
                     overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

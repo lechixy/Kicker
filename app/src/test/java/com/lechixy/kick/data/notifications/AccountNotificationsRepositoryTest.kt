@@ -16,6 +16,7 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.Buffer
 import okio.ByteString
+import java.util.concurrent.atomic.AtomicInteger
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -49,9 +50,11 @@ class AccountNotificationsRepositoryTest {
         }
     }
 
-    @Test fun accountFeedAuthorizesEachTopicAndReceivesBothNotifications() = runBlocking {
+    @Test fun accountFeedAuthorizesEachTopicAndReceivesNotifications() = runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         val opened = CompletableDeferred<TestSocket>()
+        val levelRequests = AtomicInteger()
+        val animatedBadge = "https://ext.cdn.kick.com/chat/badges/27.gif"
         val auth = signedInAuth(userId = 29081495) { request ->
             when (request.url.encodedPath) {
                 "/api/v1/realtime/connection" -> objectJson("""{"data":{"connections":[
@@ -59,6 +62,12 @@ class AccountNotificationsRepositoryTest {
                     {"provider":"centrifugo","credentials":{"url":"wss://realtime.example/connection/websocket"}}
                 ]}}""")
                 "/api/v1/realtime/auth/connection" -> objectJson("""{"data":{"token":"connection-token"}}""")
+                "/api/v1/gamification/user/level" -> {
+                    val level = if (levelRequests.incrementAndGet() == 1) 26 else 27
+                    val animatedImage = if (level == 27) animatedBadge else "https://ext.cdn.kick.com/chat/badges/26.gif"
+                    objectJson("""{"data":{"level":$level,"progress_xp":21,"xp_to_next_level":2665,
+                        "badge":{"animated_image_url":"$animatedImage","image_url":"badge.png"}}}""")
+                }
                 "/api/v1/realtime/auth/channel" -> {
                     assertEquals("POST", request.method)
                     val body = Buffer().also { request.body!!.writeTo(it) }
@@ -114,6 +123,21 @@ class AccountNotificationsRepositoryTest {
                 assertEquals(NotificationKind.StreamStarted, live.kind)
                 assertEquals("gokhanoner", live.channelSlug)
                 assertEquals("<strong>GokhanOner</strong> just went live!", live.title)
+
+                val levelUp = """{"push":{"channel":"private-29081495","pub":{
+                    "data":{"event":"GamificationLevelUp",
+                        "data":"{\"user_id\":29081495,\"level\":27,\"total_xp\":22590}"},
+                    "tags":{"event":"GamificationLevelUp"}
+                }}}"""
+                socket.push(levelUp.replace("private-29081495", "private-userfeed.29081495"))
+                socket.push(levelUp.replace("""\"user_id\":29081495""", """\"user_id\":42"""))
+                assertEquals(0, levelRequests.get())
+                socket.push(levelUp)
+                val reachedLevel = repository.notifications.first { it.size == 3 }.last()
+                assertEquals(NotificationKind.LevelUp, reachedLevel.kind)
+                assertEquals(27, reachedLevel.level)
+                assertEquals(animatedBadge, reachedLevel.animatedBadgeUrl)
+                assertEquals(2, levelRequests.get())
 
                 repository.setForeground(false)
                 socket.cancelled.await()

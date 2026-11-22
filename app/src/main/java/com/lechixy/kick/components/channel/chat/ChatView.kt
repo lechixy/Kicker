@@ -656,10 +656,7 @@ internal fun PinnedMessageOverlay(
             scaleAnim.snapTo(0f)
             scaleAnim.animateTo(
                 targetValue = 1f,
-                animationSpec = spring(
-                    dampingRatio = Spring.DampingRatioLowBouncy,
-                    stiffness = Spring.StiffnessMediumLow
-                )
+                animationSpec = chatOverlayScaleSpring
             )
         }
     }
@@ -677,12 +674,9 @@ internal fun PinnedMessageOverlay(
                     initialOffsetX = { fullWidth -> hideSide * (fullWidth + 40) }
                 ) + fadeIn(animationSpec = tween(durationMillis = 220, delayMillis = 140))
             } else {
-                fadeIn(animationSpec = tween(durationMillis = 120))
+                chatOverlayFadeIn
             },
-            exit = slideOutHorizontally(
-                animationSpec = tween(durationMillis = 260),
-                targetOffsetX = { fullWidth -> hideSide * (fullWidth + 40) }
-            ) + fadeOut(animationSpec = tween(durationMillis = 200)),
+            exit = chatOverlayExit(hideSide),
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
@@ -731,11 +725,7 @@ internal fun PinnedMessageOverlay(
                     isHidden = true
                 }, modifier = Modifier.fillMaxWidth()
             ) {
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.95f),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                shadowElevation = 4.dp,
+            ChatOverlayCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 10.dp, vertical = 6.dp)
@@ -743,18 +733,13 @@ internal fun PinnedMessageOverlay(
                         scaleX = scaleAnim.value
                         scaleY = scaleAnim.value
                     }
-                    .clip(RoundedCornerShape(12.dp))
+                    .clip(chatOverlayShape)
                     .clickable { isExpanded = !isExpanded }
             ) {
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .animateContentSize(
-                            animationSpec = spring(
-                                dampingRatio = Spring.DampingRatioNoBouncy,
-                                stiffness = Spring.StiffnessMedium
-                            )
-                        )
+                        .animateContentSize(animationSpec = chatOverlaySizeSpring)
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {

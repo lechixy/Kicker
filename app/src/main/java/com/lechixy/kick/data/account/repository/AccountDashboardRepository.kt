@@ -11,11 +11,19 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import com.lechixy.kick.data.account.model.AccountChannelInfo
 import com.lechixy.kick.data.account.model.AccountDashboardSection
 import com.lechixy.kick.data.account.model.AccountDashboardState
+import com.lechixy.kick.data.account.model.AccountLevel
 import com.lechixy.kick.data.account.model.AccountLevelResponse
 import com.lechixy.kick.data.account.model.AccountStreakResponse
 
+private val accountDashboardJson = Json { ignoreUnknownKeys = true }
+
+internal suspend fun AuthRepository.fetchAccountLevel(): AccountLevel =
+    accountDashboardJson.decodeFromJsonElement<AccountLevelResponse>(
+        request("https://web.kick.com/api/v1/gamification/user/level")
+    ).data
+
 class AccountDashboardRepository(private val auth: AuthRepository, private val scope: CoroutineScope) {
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = accountDashboardJson
     private val mutableState = MutableStateFlow(AccountDashboardState())
     val state = mutableState.asStateFlow()
     private var job: Job? = null
@@ -51,8 +59,7 @@ class AccountDashboardRepository(private val auth: AuthRepository, private val s
                     mutableState.update { it.copy(channel = channel) }
                 }
                 load(AccountDashboardSection.Level) {
-                    val level = json.decodeFromJsonElement<AccountLevelResponse>(
-                        auth.request("https://web.kick.com/api/v1/gamification/user/level")).data
+                    val level = auth.fetchAccountLevel()
                     mutableState.update { it.copy(level = level) }
                 }
                 load(AccountDashboardSection.Streak) {

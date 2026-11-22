@@ -107,7 +107,6 @@
     <string name="player_ambient_battery_saver_description">Android pil tasarrufu açıkken Canlı moddan Dinamik moda geç.</string>
     <string name="player_ambient_chat_opacity">Sohbet arka planı opaklığı</string>
     <string name="player_ambient_navigation_opacity">Gezinme arka planı opaklığı</string>
-    <string name="player_ambient_reset_levels">Yoğunluğu ve yayılımı %100’e döndür</string>
     <string name="player_ambient_preserve_black_bars">Siyah şeritleri koru</string>
     <string name="player_ambient_preserve_black_bars_description">Oynatıcıdaki şeritleri siyah tut ve videoda algılanan siyah kenarlara ışığın taşmasını önle.</string>
     <string name="settings_backup_account_title">Kick oturumunuz bu cihazda kalır</string>

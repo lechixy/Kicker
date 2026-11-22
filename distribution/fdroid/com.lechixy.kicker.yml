@@ -1,0 +1,43 @@
+Categories:
+  - Online Media Player
+License: MIT
+SourceCode: https://github.com/lechixy/Kicker
+IssueTracker: https://github.com/lechixy/Kicker/issues
+Changelog: https://github.com/lechixy/Kicker/releases
+
+AutoName: Kicker
+
+RepoType: git
+Repo: https://github.com/lechixy/Kicker.git
+
+Builds:
+  - versionName: 1.2.0
+    versionCode: 3
+    commit: d991b86056268d033e8b6ae17fe0cc4d287f4982
+    subdir: app
+    sudo:
+      - echo "deb https://deb.debian.org/debian trixie main" > /etc/apt/sources.list.d/trixie.list
+      - apt-get update
+      - apt-get install -y -t trixie openjdk-21-jdk-headless
+      - update-alternatives --auto java
+    gradle:
+      - 'yes'
+    rm:
+      - app/release
+    prebuild:
+      - sdkmanager 'platforms;android-37.1' 'build-tools;37.0.0'
+      - sed -i 's/^org\.gradle\.configuration-cache=.*/org.gradle.configuration-cache=false/' ../gradle.properties
+    output: build/outputs/apk/release/app-universal-release-unsigned.apk
+
+AntiFeatures:
+  NonFreeNet:
+    en-US: Streaming, chat and account functions require Kick's network service.
+  TetheredNet:
+    en-US: The app connects to Kick and has no setting for an alternative server.
+  Tracking:
+    en-US: The app sends live viewing activity to Kick, including channel, stream and recording identifiers.
+
+AutoUpdateMode: None
+UpdateCheckMode: Tags ^v?[0-9]+\.[0-9]+\.[0-9]+$
+CurrentVersion: 1.2.0
+CurrentVersionCode: 3

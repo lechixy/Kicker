@@ -1,5 +1,7 @@
 package com.lechixy.kick.components
 
+import com.lechixy.kick.data.settings.repository.LocalBlurEffectsEnabled
+
 import android.os.SystemClock
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -158,7 +160,9 @@ internal fun RecordingSkipOverlay(feedback: RecordingSkipFeedback, modifier: Mod
             Text(
                 (if (feedback.forward) "+" else "−") + stringResource(R.string.player_skip_seconds, feedback.seconds),
                 color = Color.White,
-                style = MaterialTheme.typography.labelLarge.copy(shadow = Shadow(Color.Black, blurRadius = 4f)),
+                style = MaterialTheme.typography.labelLarge.copy(
+                    shadow = if (LocalBlurEffectsEnabled.current) Shadow(Color.Black, blurRadius = 4f) else null,
+                ),
             )
         }
     }

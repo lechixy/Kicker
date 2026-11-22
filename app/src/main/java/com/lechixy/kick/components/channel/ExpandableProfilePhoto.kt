@@ -1,5 +1,6 @@
 package com.lechixy.kick.components.channel
 
+import android.graphics.Bitmap
 import android.view.View
 import android.view.WindowManager
 import androidx.compose.animation.core.Animatable
@@ -45,13 +46,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import coil3.compose.AsyncImage
-import coil3.request.crossfade
+import coil3.request.ImageRequest
+import coil3.request.bitmapConfig
+import coil3.size.Precision
+import coil3.size.Size
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import kotlin.math.min
 import kotlin.math.roundToInt
 
 import com.lechixy.kick.R
 import com.lechixy.kick.components.NetworkInfoBar
+import com.lechixy.kick.data.common.remote.KickNetwork
+import com.lechixy.kick.data.common.repository.KickRepository
 import com.lechixy.kick.util.buildOptimizedImageRequest
 
 /** The preview moves between the avatar bounds and the center; the source stays visible underneath. */
@@ -63,22 +70,24 @@ fun ExpandableProfilePhoto(
     imagePadding: Dp = 0.dp,
     onTapLabel: String? = null,
     onTap: (() -> Unit)? = null,
-    onExpandedChange: (Boolean) -> Unit = {}
+    onExpandedChange: (Boolean) -> Unit = {},
+    channelSlug: String? = null,
+    fullSizeUrl: String? = null,
 ) {
     val context = LocalContext.current
     val view = LocalView.current
     var bounds by remember { mutableStateOf(Rect.Zero) }
     var thumbnailPainter by remember(url) { mutableStateOf<Painter?>(null) }
-    var expanded by remember(url) { mutableStateOf(false) }
-    DisposableEffect(url) { onDispose { onExpandedChange(false) } }
+    var expandedUrl by remember(username, channelSlug) { mutableStateOf<String?>(null) }
+    DisposableEffect(username, channelSlug) { onDispose { onExpandedChange(false) } }
     val expandLabel = stringResource(R.string.expand_profile_photo)
     val hasPhoto = !url.isNullOrBlank()
     val thumbnail = remember(url) {
         buildOptimizedImageRequest(context, url, targetWidthDp = 64, targetHeightDp = 64)
     }
     val expand: () -> Unit = {
-        if (bounds.width > 0f && bounds.height > 0f) {
-            expanded = true
+        if (hasPhoto && bounds.width > 0f && bounds.height > 0f) {
+            expandedUrl = url
             onExpandedChange(true)
         }
     }
@@ -99,17 +108,43 @@ fun ExpandableProfilePhoto(
             .onGloballyPositioned { bounds = it.boundsInWindow().translate(view.windowOriginOnScreen()) }
             .clip(CircleShape)
     )
-    if (expanded && !url.isNullOrBlank()) {
-        ProfilePhotoPreview(url, username, bounds, thumbnailPainter, onDismissed = {
-            expanded = false
+    expandedUrl?.let { previewUrl ->
+        ProfilePhotoPreview(previewUrl, fullSizeUrl, channelSlug, username, bounds, thumbnailPainter ?: placeholder, onDismissed = {
+            expandedUrl = null
             onExpandedChange(false)
         })
     }
 }
 
 @Composable
-private fun ProfilePhotoPreview(url: String, username: String?, sourceOnScreen: Rect, placeholder: Painter?, onDismissed: () -> Unit) {
+private fun ProfilePhotoPreview(
+    url: String,
+    fullSizeUrl: String?,
+    channelSlug: String?,
+    username: String?,
+    sourceOnScreen: Rect,
+    placeholder: Painter?,
+    onDismissed: () -> Unit,
+) {
     val context = LocalContext.current
+    var fetchedUrl by remember(url, channelSlug) { mutableStateOf<String?>(null) }
+    LaunchedEffect(url, channelSlug, fullSizeUrl) {
+        if (fullSizeUrl.isNullOrBlank() && !channelSlug.isNullOrBlank() &&
+            !url.substringBefore('?').substringBefore('#').substringAfterLast('/').substringBeforeLast('.').endsWith("-fullsize")
+        ) {
+            fetchedUrl = try {
+                KickRepository(KickNetwork.api).getChannelProfilePhoto(channelSlug)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                null
+            }
+        }
+    }
+    val preferredUrl = fullSizeUrl?.takeIf(String::isNotBlank) ?: fetchedUrl ?: url
+    var preferredFailed by remember(preferredUrl) { mutableStateOf(false) }
+    val imageUrl = if (preferredFailed) url else preferredUrl
+    var loadedPainter by remember { mutableStateOf<Painter?>(null) }
     val progress = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     var dismissing by remember { mutableStateOf(false) }
@@ -150,11 +185,19 @@ private fun ProfilePhotoPreview(url: String, username: String?, sourceOnScreen: 
             val y = source.top + ((windowHeight - targetSize) / 2 - source.top) * t
             val radius = with(density) { (source.width / 2).toDp() } * (1 - t) + 24.dp * t
             AsyncImage(
-                model = remember(url) {
-                    buildOptimizedImageRequest(context, url, targetWidthDp = 720, targetHeightDp = 720)
-                        .newBuilder().crossfade(false).build()
+                model = remember(context, imageUrl) {
+                    ImageRequest.Builder(context)
+                        .data(imageUrl)
+                        .memoryCacheKey("profile-preview:$imageUrl")
+                        .size(Size.ORIGINAL)
+                        .precision(Precision.EXACT)
+                        .bitmapConfig(Bitmap.Config.ARGB_8888)
+                        .build()
                 },
-                placeholder = placeholder, error = placeholder,
+                placeholder = loadedPainter ?: placeholder,
+                error = loadedPainter ?: placeholder,
+                onSuccess = { loadedPainter = it.painter },
+                onError = { if (imageUrl != url) preferredFailed = true },
                 contentDescription = username, contentScale = ContentScale.Crop,
                 modifier = Modifier.absoluteOffset { IntOffset(x.roundToInt(), y.roundToInt()) }
                     .size(with(density) { widthPx.toDp() }, with(density) { heightPx.toDp() })

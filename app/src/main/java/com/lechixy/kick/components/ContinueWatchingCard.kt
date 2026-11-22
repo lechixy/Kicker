@@ -36,6 +36,7 @@ fun ContinueWatchingCard(
     entry: WatchHistoryEntry,
     onRemove: () -> Unit,
     enabled: Boolean = true,
+    onThumbnailUnavailable: () -> Unit = {},
     onClick: (ExpansionSource?) -> Unit,
 ) {
     var cardCoordinates by remember(entry.key) { mutableStateOf<LayoutCoordinates?>(null) }
@@ -45,8 +46,11 @@ fun ContinueWatchingCard(
     val actionsVisible = showActions && enabled
     val doubleTapTimeout = LocalViewConfiguration.current.doubleTapTimeoutMillis
     val context = LocalContext.current
-    val imageRequest = remember(context, entry.thumbnail) {
-        buildOptimizedImageRequest(context = context, data = entry.thumbnail,
+    val thumbnail = entry.thumbnail?.takeIf { it.isNotBlank() }
+    var thumbnailFailed by remember(entry.key, thumbnail, entry.fallbackThumbnail) { mutableStateOf(false) }
+    val imageUrl = thumbnail?.takeUnless { thumbnailFailed } ?: entry.fallbackThumbnail
+    val imageRequest = remember(context, imageUrl) {
+        buildOptimizedImageRequest(context = context, data = imageUrl,
             targetWidthDp = 400, targetHeightDp = 225)
     }
     fun resume() {
@@ -56,7 +60,7 @@ fun ContinueWatchingCard(
         val media = mediaCoordinates?.takeIf { it.isAttached }?.boundsInRoot()
         onClick(card?.let {
             ExpansionSource(cardRect = it, mediaRect = media, cornerRadius = 12.dp,
-                thumbnailUrl = entry.thumbnail, title = entry.title, username = entry.channelName,
+                thumbnailUrl = imageUrl, title = entry.title, username = entry.channelName,
                 isLive = false, isStreamCard = true)
         })
     }
@@ -77,8 +81,16 @@ fun ContinueWatchingCard(
     ) { mediaZoom ->
         Column {
             Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).onGloballyPositioned { mediaCoordinates = it }) {
-                Box(Modifier.fillMaxSize().clipToBounds()) {
-                    AsyncImage(imageRequest, entry.title, Modifier.fillMaxSize().then(mediaZoom), contentScale = ContentScale.Crop)
+                Box(Modifier.fillMaxSize().clipToBounds().background(MaterialTheme.colorScheme.surfaceContainerHigh),
+                    contentAlignment = Alignment.Center) {
+                    Icon(painterResource(R.drawable.theaters_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
+                        contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    AsyncImage(imageRequest, entry.title, Modifier.fillMaxSize().then(mediaZoom),
+                        contentScale = ContentScale.Crop,
+                        onError = {
+                            thumbnailFailed = true
+                            onThumbnailUnavailable()
+                        })
                 }
                 Surface(Modifier.align(Alignment.BottomStart).padding(8.dp),
                     color = Color.Black.copy(alpha = .75f),

@@ -179,7 +179,7 @@ fun DropRewardItemCard(reward: DropRewardUiModel, onClick: () -> Unit, modifier:
 }
 
 @Composable
-private fun DropsImage(url: String, modifier: Modifier, contentScale: ContentScale) {
+internal fun DropsImage(url: String, modifier: Modifier, contentScale: ContentScale, contentDescription: String? = null) {
     val context = LocalContext.current
     val fallback = painterResource(R.drawable.kick_drops_and_rewards)
     val request = remember(context, url) {
@@ -190,7 +190,7 @@ private fun DropsImage(url: String, modifier: Modifier, contentScale: ContentSca
             .diskCachePolicy(CachePolicy.ENABLED)
             .build()
     }
-    AsyncImage(request, contentDescription = null, modifier = modifier, contentScale = contentScale,
+    AsyncImage(request, contentDescription = contentDescription, modifier = modifier, contentScale = contentScale,
         placeholder = fallback, fallback = fallback, error = fallback)
 }
 
@@ -215,8 +215,13 @@ internal fun DropsRewardsButton(uiState: DropsUiState, onClick: () -> Unit) {
 }
 
 @Composable
-internal fun DropsCampaignDialog(uiState: DropsUiState, onRetry: () -> Unit, onDismiss: () -> Unit) {
-    var selection by remember { mutableStateOf<Pair<String, String>?>(null) }
+internal fun DropsCampaignDialog(
+    uiState: DropsUiState,
+    onRetry: () -> Unit,
+    onDismiss: () -> Unit,
+    initialSelection: Pair<String, String>? = null
+) {
+    var selection by remember(initialSelection) { mutableStateOf(initialSelection) }
     val selectedReward = selection?.let { (campaignId, rewardId) ->
         (uiState as? DropsUiState.Success)?.campaigns?.firstOrNull { it.id == campaignId }
             ?.rewards?.firstOrNull { it.id == rewardId }
@@ -244,6 +249,10 @@ internal fun DropsCampaignDialog(uiState: DropsUiState, onRetry: () -> Unit, onD
                     Text(if (selectedReward.isUnlocked) stringResource(R.string.drops_unlocked)
                         else stringResource(R.string.drops_progress, formatter.format(selectedReward.progressFraction)),
                         style = MaterialTheme.typography.bodyMedium)
+                    if (!selectedReward.isUnlocked) selectedReward.remainingDurationText?.let { remaining ->
+                        Text(remaining, style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
         }

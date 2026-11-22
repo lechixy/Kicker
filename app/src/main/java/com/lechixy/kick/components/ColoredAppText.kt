@@ -1,5 +1,7 @@
 package com.lechixy.kick.components
 
+import com.lechixy.kick.data.settings.repository.LocalBlurEffectsEnabled
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -90,15 +92,18 @@ private fun animatedAppTextStyle(): TextStyle {
         label = "gradient_offset"
     )
 
-    val glowBlur by transition.animateFloat(
-        initialValue = 18f,
-        targetValue = 42f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1200, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "glow_blur"
-    )
+    val shadow = if (LocalBlurEffectsEnabled.current) {
+        val glowBlur by transition.animateFloat(
+            initialValue = 18f,
+            targetValue = 42f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(durationMillis = 1200, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "glow_blur"
+        )
+        Shadow(MaterialTheme.colorScheme.primary.copy(alpha = 0.75f), blurRadius = glowBlur)
+    } else null
 
     val gradient = listOf(
         MaterialTheme.colorScheme.primary,
@@ -116,10 +121,6 @@ private fun animatedAppTextStyle(): TextStyle {
             ),
             tileMode = TileMode.Mirror
         ),
-        shadow = Shadow(
-            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f),
-            offset = Offset(0f, 0f),
-            blurRadius = glowBlur
-        )
+        shadow = shadow,
     )
 }

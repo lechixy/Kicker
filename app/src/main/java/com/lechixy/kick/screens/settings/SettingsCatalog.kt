@@ -135,6 +135,12 @@ internal fun settingsCatalog(expandGroups: Boolean = false): List<SettingsEntry>
             SettingSwitch(SettingsKeys.DYNAMIC_COLOR, stringResource(R.string.settings_dynamic_color),
                 icon = R.drawable.palette_24dp_e3e3e3_fill0_wght400_grad0_opsz24)
         },
+        SettingsEntry("blur-effects", R.string.settings_blur_effects, R.string.settings_blur_effects_description,
+            custom, R.string.settings_group_appearance) {
+            SettingSwitch(SettingsKeys.BLUR_EFFECTS, stringResource(R.string.settings_blur_effects),
+                description = stringResource(R.string.settings_blur_effects_description),
+                icon = R.drawable.blur_on_24dp_e3e3e3_fill0_wght400_grad0_opsz24)
+        },
         SettingsEntry("winter-snow", R.string.settings_winter_snow, R.string.settings_winter_snow_description,
             custom, R.string.settings_group_seasonal_effects, searchTerms = winterModeSearchTerms) {
             WinterModeSettings(initiallyExpanded = expandGroups)

@@ -189,6 +189,9 @@ fun ChannelScreen(
             sourceName = state.channel?.user?.username ?: channelSlug,
             raid = raid,
             onStay = viewModel::dismissRaid,
+            canAutoJoin = {
+                !com.lechixy.kick.service.player.SleepTimer.suppressesAutomaticRaid(raid.channel.id)
+            },
             onJoin = {
                 viewModel.dismissRaid()
                 raidNavigation.channel(raid.targetSlug)
@@ -581,9 +584,11 @@ fun ChannelScreen(
                                                         .then(chatScroll)
                                                 ) {
                                                     if (isChatVisible && channel != null) {
-                                                        sharedChat(channel, playerHost?.let { host ->
-                                                            { host.updateChatVisibility(visible = false) }
-                                                        }, Modifier.fillMaxSize(), true)
+                                                        CompositionLocalProvider(LocalChatContentActive provides (selectedTab == ChannelTab.CHAT)) {
+                                                            sharedChat(channel, playerHost?.let { host ->
+                                                                { host.updateChatVisibility(visible = false) }
+                                                            }, Modifier.fillMaxSize(), true)
+                                                        }
                                                     }
                                                     androidx.compose.animation.AnimatedVisibility(
                                                         visible = !isChatVisible,
@@ -1122,6 +1127,7 @@ private fun ChannelHeaderInfo(
             com.lechixy.kick.components.channel.ExpandableProfilePhoto(
                 url = channel.user?.profilePic,
                 username = channel.user?.username,
+                channelSlug = channel.slug,
                 onExpandedChange = onProfilePhotoExpandedChange,
                 modifier = Modifier.size(56.dp).then(if (channelIsLive) liveProfilePhotoOutline() else Modifier),
                 imagePadding = if (channelIsLive) 4.dp else 0.dp,

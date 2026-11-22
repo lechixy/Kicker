@@ -179,6 +179,8 @@ import com.lechixy.kick.data.settings.model.FullscreenChatBlurStyle
 import com.lechixy.kick.data.settings.model.PlayerAmbientMode
 import com.lechixy.kick.data.settings.model.SettingsKeys
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
+import com.lechixy.kick.data.settings.repository.LocalBlurEffectsEnabled
+import com.lechixy.kick.service.player.SleepTimer
 import com.lechixy.kick.screens.channel.ChannelViewModel
 import com.lechixy.kick.screens.clip.CreateClipModal
 import com.lechixy.kick.service.EXTRA_LIVE_DVR
@@ -187,6 +189,11 @@ import com.lechixy.kick.service.PlaybackService
 import com.lechixy.kick.service.buildPlaybackMediaItem
 import com.lechixy.kick.service.player.StreamVideoQuality
 import com.lechixy.kick.service.player.broadcastPositionMs
+import com.lechixy.kick.service.player.liveHistoryPositionOffsetMs
+import com.lechixy.kick.service.player.watchHistoryEntry
+import com.lechixy.kick.data.player.local.matchesBroadcast
+import com.lechixy.kick.data.player.local.PlaybackProgress
+import com.lechixy.kick.data.player.local.WatchHistoryStore
 import com.lechixy.kick.service.player.distanceBehindLiveTargetMs
 import com.lechixy.kick.service.player.isNearLiveTarget
 import com.lechixy.kick.service.player.setPlaybackUsageChannel
@@ -331,18 +338,24 @@ fun KickPlayerView(
     val controlBlur = remember { FrostedPlayerRegions() }
     val updateChatBlurBounds: (FullscreenChatBackdropRegion?) -> Unit = remember { { chatBlurBounds = it } }
     val downloadRecording = rememberRecordingDownloadAction()
-    val sleepTimer by com.lechixy.kick.service.player.SleepTimer.state.collectAsStateWithLifecycle()
+    val sleepTimer by SleepTimer.state.collectAsStateWithLifecycle()
     val sleepTimerMinutes = sleepTimer.selectedMinutes
     val remainingTimerSeconds = sleepTimer.remainingSeconds
+    val sleepMediaEndLabel = stringResource(when {
+        recording == null -> R.string.player_sleep_end_livestream
+        recording.id.startsWith("clip_") -> R.string.player_sleep_end_clip
+        else -> R.string.player_sleep_end_recording
+    })
 
     val settingsRepository = LocalSettingsRepository.current
+    val blurEffects = LocalBlurEffectsEnabled.current
     val ambientModeValue by remember(settingsRepository) { settingsRepository.get(SettingsKeys.AMBIENT_MODE) }
         .collectAsStateWithLifecycle(SettingsKeys.AMBIENT_MODE.defaultValue)
     val selectedAmbientMode = PlayerAmbientMode.fromValue(ambientModeValue)
     val ambientBatterySaver by remember(settingsRepository) { settingsRepository.get(SettingsKeys.AMBIENT_BATTERY_SAVER) }
         .collectAsStateWithLifecycle(SettingsKeys.AMBIENT_BATTERY_SAVER.defaultValue)
     val ambientMode = if (selectedAmbientMode == PlayerAmbientMode.Live &&
-        ambientBatterySaver && !isInPipMode && rememberAmbientPowerSaveMode()
+        (!blurEffects || (ambientBatterySaver && !isInPipMode && rememberAmbientPowerSaveMode()))
     ) PlayerAmbientMode.Dynamic else selectedAmbientMode
     val ambientFpsValue by remember(settingsRepository) { settingsRepository.get(SettingsKeys.AMBIENT_LIVE_FPS) }
         .collectAsStateWithLifecycle(SettingsKeys.AMBIENT_LIVE_FPS.defaultValue)
@@ -712,7 +725,9 @@ fun KickPlayerView(
         val p = player ?: return@LaunchedEffect
         if (liveRetryTrigger <= 0 || !isLiveStream) return@LaunchedEffect
         delay(2000.milliseconds)
-        if (isActive && latestIsLiveStream && p.currentMediaItem?.mediaId == stableId && p.playbackState != Player.STATE_READY) {
+        if (isActive && latestIsLiveStream && p.currentMediaItem?.mediaId == stableId &&
+            p.playbackState != Player.STATE_READY && !SleepTimer.stopsAutomaticPlayback(stableId)
+        ) {
             isBuffering = true
             playbackError = null
             p.seekToDefaultPosition()
@@ -743,7 +758,9 @@ fun KickPlayerView(
             // tracking metadata must not replace the media item of an active HLS stream.
             loadedMediaId = stableId
             isPlayerReady = p.playbackState == Player.STATE_READY
-            if (p.playbackState == Player.STATE_IDLE || p.playbackState == Player.STATE_ENDED) {
+            if ((p.playbackState == Player.STATE_IDLE || p.playbackState == Player.STATE_ENDED) &&
+                !SleepTimer.stopsAutomaticPlayback(stableId)
+            ) {
                 p.seekToDefaultPosition()
                 p.prepare()
                 p.play()
@@ -755,7 +772,8 @@ fun KickPlayerView(
         isBuffering = true
         isPlayerReady = false
         loadedMediaId = stableId
-        val pic: String = (recording?.thumbnail ?: channel?.getBannerUrl() ?: channel?.user?.profilePic
+        val fallbackThumbnail = channel?.getBannerUrl() ?: channel?.user?.profilePic
+        val pic: String = (recording?.thumbnail ?: fallbackThumbnail
         ?: "https://placehold.co/600x400/EEE/31343C?font=open-sans&text=No%20banner")
 
         val isLive = isLiveStream
@@ -763,7 +781,9 @@ fun KickPlayerView(
             com.lechixy.kick.data.player.local.WatchHistoryEntry(
                 key = recording?.let { "recording:${it.progressId}" } ?: "live:${detail.slug}:${detail.livestream?.id}",
                 channelSlug = detail.slug, channelName = channelName, title = streamTitle,
-                thumbnail = recording?.thumbnail ?: detail.livestream?.thumbnail?.url ?: pic,
+                thumbnail = if (recording != null) recording.thumbnail ?: fallbackThumbnail
+                    else previewThumbnailUrl ?: detail.livestream?.thumbnail?.url ?: fallbackThumbnail,
+                fallbackThumbnail = fallbackThumbnail,
                 recording = recording?.copy(directUrl = null),
                 livestreamId = if (recording == null) detail.livestream?.id else null,
                 vodId = if (recording == null) detail.livestream?.vodId else null,
@@ -806,7 +826,17 @@ fun KickPlayerView(
             p.playbackParameters = PlaybackParameters.DEFAULT
         }
         if (recording != null) {
-            val resumePosition = PlaybackProgressStore.get(recording.progressId)?.let { saved ->
+            val liveEntry = currentItem?.watchHistoryEntry()
+            val liveProgress = if (historyEntry != null && currentItem != null && liveEntry?.livestreamId != null &&
+                liveEntry.matchesBroadcast(historyEntry) && p.isPlaying
+            ) {
+                p.liveHistoryPositionOffsetMs(currentItem)?.let { offset ->
+                    PlaybackProgress((offset + p.currentPosition).coerceAtLeast(0L), recording.durationMs)
+                }
+            } else null
+            val savedProgress = liveProgress ?: historyEntry?.let(WatchHistoryStore::progressFor)
+                ?: PlaybackProgressStore.get(recording.progressId)
+            val resumePosition = savedProgress?.let { saved ->
                 saved.resumePosition(recording.durationMs.takeIf { it > 0 } ?: saved.durationMs)
             } ?: 0L
             p.setMediaItem(mediaItem, resumePosition)
@@ -816,7 +846,7 @@ fun KickPlayerView(
             p.setMediaItem(mediaItem)
         }
         p.prepare()
-        p.playWhenReady = playOnLoad
+        p.playWhenReady = playOnLoad && !SleepTimer.stopsAutomaticPlayback(stableId)
     }
 
     LaunchedEffect(
@@ -849,10 +879,10 @@ fun KickPlayerView(
         label = "playback controls opacity",
     ) { if (it) 1f else 0f }
     val backdropTexture = playerTexture.takeIf {
-        !isMini && !isInPipMode && hasRenderedFirstFrame && loadedMediaId == stableId && playbackError == null
+        blurEffects && !isMini && !isInPipMode && hasRenderedFirstFrame && loadedMediaId == stableId && playbackError == null
     }
     val chatBlurStyle = overlayPreferences?.blurStyle.takeIf {
-        overlayPreferences?.blur == true &&
+        blurEffects && overlayPreferences?.blur == true &&
             ((fullscreenChatOverlayEnabled && overlayHasOpacity) || editingChatPosition)
     }
     val visibleChatBlurStyle = chatBlurStyle.takeIf { chatBlurBounds != null }
@@ -1011,7 +1041,7 @@ fun KickPlayerView(
         if (overlayPreferences != null && playerHost != null && channel != null &&
             ((fullscreenChatOverlayEnabled && overlayHasOpacity) || editingChatPosition)
         ) {
-            val blur = if (overlayPreferences.blur) {
+            val blur = if (blurEffects && overlayPreferences.blur) {
                 FullscreenChatBlur(updateChatBlurBounds, legacyBackdrop, overlayPreferences.blurStyle)
             } else null
             FullscreenChatOverlay(
@@ -1133,6 +1163,7 @@ fun KickPlayerView(
                 controlBlur = controlBlur,
                 controlVideoReady = backdropTexture != null,
                 sleepRemainingSeconds = if (sleepTimerMinutes > 0) remainingTimerSeconds else 0,
+                sleepMediaEndLabel = sleepMediaEndLabel.takeIf { sleepTimer.atMediaEnd },
                 streamDuration = streamDuration,
                 positionMs = if (isLiveStream) liveSeekWindow?.positionMs ?: 0L else positionMs,
                 durationMs = if (isLiveStream) liveSeekWindow?.edgeMs ?: 0L else durationMs,
@@ -1309,9 +1340,9 @@ fun KickPlayerView(
             }
 
             val selectSleepTimer: (Int) -> Unit = { mins ->
+                SleepTimer.start(mins)
                 dismissSettings {
                     // Playback expiry never depends on the notification permission answer.
-                    com.lechixy.kick.service.player.SleepTimer.start(mins)
                     AccountGraph.notifications.postSleepTimer(mins)
                     if (mins > 0) {
                         coroutineScope.launch { settingsRepository.set(SettingsKeys.LAST_SLEEP_TIMER_MINUTES, mins) }
@@ -1412,7 +1443,11 @@ fun KickPlayerView(
                                         PlayerSettingsCategoryRow(
                                             icon = R.drawable.timer_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
                                             title = stringResource(R.string.player_sleep_timer),
-                                            value = if (sleepTimerMinutes > 0) stringResource(R.string.player_minutes, (remainingTimerSeconds + 59) / 60) else stringResource(R.string.player_off),
+                                            value = when {
+                                                sleepTimer.atMediaEnd -> sleepMediaEndLabel
+                                                sleepTimerMinutes > 0 -> stringResource(R.string.player_minutes, (remainingTimerSeconds + 59) / 60)
+                                                else -> stringResource(R.string.player_off)
+                                            },
                                             onClick = { settingsPage = PlayerSettingsPage.SLEEP_TIMER }
                                         )
                                         PlayerSettingsCategoryRow(
@@ -1499,26 +1534,16 @@ fun KickPlayerView(
                                 }
 
                                 PlayerSettingsPage.SPEED -> {
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 16.dp)
-                                            .verticalScroll(rememberScrollState()),
-                                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                                    ) {
-                                        playbackSpeedOptions.forEach { speed ->
-                                            PlayerSettingsOptionRow(
-                                                title = multiplierLabel(speed),
-                                                selected = playbackSpeed == speed,
-                                                onClick = {
-                                                    player?.takeIf {
-                                                        it.currentMediaItem?.mediaId == stableId &&
-                                                            it.isCommandAvailable(Player.COMMAND_SET_SPEED_AND_PITCH)
-                                                    }?.setPlaybackSpeed(speed)
-                                                    dismissSettings()
-                                                },
-                                            )
-                                        }
+                                    PlayerPlaybackSpeedSettings(
+                                        currentSpeed = playbackSpeed,
+                                        enabled = !dismissing,
+                                        speedLabel = ::multiplierLabel,
+                                    ) { speed ->
+                                        player?.takeIf {
+                                            it.currentMediaItem?.mediaId == stableId &&
+                                                it.isCommandAvailable(Player.COMMAND_SET_SPEED_AND_PITCH)
+                                        }?.setPlaybackSpeed(speed)
+                                        dismissSettings()
                                     }
                                 }
 
@@ -1527,6 +1552,11 @@ fun KickPlayerView(
                                         timer = sleepTimer,
                                         lastMinutes = lastSleepTimerMinutes,
                                         enabled = !dismissing,
+                                        mediaEndLabel = sleepMediaEndLabel,
+                                        onMediaEnd = {
+                                            SleepTimer.startAtMediaEnd(stableId)
+                                            dismissSettings()
+                                        },
                                         onApply = selectSleepTimer
                                     )
                                 }
@@ -1732,7 +1762,6 @@ private fun Tracks.toQualityOptions(): List<VideoQualityOption> =
  */
 private enum class PlayerSettingsPage { MAIN, QUALITY, SPEED, SLEEP_TIMER, CHAT_OVERLAY, MORE, AMBIENT }
 
-private val playbackSpeedOptions = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f)
 
 @Composable
 private fun PlayerSettingsCategoryRow(
@@ -1835,6 +1864,7 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
     controlVideoReady: Boolean = false,
     sleepRemainingSeconds: Int,
     streamDuration: String,
+    sleepMediaEndLabel: String? = null,
     positionMs: Long = 0L,
     durationMs: Long = 0L,
     liveWindowStartMs: Long = C.TIME_UNSET,
@@ -1884,11 +1914,13 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                 else it
             }
     ) {
-        if (sleepRemainingSeconds > 0) {
+        if (sleepRemainingSeconds > 0 || sleepMediaEndLabel != null) {
             Row(Modifier.align(Alignment.TopCenter).offset(y = maxHeight / 4).offset(y = (-12).dp),
                 verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ActiveSleepTimerIcon()
-                PlayerSleepTimerRemainingLabel(sleepRemainingSeconds)
+                if (sleepMediaEndLabel != null) {
+                    Text(sleepMediaEndLabel, style = MaterialTheme.typography.labelMedium, color = Color.White)
+                } else PlayerSleepTimerRemainingLabel(sleepRemainingSeconds)
             }
         }
         val isCompact = !isFullScreen
@@ -1914,7 +1946,11 @@ internal fun AnimatedVisibilityScope.PlayerControlsOverlay(
                 )
                 .padding(
                     start = if (isCompact) 2.dp else 4.dp,
-                    top = if (isCompact) 2.dp else 8.dp,
+                    top = when {
+                        !isCompact -> 8.dp
+                        largeControls -> 12.dp
+                        else -> 6.dp
+                    },
                     end = if (isCompact) 6.dp else 12.dp,
                     bottom = if (isCompact) 2.dp else 8.dp
                 ),

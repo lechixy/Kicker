@@ -1376,7 +1376,9 @@ private fun PlayerSurface(
             )
         } else {
             val bannerUrl = remember(channel) { channel?.getBannerUrl(targetWidthPx = 1080) }
-            val displayImage = (previewThumbnailUrl ?: bannerUrl).takeIf { !isLive || canPlayLive }
+            var bannerFailed by remember(bannerUrl) { mutableStateOf(false) }
+            val displayImage = if (isLive) (previewThumbnailUrl ?: bannerUrl).takeIf { canPlayLive }
+                else bannerUrl?.takeUnless { bannerFailed } ?: channel?.user?.profilePic
             if (!displayImage.isNullOrEmpty()) {
                 AsyncImage(
                     model = remember(displayImage) {
@@ -1389,7 +1391,8 @@ private fun PlayerSurface(
                     },
                     contentDescription = "Banner",
                     modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
+                    contentScale = ContentScale.Crop,
+                    onError = { bannerFailed = true },
                 )
             } else if (isLive && livePlaybackAccess == LivePlaybackAccess.CheckingRating) {
                 AppLoadingIndicator()

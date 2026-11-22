@@ -44,6 +44,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -51,6 +52,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.text.HtmlCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil3.compose.AsyncImage
+import coil3.gif.AnimatedImageDecoder
+import coil3.request.ImageRequest
 import com.lechixy.kick.R
 import com.lechixy.kick.components.account.RewardAvailability
 import com.lechixy.kick.data.account.AccountGraph
@@ -100,6 +104,7 @@ fun InAppNotificationHost(onActivate: (AppNotification) -> Unit, modifier: Modif
 internal fun NotificationCard(notification: AppNotification, onClick: () -> Unit, onDismiss: () -> Unit) {
     val title = when (notification.kind) {
         NotificationKind.WatchTimeGoal -> stringResource(R.string.notification_reward_title)
+        NotificationKind.LevelUp -> stringResource(R.string.notification_level_up_title, notification.level)
         NotificationKind.SleepTimerStarted -> stringResource(R.string.sleep_timer_started_title)
         NotificationKind.SleepTimerStopped -> stringResource(R.string.sleep_timer_stopped_title)
         NotificationKind.StreamStarted -> notification.title.takeIf { it.isNotBlank() }?.let {
@@ -108,6 +113,7 @@ internal fun NotificationCard(notification: AppNotification, onClick: () -> Unit
     }
     val description = when (notification.kind) {
         NotificationKind.WatchTimeGoal -> stringResource(R.string.notification_reward_description, notification.thresholdMinutes)
+        NotificationKind.LevelUp -> stringResource(R.string.notification_level_up_description)
         NotificationKind.SleepTimerStarted -> stringResource(R.string.sleep_timer_started_description, notification.timerMinutes)
         NotificationKind.SleepTimerStopped -> stringResource(R.string.sleep_timer_stopped_description)
         NotificationKind.StreamStarted -> notification.description.takeIf { it.isNotBlank() }
@@ -123,6 +129,7 @@ internal fun NotificationCard(notification: AppNotification, onClick: () -> Unit
             Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
                 when (notification.kind) {
                     NotificationKind.WatchTimeGoal -> RewardAvailability(true)
+                    NotificationKind.LevelUp -> LevelUpNotificationIcon(notification.animatedBadgeUrl)
                     NotificationKind.StreamStarted -> LiveNotificationIcon()
                     NotificationKind.SleepTimerStarted ->
                         ActiveSleepTimerIcon(Modifier.size(28.dp), contentDescription = null)
@@ -139,6 +146,23 @@ internal fun NotificationCard(notification: AppNotification, onClick: () -> Unit
         }
     }
     }
+    }
+}
+
+@Composable
+private fun LevelUpNotificationIcon(animatedBadgeUrl: String?) {
+    val context = LocalContext.current
+    val fallback = painterResource(R.drawable.star_shine_24dp_e3e3e3_fill1_wght400_grad0_opsz24)
+    if (animatedBadgeUrl == null) {
+        Icon(fallback, contentDescription = null, modifier = Modifier.size(28.dp), tint = MaterialTheme.colorScheme.primary)
+    } else {
+        val request = remember(context, animatedBadgeUrl) {
+            ImageRequest.Builder(context)
+                .data(animatedBadgeUrl)
+                .decoderFactory(AnimatedImageDecoder.Factory())
+                .build()
+        }
+        AsyncImage(request, contentDescription = null, modifier = Modifier.size(44.dp), error = fallback)
     }
 }
 

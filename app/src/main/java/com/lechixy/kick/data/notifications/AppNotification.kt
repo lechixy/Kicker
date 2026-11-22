@@ -5,13 +5,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 enum class NotificationKind {
-    WatchTimeGoal, StreamStarted, SleepTimerStarted, SleepTimerStopped;
+    WatchTimeGoal, StreamStarted, SleepTimerStarted, SleepTimerStopped, LevelUp;
 
     internal val isSleepTimer get() = this == SleepTimerStarted || this == SleepTimerStopped
 }
 data class AppNotification(val id: String, val kind: NotificationKind, val userId: Long, val generation: Long,
     val title: String = "", val description: String = "", val channelSlug: String? = null,
-    val thresholdMinutes: Int = 60, val preview: Boolean = false, val timerMinutes: Int = 0)
+    val thresholdMinutes: Int = 60, val preview: Boolean = false, val timerMinutes: Int = 0,
+    val level: Int = 0, val animatedBadgeUrl: String? = null)
 
 internal fun decodeAccountNotification(source: String?, event: String, raw: JsonElement, userId: Long, generation: Long): AppNotification? {
     val payload = runCatching {
@@ -32,6 +33,11 @@ internal fun decodeAccountNotification(source: String?, event: String, raw: Json
             val threshold = text("threshold_minutes").toIntOrNull()?.takeIf { it > 0 } ?: return null
             AppNotification("goal:${text("challenge_id")}:${text("recurrence")}", NotificationKind.WatchTimeGoal,
                 userId, generation, thresholdMinutes = threshold)
+        }
+        "GamificationLevelUp" -> {
+            if (source != "private-$userId") return null
+            val level = text("level").toIntOrNull()?.takeIf { it > 0 } ?: return null
+            AppNotification("level-up:$userId:$level", NotificationKind.LevelUp, userId, generation, level = level)
         }
         else -> null
     }
