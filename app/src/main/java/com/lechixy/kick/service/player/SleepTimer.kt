@@ -4,7 +4,7 @@ import android.content.Context
 import android.os.SystemClock
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
-import com.lechixy.kick.service.EXTRA_LIVE_DVR
+import com.lechixy.kick.service.EXTRA_IS_LIVE
 import com.lechixy.kick.service.EXTRA_VIEWER_CHANNEL_ID
 import com.lechixy.kick.service.EXTRA_VIEWER_LIVESTREAM_ID
 import kotlinx.coroutines.*
@@ -53,7 +53,7 @@ object SleepTimer {
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             if (playbackState == Player.STATE_ENDED && mutableState.value.atMediaEnd &&
-                player?.currentMediaItem?.mediaMetadata?.extras?.getBoolean(EXTRA_LIVE_DVR) != true
+                player?.currentMediaItem?.mediaMetadata?.extras?.getBoolean(EXTRA_IS_LIVE) != true
             ) finish()
         }
 
@@ -89,12 +89,11 @@ object SleepTimer {
         stoppedMediaId == mediaId.removeSuffix("_dvr")
 
     internal fun onLivestreamEnded(channelId: Long, livestreamId: Long) {
-        val extras = player?.currentMediaItem?.mediaMetadata?.extras
-        if (extras?.getLong(EXTRA_VIEWER_CHANNEL_ID) != channelId ||
-            extras?.getLong(EXTRA_VIEWER_LIVESTREAM_ID) != livestreamId
+        val extras = player?.currentMediaItem?.mediaMetadata?.extras ?: return
+        if (extras.getLong(EXTRA_VIEWER_CHANNEL_ID) != channelId ||
+            extras.getLong(EXTRA_VIEWER_LIVESTREAM_ID) != livestreamId
         ) return
-        if (!mutableState.value.active) return
-        blockAutomaticPlayback()
+        if (mutableState.value.active) blockAutomaticPlayback()
         if (endLivestreamId == livestreamId) finish() else player?.pause()
     }
 

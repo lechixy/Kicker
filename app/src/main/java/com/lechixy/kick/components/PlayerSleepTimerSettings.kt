@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -46,7 +47,10 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lechixy.kick.R
@@ -96,23 +100,37 @@ internal fun PlayerSleepTimerSettings(
                 }
             }
         }
-        Row(
-            Modifier.clearAndSetSemantics { contentDescription = duration },
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            itemVerticalAlignment = Alignment.CenterVertically,
         ) {
+            Row(
+                Modifier.clearAndSetSemantics { contentDescription = duration },
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                AnimatedCounterText(
+                    count = minutes,
+                    style = MaterialTheme.typography.headlineMedium,
+                    formatViewers = false,
+                    animateEntrance = false,
+                )
+                Text(stringResource(R.string.player_sleep_timer_minutes_unit), style = MaterialTheme.typography.titleMedium)
+            }
             if (mediaEndLabel != null && !timer.atMediaEnd) {
-                OutlinedButton(onClick = onMediaEnd, enabled = enabled) {
-                    Text(mediaEndLabel)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(stringResource(R.string.player_sleep_timer_or),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium)
+                    OutlinedButton(onClick = onMediaEnd, enabled = enabled,
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)) {
+                        Text(mediaEndLabel)
+                    }
                 }
             }
-            AnimatedCounterText(
-                count = minutes,
-                style = MaterialTheme.typography.headlineMedium,
-                formatViewers = false,
-                animateEntrance = false,
-            )
-            Text(stringResource(R.string.player_sleep_timer_minutes_unit), style = MaterialTheme.typography.titleMedium)
         }
         Slider(
             state = slider,
@@ -145,12 +163,17 @@ internal fun PlayerSleepTimerSettings(
 
 private val playbackSpeedOptions = listOf(0.25f, 0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f, 2.5f, 3f)
 
+internal fun playbackSpeedLabel(number: String, accent: Color) = buildAnnotatedString {
+    append(number)
+    withStyle(SpanStyle(color = accent)) { append("x") }
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun PlayerPlaybackSpeedSettings(
     currentSpeed: Float,
     enabled: Boolean,
-    speedLabel: (Float) -> String,
+    formatSpeed: (Float) -> String,
     onApply: (Float) -> Unit,
 ) {
     val slider = remember(currentSpeed) {
@@ -159,7 +182,7 @@ internal fun PlayerPlaybackSpeedSettings(
             trackRange = 0f..playbackSpeedOptions.lastIndex.toFloat())
     }
     val speed = playbackSpeedOptions[slider.value.roundToInt()]
-    val label = speedLabel(speed)
+    val label = "${formatSpeed(speed)}x"
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp).verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -174,7 +197,8 @@ internal fun PlayerPlaybackSpeedSettings(
             },
             label = "playback speed",
         ) {
-            Text(speedLabel(it), style = MaterialTheme.typography.headlineMedium)
+            Text(playbackSpeedLabel(formatSpeed(it), MaterialTheme.colorScheme.primary),
+                style = MaterialTheme.typography.headlineMedium)
         }
         Slider(
             state = slider,

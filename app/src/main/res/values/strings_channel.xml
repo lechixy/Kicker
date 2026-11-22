@@ -107,6 +107,7 @@
     <string name="player_sleep_end_livestream">End of the livestream</string>
     <string name="player_sleep_end_recording">End of the recording</string>
     <string name="player_sleep_end_clip">End of the clip</string>
+    <string name="player_sleep_timer_or">or</string>
     <string name="player_apply_speed">Apply speed</string>
     <string name="player_sleep_timer_minutes_unit">minutes</string>
     <string name="sleep_timer_started_title">Sleep timer started</string>

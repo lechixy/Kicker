@@ -19,7 +19,7 @@ import android.graphics.SurfaceTexture
 import android.os.Build
 import android.view.Choreographer
 import android.view.TextureView
-import android.view.View
+import android.view.ViewTreeObserver
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -67,6 +67,7 @@ import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
 import com.lechixy.kick.data.settings.model.FullscreenChatBlurStyle
 import com.lechixy.kick.data.settings.model.FullscreenChatShape
+import com.lechixy.kick.components.PlayerVideoZoom
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -153,10 +154,12 @@ internal fun rememberLegacyFullscreenChatFrame(
     soft: Boolean = true,
     frosted: Boolean = false,
     mediaKey: Any? = null,
+    zoomScale: () -> Float = { 1f },
 ): State<FullscreenChatVideoFrame?> {
     if (!LocalBlurEffectsEnabled.current) return remember { mutableStateOf(null) }
     val frame = remember(texture, soft, frosted, mediaKey) { mutableStateOf<FullscreenChatVideoFrame?>(null) }
     val isPlaying by rememberUpdatedState(playing)
+    val currentZoomScale by rememberUpdatedState(zoomScale)
     val radius = with(LocalDensity.current) { frostedRadius.toPx() }
     LaunchedEffect(frame, radius) {
         if (texture == null || (!soft && !frosted)) return@LaunchedEffect
@@ -178,17 +181,18 @@ internal fun rememberLegacyFullscreenChatFrame(
             }
             val timestamp = surface?.timestamp
             if (texture.isAvailable && width > 0 && height > 0) {
-                val size = IntSize(width, height)
+                val zoom = currentZoomScale()
+                val size = IntSize((width * zoom).roundToInt(), (height * zoom).roundToInt())
                 texture.getLocationInWindow(location)
                 val origin = IntOffset(location[0], location[1])
                 val current = frame.value
                 if (current == null || current.size != size || current.origin != origin ||
                     timestamp == null || timestamp == 0L || timestamp != lastTimestamp
                 ) {
-                    val scale = (sampleLimit.toFloat() / maxOf(width, height)).coerceAtMost(1f)
+                    val scale = (sampleLimit.toFloat() / maxOf(size.width, size.height)).coerceAtMost(1f)
                     val sampled = IntSize(
-                        (width * scale).roundToInt().coerceAtLeast(1),
-                        (height * scale).roundToInt().coerceAtLeast(1),
+                        (size.width * scale).roundToInt().coerceAtLeast(1),
+                        (size.height * scale).roundToInt().coerceAtLeast(1),
                     )
                     val activeBuffers = buffers?.takeIf { it.size == sampled } ?: LegacyBackdropBuffers(
                         sampled, downsample = soft && frosted, frosted = frosted,
@@ -307,6 +311,7 @@ internal fun VideoBackdropBlur(
     texture: TextureView?,
     regions: List<FullscreenChatBackdropRegion>,
     controlOpacity: () -> Float = { 1f },
+    zoom: () -> PlayerVideoZoom = { PlayerVideoZoom() },
     opacity: () -> Float = { 1f },
 ) {
     if (!LocalBlurEffectsEnabled.current || Build.VERSION.SDK_INT < 31 || texture == null || regions.isEmpty()) return
@@ -326,6 +331,7 @@ internal fun VideoBackdropBlur(
     val currentRegions by rememberUpdatedState(regions)
     val currentControlOpacity by rememberUpdatedState(controlOpacity)
     val currentOpacity by rememberUpdatedState(opacity)
+    val currentZoom by rememberUpdatedState(zoom)
     val scope = rememberCoroutineScope()
     DisposableEffect(texture, radius, maxFeather, glassRadius, glassFeather, controlFeather, roundedRadius, masks) {
         val location = IntArray(2)
@@ -333,6 +339,8 @@ internal fun VideoBackdropBlur(
         var lastOpacity = 0f
         var lastControlOpacity = 0f
         var lastTextureSize = IntSize.Zero
+        var lastOrigin = IntOffset.Zero
+        var lastZoomScale = 1f
         var appliedEffect: RenderEffect? = null
         val choreographer = if (Build.VERSION.SDK_INT < 33) Choreographer.getInstance() else null
         val refreshTexture = object : Choreographer.FrameCallback {
@@ -354,36 +362,41 @@ internal fun VideoBackdropBlur(
         }
         fun updateEffect() {
             texture.getLocationInWindow(location)
+            val origin = IntOffset(location[0], location[1])
             val textureSize = IntSize(texture.width, texture.height)
+            val zoomScale = currentZoom().scale
+            val regionsInWindow = currentRegions
             val textureBounds = Rect(0f, 0f, textureSize.width.toFloat(), textureSize.height.toFloat())
             val alpha = currentOpacity().coerceIn(0f, 1f)
-            val localRegions = currentRegions.map {
-                it.copy(bounds = it.bounds.translate(-location[0].toFloat(), -location[1].toFloat()))
-            }
             val visibleOpacity = if (!textureBounds.isEmpty) alpha else 0f
             val visibleControlOpacity = currentControlOpacity().coerceIn(0f, 1f)
-            if (localRegions == lastRegions && visibleOpacity == lastOpacity &&
-                visibleControlOpacity == lastControlOpacity && textureSize == lastTextureSize) return
-            lastRegions = localRegions
+            if (regionsInWindow == lastRegions && visibleOpacity == lastOpacity &&
+                visibleControlOpacity == lastControlOpacity && textureSize == lastTextureSize &&
+                origin == lastOrigin && zoomScale == lastZoomScale) return
+            lastRegions = regionsInWindow
             lastOpacity = visibleOpacity
             lastControlOpacity = visibleControlOpacity
             lastTextureSize = textureSize
+            lastOrigin = origin
+            lastZoomScale = zoomScale
             var softEffect: RenderEffect? = null
             var softMask: RenderEffect? = null
             var frostedMask: RenderEffect? = null
             var frostedBounds: Rect? = null
-            localRegions.forEachIndexed { index, region ->
-                val bounds = region.bounds
+            regionsInWindow.forEachIndexed { index, regionInWindow ->
+                val shifted = regionInWindow.bounds.translate(-origin.x.toFloat(), -origin.y.toFloat())
+                val bounds = Rect(shifted.topLeft / zoomScale, shifted.bottomRight / zoomScale)
+                val region = regionInWindow.copy(bounds = bounds)
                 val alpha = when {
                     !region.frostedControl -> visibleOpacity
                     region.followsControlsOpacity -> visibleControlOpacity
                     else -> 1f
                 }
                 if (alpha > 0f && !bounds.isEmpty && bounds.overlaps(textureBounds)) {
-                    val cornerRadius = region.shape.radius(bounds.width, bounds.height, roundedRadius)
+                    val cornerRadius = region.shape.radius(bounds.width, bounds.height, roundedRadius / zoomScale)
                     if (region.style == FullscreenChatBlurStyle.FrostedGlass) {
                         val feather = if (region.frostedControl) controlFeather else glassFeather
-                        val mask = masks[index].effect(region, feather, alpha, cornerRadius)
+                        val mask = masks[index].effect(region, feather / zoomScale, alpha, cornerRadius)
                         frostedMask = composite(frostedMask, mask)
                         frostedBounds = frostedBounds?.let {
                             Rect(minOf(it.left, bounds.left), minOf(it.top, bounds.top),
@@ -393,10 +406,10 @@ internal fun VideoBackdropBlur(
                         val shader = progressiveEffects[index] ?: ProgressiveBlurShader().also {
                             progressiveEffects[index] = it
                         }
-                        val next = shader.effect(region, textureSize, radius, maxFeather, alpha, cornerRadius)
+                        val next = shader.effect(region, textureSize, radius / zoomScale, maxFeather / zoomScale, alpha, cornerRadius)
                         softEffect = softEffect?.let { RenderEffect.createChainEffect(next, it) } ?: next
                     } else {
-                        val mask = masks[index].effect(region, maxFeather, alpha, cornerRadius)
+                        val mask = masks[index].effect(region, maxFeather / zoomScale, alpha, cornerRadius)
                         softMask = composite(softMask, mask)
                     }
                 }
@@ -405,13 +418,13 @@ internal fun VideoBackdropBlur(
             softMask?.let {
                 effect = composite(
                     RenderEffect.createOffsetEffect(0f, 0f),
-                    blurredOverlay(it, textureSize, radius, Shader.TileMode.CLAMP),
+                    blurredOverlay(it, textureSize, radius / zoomScale, Shader.TileMode.CLAMP),
                 )
             }
             frostedMask?.let {
                 // Each blur branch samples the texture itself, even where two masks overlap.
                 val source = RenderEffect.createOffsetEffect(0f, 0f)
-                val crop = checkNotNull(frostedBounds).inflate(3f * glassRadius).intersect(textureBounds)
+                val crop = checkNotNull(frostedBounds).inflate(3f * glassRadius / zoomScale).intersect(textureBounds)
                 val blurSource = if (crop == textureBounds) source else {
                     val cropMask = RenderEffect.createBitmapEffect(opaquePixel, null, AndroidRect(
                         floor(crop.left).toInt(), floor(crop.top).toInt(),
@@ -421,7 +434,7 @@ internal fun VideoBackdropBlur(
                 }
                 effect = composite(
                     effect ?: source,
-                    blurredOverlay(it, textureSize, glassRadius, Shader.TileMode.MIRROR, blurSource),
+                    blurredOverlay(it, textureSize, glassRadius / zoomScale, Shader.TileMode.MIRROR, blurSource),
                 )
             }
             val hadEffect = appliedEffect != null
@@ -430,16 +443,21 @@ internal fun VideoBackdropBlur(
             if (!hadEffect && effect != null) choreographer?.postFrameCallback(refreshTexture)
             if (effect == null) choreographer?.removeFrameCallback(refreshTexture)
         }
-        val listener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updateEffect() }
-        texture.addOnLayoutChangeListener(listener)
-        updateEffect()
+        // The video can move in the window without the TextureView itself being laid out again.
+        val listener = ViewTreeObserver.OnPreDrawListener {
+            updateEffect()
+            true
+        }
+        val observer = texture.viewTreeObserver
+        observer.addOnPreDrawListener(listener)
         val updates = scope.launch {
-            snapshotFlow { Triple(currentRegions, currentOpacity(), currentControlOpacity()) }.collect { updateEffect() }
+            snapshotFlow { currentZoom() to Triple(currentRegions, currentOpacity(), currentControlOpacity()) }
+                .collect { texture.invalidate() }
         }
         onDispose {
             updates.cancel()
             choreographer?.removeFrameCallback(refreshTexture)
-            texture.removeOnLayoutChangeListener(listener)
+            (if (observer.isAlive) observer else texture.viewTreeObserver).removeOnPreDrawListener(listener)
             texture.setRenderEffect(null)
         }
     }

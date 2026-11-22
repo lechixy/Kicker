@@ -72,7 +72,7 @@
     <string name="settings_dark">Koyu</string>
     <string name="settings_dynamic_color">Dinamik renkler</string>
     <string name="settings_blur_effects">Bulanıklık efektleri</string>
-    <string name="settings_blur_effects_description">Oynatıcı kontrollerinde, sohbette, kanal görsellerinde ve diğer efektlerde bulanıklık kullan.</string>
+    <string name="settings_blur_effects_description">Oynatıcı kontrollerinde, sohbette, kanal görsellerinde ve diğer efektlerde bulanıklık kullan</string>
     <string name="settings_group_seasonal_effects">Mevsimsel efektler</string>
     <string name="settings_winter_snow">Kış modu</string>
     <string name="settings_winter_snow_description">Video oynatıcısının dışında kar yağışı gösterir</string>

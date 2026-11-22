@@ -19,20 +19,24 @@ internal fun PlayerVideoSurface(
     player: Player?,
     isPlaying: Boolean,
     modifier: Modifier = Modifier,
+    zoom: () -> PlayerVideoZoom = { PlayerVideoZoom() },
     onTextureChanged: (TextureView?) -> Unit = {},
 ) {
     val textureCallback = rememberUpdatedState(onTextureChanged)
+    val currentZoom = rememberUpdatedState(zoom)
     AndroidView(
         factory = { context ->
             // The texture surface follows Compose transforms and clipping.
             (LayoutInflater.from(context).inflate(R.layout.kick_player_view, null) as PlayerView).apply {
                 layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+                addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> applyVideoZoom(currentZoom.value()) }
                 textureCallback.value(videoSurfaceView as? TextureView)
             }
         },
         update = { view ->
             if (view.player !== player) view.player = player
             view.keepScreenOn = isPlaying
+            view.applyVideoZoom(currentZoom.value())
         },
         onRelease = {
             textureCallback.value(null)
@@ -40,4 +44,12 @@ internal fun PlayerVideoSurface(
         },
         modifier = modifier,
     )
+}
+
+private fun PlayerView.applyVideoZoom(zoom: PlayerVideoZoom) {
+    // Keep the texture at viewport size while zooming and panning the rendered view.
+    scaleX = zoom.scale
+    scaleY = zoom.scale
+    translationX = zoom.normalizedTranslation.x * width
+    translationY = zoom.normalizedTranslation.y * height
 }

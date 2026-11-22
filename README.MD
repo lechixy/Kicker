@@ -2,8 +2,6 @@
   <img width="65%" alt="Kicker banner" src=".github/assets/banner.webp">
 </p>
 
-<h1 align="center">Kicker</h1>
-
 <p align="center">
   A free and open source Android client for Kick 💚<br>
   Native Material 3 design. Live streams, chat, and VODs. Built for phones and tablets.

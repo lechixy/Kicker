@@ -120,10 +120,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
@@ -211,6 +209,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import kotlin.math.roundToInt
@@ -298,7 +297,8 @@ fun KickPlayerView(
     val playOnLoad = dvrPlayback?.playWhenReady ?: true
     var playRequested by remember(player, stableId) { mutableStateOf(playOnLoad) }
     var playbackError by remember(stableId) { mutableStateOf<String?>(null) }
-    var liveRetryTrigger by remember(stableId) { mutableIntStateOf(0) }
+    var recordingEnded by remember(player, stableId) { mutableStateOf(false) }
+    var reloadLiveSource by remember(stableId) { mutableIntStateOf(0) }
     var isSeeking by remember(stableId) { mutableStateOf(false) }
     var skipFeedback by remember(stableId, isMini, isInPipMode) { mutableStateOf<RecordingSkipFeedback?>(null) }
     var videoZoom by remember(stableId) { mutableStateOf(PlayerVideoZoom()) }
@@ -309,7 +309,8 @@ fun KickPlayerView(
     val multiplierFormat = remember(viewersLocale) {
         NumberFormat.getNumberInstance(viewersLocale).apply { maximumFractionDigits = 2 }
     }
-    fun multiplierLabel(value: Float) = "x${multiplierFormat.format(value.toDouble())}"
+    fun formatMultiplier(value: Float) = multiplierFormat.format(value.toDouble())
+    fun multiplierLabel(value: Float) = "x${formatMultiplier(value)}"
     fun stopFastForward() {
         val previous = fastForwardFrom ?: return
         fastForwardFrom = null
@@ -517,15 +518,16 @@ fun KickPlayerView(
         player?.volume = playerGain
     }
 
-    LaunchedEffect(showControls, isAdjustingVolume, isSeeking) {
-        if (showControls && !isAdjustingVolume && !isSeeking) {
+    LaunchedEffect(showControls, isAdjustingVolume, isSeeking, recordingEnded) {
+        if (showControls && !isAdjustingVolume && !isSeeking && !recordingEnded) {
             delay(3500.milliseconds)
             showControls = false
         }
     }
 
-    LaunchedEffect(showControls) {
-        onControlsVisibilityChanged(showControls)
+    val controlsRequested = !isMini && (showControls || recordingEnded)
+    LaunchedEffect(controlsRequested) {
+        onControlsVisibilityChanged(controlsRequested)
     }
 
     LaunchedEffect(isMini) { if (isMini) showControls = false }
@@ -539,6 +541,7 @@ fun KickPlayerView(
     val clipVideoId = recording?.vodId ?: clipLiveSession?.vodId
     val lowLatencyEnabled = isLiveStream && !playingDvr && lowLatencySetting
     val latestIsLiveStream by rememberUpdatedState(isLiveStream)
+    val latestPlaybackUrl by rememberUpdatedState(playbackUrl)
     var positionMs by remember(stableId) { mutableLongStateOf(0L) }
     var durationMs by remember(stableId) { mutableLongStateOf(recording?.durationMs ?: 0L) }
     var liveSeekWindow by remember(stableId) { mutableStateOf<LiveSeekWindow?>(null) }
@@ -617,8 +620,9 @@ fun KickPlayerView(
 
             fun refreshPlaybackControls() {
                 val isCurrentMedia = p.currentMediaItem?.mediaId == stableId
+                recordingEnded = isCurrentMedia && !latestIsLiveStream && p.playbackState == Player.STATE_ENDED
                 isPlaying = isCurrentMedia && p.isPlaying
-                playRequested = if (isCurrentMedia) p.playWhenReady else playOnLoad
+                playRequested = if (isCurrentMedia) p.playWhenReady && !recordingEnded else playOnLoad
                 if (!isCurrentMedia || !p.playWhenReady || p.playbackState == Player.STATE_ENDED || p.playerError != null) {
                     stopFastForward()
                 }
@@ -644,8 +648,6 @@ fun KickPlayerView(
                     isPlayerReady = playbackState == Player.STATE_READY
                     if (playbackState == Player.STATE_READY && p.playWhenReady) {
                         playbackError = null
-                    } else if (live && playbackState == Player.STATE_ENDED) {
-                        liveRetryTrigger++
                     }
                     loadedMediaId = p.currentMediaItem?.mediaId
                 }
@@ -699,7 +701,6 @@ fun KickPlayerView(
                         playbackError = null
                         isBuffering = true
                         isPlayerReady = false
-                        liveRetryTrigger++
                     } else {
                         playbackError = error.message ?: "Oynatma hatası"
                         isBuffering = false
@@ -711,7 +712,8 @@ fun KickPlayerView(
             val isSameMedia = p.currentMediaItem?.mediaId == stableId
             currentVideoHeight = if (isSameMedia) p.videoSize.height else 0
             refreshPlaybackControls()
-            isBuffering = !isSameMedia || p.playbackState == Player.STATE_BUFFERING
+            isBuffering = !isSameMedia || p.playbackState == Player.STATE_BUFFERING ||
+                (latestIsLiveStream && p.playWhenReady && p.playbackState != Player.STATE_READY)
             isPlayerReady = isSameMedia && p.playbackState == Player.STATE_READY
             loadedMediaId = p.currentMediaItem?.mediaId
             refreshQualities(p.currentTracks)
@@ -721,22 +723,57 @@ fun KickPlayerView(
         }
     }
 
-    LaunchedEffect(player, stableId, playbackUrl, liveRetryTrigger, isLiveStream) {
+    LaunchedEffect(player, stableId, isLiveStream, playingDvr, liveChatViewModel) {
         val p = player ?: return@LaunchedEffect
-        if (liveRetryTrigger <= 0 || !isLiveStream) return@LaunchedEffect
-        delay(2000.milliseconds)
-        if (isActive && latestIsLiveStream && p.currentMediaItem?.mediaId == stableId &&
+        if (!isLiveStream || playingDvr) return@LaunchedEffect
+        val recovery = LiveStreamRecovery()
+        fun isInterrupted() = p.currentMediaItem?.mediaId == stableId && p.playWhenReady &&
             p.playbackState != Player.STATE_READY && !SleepTimer.stopsAutomaticPlayback(stableId)
-        ) {
-            isBuffering = true
-            playbackError = null
-            p.seekToDefaultPosition()
-            p.prepare()
-            p.play()
+
+        while (isActive) {
+            delay(1_000)
+            if (!isInterrupted()) {
+                recovery.reset()
+                continue
+            }
+            val now = SystemClock.elapsedRealtime()
+            recovery.onInterrupted(now)
+            if (channel?.livestream != null && liveChatViewModel != null && recovery.shouldCheckStatus(now)) {
+                val fresh = withTimeoutOrNull(5_000) { liveChatViewModel.checkInterruptedLivestream(channel) }
+                if (!isInterrupted()) {
+                    recovery.reset()
+                    continue
+                }
+                val sameBroadcast = fresh?.let { it.livestream?.id == channel.livestream.id }
+                val confirmedEnd = recovery.onChannelStatus(sameBroadcast)
+                if (fresh != null && (confirmedEnd || sameBroadcast == true)) {
+                    val changed = liveChatViewModel.applyInterruptedLivestreamStatus(channel, fresh)
+                    if (confirmedEnd) return@LaunchedEffect
+                    val refreshedUrl = fresh.playbackUrl
+                    val needsReload = !changed && !refreshedUrl.isNullOrBlank() &&
+                        refreshedUrl == latestPlaybackUrl &&
+                        refreshedUrl != p.currentMediaItem?.localConfiguration?.uri?.toString()
+                    if (needsReload) {
+                        // A healthy session may have kept its original URL after a metadata refresh.
+                        reloadLiveSource++
+                    }
+                    if (changed || needsReload) {
+                        recovery.onRetry(SystemClock.elapsedRealtime())
+                        continue
+                    }
+                }
+            }
+            val buffering = p.playbackState == Player.STATE_BUFFERING
+            if (recovery.shouldRetry(now, buffering)) {
+                recovery.onRetry(SystemClock.elapsedRealtime())
+                p.stop()
+                p.seekToDefaultPosition()
+                p.prepare()
+            }
         }
     }
 
-    LaunchedEffect(player, stableId, activePlaybackUrl, lowLatencyEnabled) {
+    LaunchedEffect(player, stableId, activePlaybackUrl, lowLatencyEnabled, reloadLiveSource) {
         val p = player ?: return@LaunchedEffect
         val requestedDvr = dvrPlayback
         if (activePlaybackUrl.isBlank()) return@LaunchedEffect
@@ -744,13 +781,15 @@ fun KickPlayerView(
         playbackError = null
 
         val currentItem = p.currentMediaItem
+        val shouldPlay = if (isLiveStream && currentItem?.mediaId == stableId) p.playWhenReady else playOnLoad
         // Reloading channel metadata can rotate the signed HLS URL without changing
         // the broadcast. Keep a healthy session running when returning from mini mode.
         // A failed/idle session may still adopt the refreshed URL to recover playback.
         val keepLiveSession = isLiveStream && p.isCurrentMediaItemLive && p.playerError == null &&
                 p.playbackState == Player.STATE_READY
         val alreadyLoaded = currentItem?.mediaId == stableId &&
-                (keepLiveSession || currentItem.localConfiguration?.uri?.toString() == activePlaybackUrl) &&
+                (keepLiveSession || (!isLiveStream && p.playbackState == Player.STATE_ENDED) ||
+                    currentItem.localConfiguration?.uri?.toString() == activePlaybackUrl) &&
                 (!isLiveStream ||
                     (currentItem.mediaMetadata.extras?.getBoolean(EXTRA_LOW_LATENCY) == true) == lowLatencyEnabled)
         if (alreadyLoaded) {
@@ -758,8 +797,8 @@ fun KickPlayerView(
             // tracking metadata must not replace the media item of an active HLS stream.
             loadedMediaId = stableId
             isPlayerReady = p.playbackState == Player.STATE_READY
-            if ((p.playbackState == Player.STATE_IDLE || p.playbackState == Player.STATE_ENDED) &&
-                !SleepTimer.stopsAutomaticPlayback(stableId)
+            if ((p.playbackState == Player.STATE_IDLE || (isLiveStream && p.playbackState == Player.STATE_ENDED)) &&
+                shouldPlay && !SleepTimer.stopsAutomaticPlayback(stableId)
             ) {
                 p.seekToDefaultPosition()
                 p.prepare()
@@ -846,7 +885,7 @@ fun KickPlayerView(
             p.setMediaItem(mediaItem)
         }
         p.prepare()
-        p.playWhenReady = playOnLoad && !SleepTimer.stopsAutomaticPlayback(stableId)
+        p.playWhenReady = shouldPlay && !SleepTimer.stopsAutomaticPlayback(stableId)
     }
 
     LaunchedEffect(
@@ -872,20 +911,21 @@ fun KickPlayerView(
     }
 
     val gesturesEnabled = !isInPipMode && !isMini && !editingChatPosition
-    val showPlaybackControls = gesturesEnabled && showControls && playbackError == null
+    val showPlaybackControls = gesturesEnabled && controlsRequested && playbackError == null
     val controlsTransition = updateTransition(showPlaybackControls, label = "playback controls")
     val controlsOpacity = controlsTransition.animateFloat(
         transitionSpec = { tween(if (targetState) 200 else 160) },
         label = "playback controls opacity",
     ) { if (it) 1f else 0f }
     val backdropTexture = playerTexture.takeIf {
-        blurEffects && !isMini && !isInPipMode && hasRenderedFirstFrame && loadedMediaId == stableId && playbackError == null
+        !isMini && !isInPipMode && hasRenderedFirstFrame && loadedMediaId == stableId && playbackError == null
     }
     val chatBlurStyle = overlayPreferences?.blurStyle.takeIf {
         blurEffects && overlayPreferences?.blur == true &&
             ((fullscreenChatOverlayEnabled && overlayHasOpacity) || editingChatPosition)
     }
     val visibleChatBlurStyle = chatBlurStyle.takeIf { chatBlurBounds != null }
+    val playbackZoom = { if (isMini || isInPipMode) PlayerVideoZoom() else videoZoom }
     val legacyBackdrop = if (Build.VERSION.SDK_INT < 31) {
         rememberLegacyFullscreenChatFrame(
             backdropTexture,
@@ -893,11 +933,12 @@ fun KickPlayerView(
             soft = visibleChatBlurStyle == FullscreenChatBlurStyle.Soft,
             frosted = controlBlur.regions.isNotEmpty() || visibleChatBlurStyle == FullscreenChatBlurStyle.FrostedGlass,
             mediaKey = stableId to activePlaybackUrl,
+            zoomScale = { playbackZoom().scale },
         )
     } else null
     val trackAmbient = ambientMode != PlayerAmbientMode.Off && !isMini && !isInPipMode
     if (trackAmbient) {
-        TrackAmbientVideoLayout(ambient, playerTexture) { ambientCoordinates }
+        TrackAmbientVideoLayout(ambient, playerTexture, playbackZoom) { ambientCoordinates }
     }
     val fullscreenSettled by remember(isFullScreen, fullscreenProgress) {
         derivedStateOf { isFullScreen && (fullscreenProgress?.invoke() ?: 1f) >= 1f }
@@ -928,7 +969,7 @@ fun KickPlayerView(
             }
             .onGloballyPositioned { coordinates ->
                 ambientCoordinates = coordinates
-                if (trackAmbient) ambient.updateBounds(playerTexture, coordinates)
+                if (trackAmbient) ambient.updateBounds(playerTexture, coordinates, playbackZoom())
                 val b = coordinates.boundsInWindow()
                 val rect = Rect(b.left.toInt(), b.top.toInt(), b.right.toInt(), b.bottom.toInt())
                 if (!isInPipMode && !rect.isEmpty && playerBounds != rect) {
@@ -980,20 +1021,8 @@ fun KickPlayerView(
         Box(Modifier.fillMaxSize().onSizeChanged { viewport = it }.clipToBounds()) {
             PlayerVideoSurface(
                 player, isPlaying,
-                Modifier.fillMaxSize().layout { measurable, constraints ->
-                    val zoom = if (isMini || isInPipMode) PlayerVideoZoom() else videoZoom
-                    val width = constraints.maxWidth
-                    val height = constraints.maxHeight
-                    val video = measurable.measure(Constraints.fixed(
-                        (width * zoom.scale).roundToInt(), (height * zoom.scale).roundToInt(),
-                    ))
-                    layout(width, height) {
-                        video.place(
-                            ((width - video.width) / 2f + zoom.normalizedTranslation.x * width).roundToInt(),
-                            ((height - video.height) / 2f + zoom.normalizedTranslation.y * height).roundToInt(),
-                        )
-                    }
-                },
+                Modifier.fillMaxSize(),
+                zoom = playbackZoom,
                 onTextureChanged = { playerTexture = it },
             )
         }
@@ -1036,6 +1065,7 @@ fun KickPlayerView(
                 listOfNotNull(chatRegion) + controlBlur.regions.values,
                 controlOpacity = { controlsOpacity.value },
                 opacity = { if (editingChatPosition) 1f else playerHost?.fullscreenChatOverlayAlpha ?: 0f },
+                zoom = playbackZoom,
             )
         }
         if (overlayPreferences != null && playerHost != null && channel != null &&
@@ -1088,14 +1118,14 @@ fun KickPlayerView(
         val handleTogglePlay = {
             val p = player?.takeIf { it.currentMediaItem?.mediaId == stableId }
             if (p != null) {
-                if (p.playWhenReady) {
+                if (!isLiveStream && p.playbackState == Player.STATE_ENDED) {
+                    p.seekToDefaultPosition()
+                    p.play()
+                } else if (p.playWhenReady) {
                     p.pause()
                 } else {
                     // Live resumes are handled once in the playback service, including
                     // notification/PiP/headset commands while this UI is unmounted.
-                    if (!isLiveStream && p.playbackState == Player.STATE_ENDED) {
-                        p.seekToDefaultPosition()
-                    }
                     p.play()
                 }
             }
@@ -1436,7 +1466,7 @@ fun KickPlayerView(
                                             PlayerSettingsCategoryRow(
                                                 icon = R.drawable.speed_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
                                                 title = stringResource(R.string.player_playback_speed),
-                                                value = multiplierLabel(playbackSpeed),
+                                                value = "${formatMultiplier(playbackSpeed)}x",
                                                 onClick = { settingsPage = PlayerSettingsPage.SPEED },
                                             )
                                         }
@@ -1537,7 +1567,7 @@ fun KickPlayerView(
                                     PlayerPlaybackSpeedSettings(
                                         currentSpeed = playbackSpeed,
                                         enabled = !dismissing,
-                                        speedLabel = ::multiplierLabel,
+                                        formatSpeed = ::formatMultiplier,
                                     ) { speed ->
                                         player?.takeIf {
                                             it.currentMediaItem?.mediaId == stableId &&

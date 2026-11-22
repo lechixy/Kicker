@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
@@ -24,11 +25,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.lechixy.kick.components.channel.chat.FullscreenChatBackdropRegion
@@ -71,25 +72,30 @@ internal fun BoxScope.FrostedPlayerControl(
     videoReady: Boolean = false,
     followsControlsOpacity: Boolean = true,
 ) {
-    var origin by remember { mutableStateOf(Offset.Zero) }
+    var bounds by remember { mutableStateOf<Rect?>(null) }
     val key = remember { Any() }
     val blurEnabled = LocalBlurEffectsEnabled.current
     val activeBackdrop = backdrop.takeIf { blurEnabled }
+    val region = bounds
     DisposableEffect(activeBackdrop) { onDispose { activeBackdrop?.regions?.remove(key) } }
-    Box(Modifier.matchParentSize().onGloballyPositioned {
-        origin = it.positionInWindow()
-        if (activeBackdrop != null) {
+    SideEffect {
+        // A preference update can enable blur without moving or relaying out the control.
+        if (activeBackdrop != null && region != null) {
             activeBackdrop.regions[key] = FullscreenChatBackdropRegion(
-                it.boundsInWindow(),
+                region,
                 shape = FullscreenChatShape.Pill,
                 frostedControl = true,
                 style = FullscreenChatBlurStyle.FrostedGlass,
                 followsControlsOpacity = followsControlsOpacity,
             )
         }
+    }
+    Box(Modifier.matchParentSize().onGloballyPositioned {
+        bounds = it.boundsInWindow(clipBounds = false)
     }.clip(CircleShape).border(1.5.dp, Color.White.copy(alpha = 0.1f), CircleShape).drawBehind {
         val sample = if (blurEnabled) frame?.value else null
         val bitmap = sample?.frostedBitmap
+        val origin = bounds?.topLeft ?: Offset.Zero
         if (sample != null && bitmap != null) {
             drawImage(
                 bitmap,

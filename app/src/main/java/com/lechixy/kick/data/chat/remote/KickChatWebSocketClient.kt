@@ -1,6 +1,7 @@
 package com.lechixy.kick.data.chat.remote
 
 import android.util.Log
+import java.time.Instant
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CoroutineScope
@@ -17,11 +18,14 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.intOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -60,6 +64,7 @@ import com.lechixy.kick.data.chat.model.StreamerIsLiveEvent
 import com.lechixy.kick.data.chat.model.SubscribePayload
 import com.lechixy.kick.data.chat.model.UserBannedEvent
 import com.lechixy.kick.data.chat.model.mergeChatHistory
+import com.lechixy.kick.data.chat.model.splitCentrifugoFrames
 import com.lechixy.kick.data.chat.model.toRecipientMessages
 import com.lechixy.kick.data.chat.model.withSelectedBadgesOnly
 import com.lechixy.kick.data.common.remote.KickApi
@@ -79,8 +84,9 @@ class KickChatWebSocketClient(
     private val maxMessagesBuffer = 250
 
     companion object {
-        private const val WATCHDOG_CHECK_INTERVAL_MS = 30_000L
-        private const val INACTIVITY_TIMEOUT_MS = 90_000L
+        private const val WATCHDOG_CHECK_INTERVAL_MS = 5_000L
+        private const val SUBSCRIPTION_TIMEOUT_MS = 15_000L
+        private const val QUIET_CHAT_CHECK_INTERVAL_MS = 45_000L
     }
 
     private val json = Json {
@@ -92,6 +98,7 @@ class KickChatWebSocketClient(
 
     private val client = OkHttpClient.Builder()
         .readTimeout(0, TimeUnit.MILLISECONDS)
+        .pingInterval(20, TimeUnit.SECONDS)
         .build()
 
     private var webSocket: WebSocket? = null
@@ -102,8 +109,10 @@ class KickChatWebSocketClient(
     private var reconnectJob: Job? = null
     private var heartbeatJob: Job? = null
     private var connectionJob: Job? = null
-    private var isIntentionallyClosed = false
-    private val lastServerActivityMs = AtomicLong(0L)
+    private var connectionGeneration = 0L
+    private var retryDelayMs = 1_000L
+    private var lastChatMessageAt = 0L
+    private var lastChatMessageCreatedAt: String? = null
 
     private val batcher = LiveChatBatcher()
     private var batchJob: Job? = null
@@ -195,18 +204,19 @@ class KickChatWebSocketClient(
         }
     }
 
+    @Synchronized
     fun connect(channelId: Long, chatroomId: Long) {
         val isSameChannel = currentChannelId == channelId && currentChatroomId == chatroomId
-        if (isSameChannel && _connectionState.value == ChatConnectionState.CONNECTED) {
+        if (isSameChannel && _connectionState.value in setOf(ChatConnectionState.CONNECTED, ChatConnectionState.CONNECTING)) {
             return
         }
 
-        val isSwitchingChannel = currentChannelId != null && currentChannelId != channelId
+        val isSwitchingChannel = currentChannelId != null && !isSameChannel
         disconnectInternal(clearMessages = isSwitchingChannel)
 
         currentChannelId = channelId
         currentChatroomId = chatroomId
-        isIntentionallyClosed = false
+        retryDelayMs = 1_000L
 
         batchJob = clientScope.launch {
             while (isActive) {
@@ -219,12 +229,13 @@ class KickChatWebSocketClient(
             }
         }
         _connectionState.value = ChatConnectionState.CONNECTING
+        val generation = connectionGeneration
         connectionJob = clientScope.launch {
-            startConnectionFlow(channelId, chatroomId)
+            startConnectionFlow(channelId, chatroomId, generation)
         }
     }
 
-    private suspend fun startConnectionFlow(channelId: Long, chatroomId: Long) {
+    private suspend fun startConnectionFlow(channelId: Long, chatroomId: Long, generation: Long) {
         try {
             val account = runCatching { com.lechixy.kick.data.account.AccountGraph.auth }.getOrNull()
             val userId = account?.session?.value?.takeIf { it.signedIn }?.profile?.userId
@@ -248,8 +259,9 @@ class KickChatWebSocketClient(
                 api.getRealtimeConnection(connectionReq)
             }
 
-            val wsUrl = connectionRes.data?.connections?.firstOrNull()?.credentials?.url
-                ?.takeIf { it.isNotBlank() }
+            val wsUrl = connectionRes.data?.connections.orEmpty()
+                .filter { it.provider == "centrifugo" || it.provider == null }
+                .firstNotNullOfOrNull { it.credentials?.url?.takeIf(String::isNotBlank) }
                 ?: "wss://realtime.us-east-1.platform.kick.com/connection/websocket"
 
             val authReq = RealtimeAuthRequest(clientId = guestClientId)
@@ -275,151 +287,205 @@ class KickChatWebSocketClient(
                 .header("Origin", "https://kick.com")
                 .build()
 
-            webSocket?.cancel()
-            val listener = createWebSocketListener(token, guestClientId, channelId, chatroomId, authenticatedToken != null)
-            webSocket = client.newWebSocket(request, listener)
+            synchronized(this) {
+                if (connectionGeneration != generation) return
+                val listener = ChatSocketListener(token, guestClientId, channelId, chatroomId, authenticatedToken != null)
+                val socket = client.newWebSocket(request, listener)
+                webSocket = socket
+                lastChatMessageAt = SystemClock.elapsedRealtime()
+                lastChatMessageCreatedAt = null
+                listener.watch(socket)
+            }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (e: Exception) {
-            Log.e(tag, "Failed to initiate chat connection: ${e.message}", e)
-            _connectionState.value = ChatConnectionState.ERROR
-            scheduleReconnect(channelId, chatroomId)
+            synchronized(this) {
+                if (connectionGeneration != generation) return
+                Log.w(tag, "Failed to initiate chat connection: ${e.javaClass.simpleName}")
+                scheduleReconnect(channelId, chatroomId)
+            }
         }
     }
 
-    private fun startHeartbeatWatchdog(activeSocket: WebSocket, channelId: Long, chatroomId: Long) {
-        heartbeatJob?.cancel()
-        lastServerActivityMs.set(System.currentTimeMillis())
+    private inner class ChatSocketListener(
+        private val token: String,
+        private val clientId: String,
+        private val channelId: Long,
+        private val chatroomId: Long,
+        private val authenticated: Boolean,
+    ) : WebSocketListener() {
+        private val subscriptions = mapOf(
+            2 to "chatroom_$chatroomId",
+            3 to "channel_$channelId",
+            4 to "channel.$channelId",
+            5 to "chatrooms.$chatroomId",
+            6 to "predictions-channel-$channelId",
+            7 to "chatrooms.$chatroomId.v2",
+            10 to "private-channelpoints-$clientId",
+        )
+        private val confirmedSubscriptions = mutableSetOf<String>()
+        private val roomRepliesPending = subscriptions.filterValues { it.startsWith("chatroom") }.keys.toMutableSet()
+        private val startedAt = SystemClock.elapsedRealtime()
+        private var lastFrameAt = startedAt
+        private var inactivityLimitMs: Long? = null
+        private var sendPong = true
+        private var connectedAt: Instant? = null
+        private var nextHistoryCheckAt = startedAt + QUIET_CHAT_CHECK_INTERVAL_MS
 
-        heartbeatJob = clientScope.launch {
-            while (isActive && !isIntentionallyClosed && webSocket === activeSocket) {
-                delay(WATCHDOG_CHECK_INTERVAL_MS.milliseconds)
-                if (isIntentionallyClosed || webSocket !== activeSocket) break
-
-                val elapsedSinceLastActivity = System.currentTimeMillis() - lastServerActivityMs.get()
-
-                // Centrifugo sends "{}" every ~25s; only reconnect if server is completely silent for >90s
-                if (elapsedSinceLastActivity > INACTIVITY_TIMEOUT_MS) {
-                    Log.w(tag, "Chat watchdog detected silent connection (${elapsedSinceLastActivity}ms), reconnecting...")
-                    scheduleReconnect(channelId, chatroomId, delayMs = 500L)
-                    break
+        fun watch(socket: WebSocket) {
+            heartbeatJob = clientScope.launch {
+                while (isActive) {
+                    delay(WATCHDOG_CHECK_INTERVAL_MS.milliseconds)
+                    val historyCheck = synchronized(this@KickChatWebSocketClient) {
+                        if (webSocket !== socket) return@launch
+                        val now = SystemClock.elapsedRealtime()
+                        val setupTimedOut = connectedAt == null && now - startedAt >= SUBSCRIPTION_TIMEOUT_MS
+                        val heartbeatsStopped = inactivityLimitMs?.let { now - lastFrameAt >= it } == true
+                        if (setupTimedOut || heartbeatsStopped) {
+                            reconnect(socket, if (setupTimedOut) "Chat subscription timed out" else "Chat heartbeats stopped")
+                            return@launch
+                        }
+                        if (connectedAt != null && now >= nextHistoryCheckAt &&
+                            now - lastChatMessageAt >= QUIET_CHAT_CHECK_INTERVAL_MS
+                        ) {
+                            nextHistoryCheckAt = now + QUIET_CHAT_CHECK_INTERVAL_MS
+                            lastChatMessageAt
+                        } else null
+                    }
+                    if (historyCheck != null) checkQuietChat(socket, historyCheck)
                 }
             }
         }
-    }
 
-    private fun createWebSocketListener(
-        token: String,
-        clientId: String,
-        channelId: Long,
-        chatroomId: Long,
-        authenticated: Boolean
-    ) = object : WebSocketListener() {
+        private suspend fun checkQuietChat(socket: WebSocket, lastMessageAt: Long) {
+            val history = try {
+                withTimeoutOrNull(8_000) { api.getChatHistory(channelId).data?.messages }.orEmpty()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                return
+            }
+            synchronized(this@KickChatWebSocketClient) {
+                if (webSocket !== socket || lastChatMessageAt != lastMessageAt) return
+                val subscribedAt = connectedAt ?: return
+                val after = chatMessageTime(lastChatMessageCreatedAt) ?: subscribedAt
+                val knownIds = _messages.value.mapTo(hashSetOf()) { it.id }
+                if (historyHasMissingChatMessages(history, knownIds, after, Instant.now())) {
+                    reconnect(socket, "Chat publications stopped while the room was active")
+                }
+            }
+        }
 
         override fun onOpen(webSocket: WebSocket, response: Response) {
-            if (this@KickChatWebSocketClient.webSocket !== webSocket) return
-            Log.d(tag, "WebSocket connected successfully")
-            lastServerActivityMs.set(System.currentTimeMillis())
-
-            // Frame 1: Connect
-            val connectFrame = CentrifugoConnectFrame(
-                connect = ConnectPayload(token = token, name = "js"),
-                id = 1
-            )
-            webSocket.send(json.encodeToString(CentrifugoConnectFrame.serializer(), connectFrame))
-
-            // Subscription Frames
-            val subscriptions = listOf(
-                "chatroom_$chatroomId" to 2,
-                "channel_$channelId" to 3,
-                "channel.$channelId" to 4,
-                "chatrooms.$chatroomId" to 5,
-                "predictions-channel-$channelId" to 6,
-                "chatrooms.$chatroomId.v2" to 7,
-                "private-channelpoints-$clientId" to 10
-            )
-
-            for ((ch, id) in subscriptions) {
-                if (ch.startsWith("private-") && !authenticated) continue
-                val subToken = if (ch.startsWith("private-")) token else null
-                val subFrame = CentrifugoSubscribeFrame(
-                    subscribe = SubscribePayload(channel = ch, flag = 1, token = subToken),
-                    id = id
-                )
-                webSocket.send(json.encodeToString(CentrifugoSubscribeFrame.serializer(), subFrame))
+            synchronized(this@KickChatWebSocketClient) {
+                if (this@KickChatWebSocketClient.webSocket !== webSocket) return
+                val frame = CentrifugoConnectFrame(ConnectPayload(token), id = 1)
+                if (!webSocket.send(json.encodeToString(CentrifugoConnectFrame.serializer(), frame))) {
+                    reconnect(webSocket, "Could not send chat connect command")
+                }
             }
-
-            _connectionState.value = ChatConnectionState.CONNECTED
-            startHeartbeatWatchdog(webSocket, channelId, chatroomId)
         }
 
         override fun onMessage(webSocket: WebSocket, text: String) {
-            if (this@KickChatWebSocketClient.webSocket !== webSocket) return
-            lastServerActivityMs.set(System.currentTimeMillis())
+            synchronized(this@KickChatWebSocketClient) {
+                if (this@KickChatWebSocketClient.webSocket !== webSocket) return
+                lastFrameAt = SystemClock.elapsedRealtime()
 
-            val trimmed = text.trim()
-            if (trimmed == "{}" || trimmed.isEmpty()) {
-                webSocket.send("{}")
-                if (_connectionState.value != ChatConnectionState.CONNECTED) {
-                    _connectionState.value = ChatConnectionState.CONNECTED
+                for (frame in splitCentrifugoFrames(text)) {
+                    val root = runCatching { json.parseToJsonElement(frame) as? JsonObject }.getOrNull() ?: continue
+                    if (root.isEmpty()) {
+                        if (sendPong && !webSocket.send("{}")) {
+                            reconnect(webSocket, "Could not send chat pong")
+                            return
+                        }
+                        continue
+                    }
+
+                    val replyId = (root["id"] as? JsonPrimitive)?.intOrNull ?: 0
+                    if (replyId > 0) {
+                        handleReply(webSocket, replyId, root)
+                    } else {
+                        val push = (root["push"] as? JsonObject) ?: root
+                        val unsubscribedChannel = (push["channel"] as? JsonPrimitive)?.content
+                        if (push["disconnect"] != null ||
+                            (push["unsubscribe"] != null && unsubscribedChannel != null &&
+                                unsubscribedChannel in confirmedSubscriptions)
+                        ) {
+                            reconnect(webSocket, "Server disconnected chat or removed a subscription")
+                        } else {
+                            handlePublication(root, channelId, chatroomId, clientId.toLongOrNull().takeIf { authenticated })
+                        }
+                    }
+                    if (this@KickChatWebSocketClient.webSocket !== webSocket) return
+                }
+            }
+        }
+
+        private fun handleReply(socket: WebSocket, id: Int, root: JsonObject) {
+            if (id == 1) {
+                val result = root["connect"] as? JsonObject
+                if (result == null || root["error"] != null) {
+                    reconnect(socket, "Chat connect command rejected")
+                    return
+                }
+                inactivityLimitMs = (result["ping"] as? JsonPrimitive)?.intOrNull
+                    ?.takeIf { it > 0 }?.let { it * 1_000L + 10_000L }
+                sendPong = (result["pong"] as? JsonPrimitive)?.booleanOrNull == true
+                for ((subId, channel) in subscriptions) {
+                    val privateChannel = channel.startsWith("private-")
+                    if (privateChannel && !authenticated) continue
+                    val frame = CentrifugoSubscribeFrame(
+                        SubscribePayload(channel, token = token.takeIf { privateChannel }),
+                        id = subId,
+                    )
+                    if (!socket.send(json.encodeToString(CentrifugoSubscribeFrame.serializer(), frame))) {
+                        reconnect(socket, "Could not send chat subscribe command")
+                        return
+                    }
                 }
                 return
             }
 
-            // A message can contain newline-separated or directly adjacent protocol objects.
-            com.lechixy.kick.data.chat.model.splitCentrifugoFrames(trimmed)
-                .forEach { frameText ->
-                    if (frameText == "{}") {
-                        webSocket.send("{}")
-                        return@forEach
-                    }
-                    handleFrame(webSocket, frameText, channelId, chatroomId, clientId.toLongOrNull().takeIf { authenticated })
+            val channel = subscriptions[id] ?: return
+            val isChatroom = roomRepliesPending.remove(id)
+            if (root["subscribe"] is JsonObject && root["error"] == null) {
+                confirmedSubscriptions.add(channel)
+                if (isChatroom && connectedAt == null) {
+                    connectedAt = Instant.now()
+                    retryDelayMs = 1_000L
+                    _connectionState.value = ChatConnectionState.CONNECTED
                 }
-        }
-
-        override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-            if (this@KickChatWebSocketClient.webSocket !== webSocket) return
-            Log.e(tag, "WebSocket failure: ${t.message}")
-            if (!isIntentionallyClosed) {
-                _connectionState.value = ChatConnectionState.ERROR
-                scheduleReconnect(channelId, chatroomId)
+            } else if (isChatroom && connectedAt == null && roomRepliesPending.isEmpty()) {
+                reconnect(socket, "Chat room subscriptions rejected")
             }
         }
 
-        override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-            if (this@KickChatWebSocketClient.webSocket !== webSocket) return
-            Log.d(tag, "WebSocket closed: $reason")
-            if (!isIntentionallyClosed) {
-                _connectionState.value = ChatConnectionState.DISCONNECTED
+        override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) =
+            reconnect(webSocket, "Chat socket failed: ${t.javaClass.simpleName}")
+
+        override fun onClosing(webSocket: WebSocket, code: Int, reason: String) =
+            reconnect(webSocket, "Chat socket closing: $code")
+
+        override fun onClosed(webSocket: WebSocket, code: Int, reason: String) =
+            reconnect(webSocket, "Chat socket closed: $code")
+
+        private fun reconnect(socket: WebSocket, reason: String) {
+            synchronized(this@KickChatWebSocketClient) {
+                if (this@KickChatWebSocketClient.webSocket !== socket) return
+                Log.w(tag, reason)
                 scheduleReconnect(channelId, chatroomId)
             }
         }
     }
 
-    @Synchronized
-    private fun handleFrame(
-        socket: WebSocket,
-        frameText: String,
+    private fun handlePublication(
+        frame: JsonObject,
         channelId: Long,
         chatroomId: Long,
-        authenticatedUserId: Long?
+        authenticatedUserId: Long?,
     ) {
-        if (socket !== webSocket || currentChannelId != channelId || currentChatroomId != chatroomId) return
         try {
-            // Check for Centrifugo disconnect or unsubscribe frames (e.g., token expired)
-            if (frameText.contains("\"disconnect\"") || frameText.contains("\"unsubscribe\"")) {
-                val rootObj = json.parseToJsonElement(frameText) as? JsonObject
-                if (rootObj?.containsKey("disconnect") == true ||
-                    (rootObj?.get("push") as? JsonObject)?.containsKey("unsubscribe") == true ||
-                    (rootObj?.get("push") as? JsonObject)?.containsKey("disconnect") == true
-                ) {
-                    Log.w(tag, "Centrifugo disconnect/unsubscribe received, reconnecting...")
-                    scheduleReconnect(channelId, chatroomId, delayMs = 500L)
-                    return
-                }
-            }
-
-            val pushFrame = json.decodeFromString<CentrifugoPushFrame>(frameText)
+            val pushFrame = json.decodeFromJsonElement<CentrifugoPushFrame>(frame)
             val publication = pushFrame.push?.pub ?: pushFrame.pub ?: return
             val eventData = publication.data ?: return
             val rawData = eventData.data
@@ -458,6 +524,8 @@ class KickChatWebSocketClient(
                     val data = rawData ?: return
                     val chatMessage = decodeEventPayload<ChatMessage>(data)?.withSelectedBadgesOnly()
                     if (chatMessage != null && (chatMessage.content.isNotBlank() || chatMessage.isCelebration)) {
+                        lastChatMessageAt = SystemClock.elapsedRealtime()
+                        lastChatMessageCreatedAt = chatMessage.createdAt
                         addMessage(chatMessage)
                         publishEvent(ChatWebSocketEvent.MessageReceived(chatMessage))
                     }
@@ -708,33 +776,38 @@ class KickChatWebSocketClient(
         }
     }
 
-    private fun scheduleReconnect(channelId: Long, chatroomId: Long, delayMs: Long = 2500L) {
-        reconnectJob?.cancel()
+    private fun scheduleReconnect(channelId: Long, chatroomId: Long) {
+        val generation = ++connectionGeneration
+        val socket = webSocket
+        webSocket = null
+        socket?.cancel()
         heartbeatJob?.cancel()
+        reconnectJob?.cancel()
+        _connectionState.value = ChatConnectionState.CONNECTING
+        val delayMs = retryDelayMs
+        retryDelayMs = (retryDelayMs * 2).coerceAtMost(30_000L)
         reconnectJob = clientScope.launch {
             delay(delayMs.milliseconds)
-            if (!isIntentionallyClosed && currentChannelId == channelId && currentChatroomId == chatroomId) {
-                Log.d(tag, "Attempting reconnect...")
-                startConnectionFlow(channelId, chatroomId)
-            }
+            startConnectionFlow(channelId, chatroomId, generation)
         }
     }
 
+    @Synchronized
     fun refreshAccountConnection() {
         val channelId = currentChannelId ?: return
         val chatroomId = currentChatroomId ?: return
-        if (isIntentionallyClosed) return
+        if (_connectionState.value == ChatConnectionState.DISCONNECTED) return
         disconnectInternal(clearMessages = false)
         connect(channelId, chatroomId)
     }
 
+    @Synchronized
     fun disconnect() {
-        isIntentionallyClosed = true
         disconnectInternal(clearMessages = true)
     }
 
-    @Synchronized
     private fun disconnectInternal(clearMessages: Boolean = true) {
+        connectionGeneration++
         batchJob?.cancel()
         if (!clearMessages) flushMessages(sample = false)
         batcher.clear()
@@ -744,8 +817,9 @@ class KickChatWebSocketClient(
         heartbeatJob?.cancel()
         // Private publications belong to this connection's account, even when keeping public chat history.
         _pointsUpdated.value = null
-        webSocket?.close(1000, "Disconnect requested")
+        val socket = webSocket
         webSocket = null
+        socket?.cancel()
         if (clearMessages) {
             currentChannelId = null
             currentChatroomId = null

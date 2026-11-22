@@ -210,6 +210,7 @@
     <string name="player_sleep_end_livestream">Canlı yayın bitince</string>
     <string name="player_sleep_end_recording">Kayıt bitince</string>
     <string name="player_sleep_end_clip">Klip bitince</string>
+    <string name="player_sleep_timer_or">ya da</string>
     <string name="player_apply_speed">Hızı uygula</string>
     <string name="player_sleep_timer_minutes_unit">dakika</string>
     <string name="sleep_timer_started_title">Uyku zamanlayıcısı başladı</string>

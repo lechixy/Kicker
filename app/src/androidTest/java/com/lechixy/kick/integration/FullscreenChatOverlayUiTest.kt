@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
+import com.lechixy.kick.data.settings.repository.LocalBlurEffectsEnabled
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -352,6 +353,7 @@ class FullscreenChatOverlayUiTest {
 
     private fun verifyTextureBlurTracksFrames(style: FullscreenChatBlurStyle) {
         var frameIndex by mutableStateOf(1)
+        var blurEnabled by mutableStateOf(true)
         var blurOpacity by mutableStateOf(0f)
         var dockedTop by mutableStateOf(false)
         val displayedFrame = AtomicInteger()
@@ -396,8 +398,10 @@ class FullscreenChatOverlayUiTest {
                 )
                 val dock = viewport?.takeIf { dockedTop }?.let { FullscreenChatDock(it, FullscreenChatEdges(top = true)) }
                 val backdropRegion = region?.let { dock?.extend(it) ?: FullscreenChatBackdropRegion(it) }
-                VideoBackdropBlur(texture, listOfNotNull(backdropRegion?.copy(style = style))) {
-                    blurOpacity
+                CompositionLocalProvider(LocalBlurEffectsEnabled provides blurEnabled) {
+                    VideoBackdropBlur(texture, listOfNotNull(backdropRegion?.copy(style = style))) {
+                        blurOpacity
+                    }
                 }
             }
         }
@@ -423,6 +427,11 @@ class FullscreenChatOverlayUiTest {
         val outside = firstPixels[x, first.height / 8]
         assertTrue("Expected blur inside the region, got $inside", inside.red > 0.10f)
         assertTrue("Expected sharp video outside the region, got $outside", outside.red < 0.05f)
+
+        compose.runOnIdle { blurEnabled = false }
+        compose.waitUntil(5_000) { video.captureToImage().toPixelMap()[x, first.height / 2].red < 0.05f }
+        compose.runOnIdle { blurEnabled = true }
+        compose.waitUntil(5_000) { video.captureToImage().toPixelMap()[x, first.height / 2].red > 0.10f }
 
         compose.runOnIdle { frameIndex = 2 }
         compose.waitUntil(10_000) { displayedFrame.get() == 2 }

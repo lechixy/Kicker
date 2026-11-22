@@ -1,5 +1,7 @@
 package com.lechixy.kick.integration
 
+import android.view.TextureView
+import android.view.View
 import com.lechixy.kick.data.account.remote.string
 
 import androidx.compose.animation.AnimatedVisibility
@@ -17,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import java.util.concurrent.atomic.AtomicInteger
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -46,8 +49,12 @@ import org.junit.Assert.*
 import com.lechixy.kick.KickNavScaffold
 import com.lechixy.kick.R
 import com.lechixy.kick.components.ConnectionNoticeBar
+import com.lechixy.kick.components.FrostedPlayerControl
+import com.lechixy.kick.components.FrostedPlayerRegions
 import com.lechixy.kick.components.PlayerControlsOverlay
 import com.lechixy.kick.components.PlayerSleepTimerSettings
+import com.lechixy.kick.components.PlayerVideoSurface
+import com.lechixy.kick.components.PlayerVideoZoom
 import com.lechixy.kick.components.PlayerZoomResetButton
 import com.lechixy.kick.components.detectPlayerPinch
 import com.lechixy.kick.components.detectRecordingTaps
@@ -57,6 +64,7 @@ import com.lechixy.kick.components.channel.ChannelMediaTitle
 import com.lechixy.kick.data.channel.model.ChannelEvent
 import com.lechixy.kick.data.common.remote.ConnectionNotice
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
+import com.lechixy.kick.data.settings.repository.LocalBlurEffectsEnabled
 import com.lechixy.kick.data.settings.repository.SettingsRepository
 import com.lechixy.kick.service.player.SleepTimerState
 import java.io.File
@@ -336,6 +344,60 @@ class PlayerFeaturesUiTest {
         compose.onNodeWithText(stop).performClick()
         compose.onNodeWithText(start).assertIsDisplayed()
         compose.runOnIdle { assertEquals(0, timer.remainingSeconds) }
+    }
+
+    @Test fun endOfRecordingRemainsASeparateClickableOptionBesideTheMinutes() {
+        val end = context.getString(R.string.player_sleep_end_recording)
+        val duration = context.getString(R.string.player_minutes, 30)
+        var selected = false
+        compose.setContent {
+            MaterialTheme {
+                PlayerSleepTimerSettings(SleepTimerState(), lastMinutes = 30, enabled = true,
+                    mediaEndLabel = end, onMediaEnd = { selected = true }, onApply = {})
+            }
+        }
+        val minutes = compose.onNodeWithContentDescription(duration).assertIsDisplayed()
+        val button = compose.onNodeWithText(end).assertIsDisplayed()
+        assertTrue(button.fetchSemanticsNode().boundsInRoot.left > minutes.fetchSemanticsNode().boundsInRoot.right)
+        button.performClick()
+        compose.runOnIdle { assertTrue(selected) }
+    }
+
+    @Test fun togglingBlurRestoresTheControlRegionWithoutMovingTheControl() {
+        val backdrop = FrostedPlayerRegions()
+        var enabled by mutableStateOf(true)
+        compose.setContent {
+            CompositionLocalProvider(LocalBlurEffectsEnabled provides enabled) {
+                MaterialTheme {
+                    Box(Modifier.size(48.dp)) {
+                        FrostedPlayerControl(frame = null, backdrop = backdrop, videoReady = true)
+                    }
+                }
+            }
+        }
+        val initial = compose.runOnIdle { backdrop.regions.values.single().bounds }
+        compose.runOnIdle { enabled = false }
+        compose.runOnIdle { assertTrue(backdrop.regions.isEmpty()) }
+        compose.runOnIdle { enabled = true }
+        compose.runOnIdle { assertEquals(initial, backdrop.regions.values.single().bounds) }
+    }
+
+    @Test fun zoomScalesTheViewWithoutResizingItsTexture() {
+        var texture: TextureView? = null
+        var zoom by mutableStateOf(PlayerVideoZoom())
+        compose.setContent {
+            Box(Modifier.size(200.dp).clipToBounds()) {
+                PlayerVideoSurface(null, false, Modifier.fillMaxSize(), zoom = { zoom }) { texture = it }
+            }
+        }
+        val originalWidth = compose.runOnIdle { requireNotNull(texture).width }
+        compose.runOnIdle { zoom = PlayerVideoZoom(4f) }
+        compose.runOnIdle {
+            val surface = requireNotNull(texture)
+            assertTrue(originalWidth > 0)
+            assertEquals(originalWidth, surface.width)
+            assertTrue(generateSequence(surface as View) { it.parent as? View }.any { it.scaleX == 4f })
+        }
     }
 
     @Test fun scaffoldUpdatesKeepPlayerContentAlive() {

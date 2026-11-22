@@ -1,6 +1,7 @@
 package com.lechixy.kick.components
 
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.IntSize
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -28,5 +29,13 @@ class PlayerVideoZoomTest {
         val zoom = PlayerVideoZoom().transform(viewport, Offset(300f, 50f), Offset.Zero, 2f)
 
         assertEquals(PlayerVideoZoom(), zoom.transform(viewport, Offset(300f, 50f), Offset.Zero, 0.75f))
+    }
+
+    @Test fun zoomedBoundsIncludeViewportRelativePanAndLetterboxing() {
+        val video = Rect(0f, 25f, 400f, 175f)
+        val zoom = PlayerVideoZoom(scale = 2f, normalizedTranslation = Offset(0.25f, -0.25f))
+
+        assertEquals(Rect(-100f, -100f, 700f, 200f), zoom.mapBounds(video, viewport))
+        assertEquals(video, PlayerVideoZoom().mapBounds(video, viewport))
     }
 }

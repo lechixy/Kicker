@@ -268,10 +268,48 @@ class ChannelViewModel(
 
     private fun handleStopStreamBroadcast(event: StopStreamBroadcastEvent) {
         val currentChannel = _uiState.value.channel ?: return
+        val currentBroadcast = currentChannel.livestream ?: return
         val targetChannelId = event.livestream?.channel?.id
         if (targetChannelId != null && targetChannelId != currentChannel.id) return
         val targetLivestreamId = event.livestream?.id
-        if (targetLivestreamId != null && targetLivestreamId != currentChannel.livestream?.id) return
+        if (targetLivestreamId != null && targetLivestreamId != currentBroadcast.id) return
+        finishLivestream(currentChannel, event.livestream?.channel?.isBanned ?: currentChannel.isBanned)
+    }
+
+    internal suspend fun checkInterruptedLivestream(channel: ChannelDetail): ChannelDetail? {
+        if (!isCurrentBroadcast(channel)) return null
+        return try {
+            repository.getChannel(channel.slug).takeIf { it.id == channel.id && isCurrentBroadcast(channel) }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    internal fun applyInterruptedLivestreamStatus(channel: ChannelDetail, fresh: ChannelDetail): Boolean {
+        if (!isCurrentBroadcast(channel)) return false
+        val current = _uiState.value.channel ?: return false
+        if (fresh.livestream?.id != current.livestream?.id) {
+            finishLivestream(current, fresh.isBanned, fresh.livestream, fresh.playbackUrl)
+            return true
+        }
+        if (fresh.playbackUrl.isNullOrBlank() || fresh.playbackUrl == current.playbackUrl) return false
+        _uiState.update { it.copy(channel = current.copy(playbackUrl = fresh.playbackUrl)) }
+        return true
+    }
+
+    private fun isCurrentBroadcast(channel: ChannelDetail): Boolean {
+        val current = _uiState.value.channel ?: return false
+        return channel.livestream != null && current.id == channel.id && current.livestream?.id == channel.livestream.id
+    }
+
+    private fun finishLivestream(
+        currentChannel: ChannelDetail,
+        isBanned: Boolean,
+        nextBroadcast: ChannelLivestream? = null,
+        playbackUrl: String? = null,
+    ) {
         currentChannel.livestream?.let {
             SleepTimer.onLivestreamEnded(currentChannel.id, it.id)
         }
@@ -279,17 +317,18 @@ class ChannelViewModel(
         liveRefreshJob?.cancel()
         viewersPollingJob?.cancel()
 
-        val updatedIsBanned = event.livestream?.channel?.isBanned ?: currentChannel.isBanned
         _uiState.update { current ->
             val ch = current.channel ?: return@update current
             current.copy(
                 channel = ch.copy(
-                    livestream = null,
-                    isBanned = updatedIsBanned
+                    livestream = nextBroadcast,
+                    playbackUrl = playbackUrl,
+                    isBanned = isBanned
                 ),
                 liveAnnouncementId = null
             )
         }
+        nextBroadcast?.let { startViewersPolling(it.id) }
 
         val slug = loadedSlug ?: currentChannel.slug
         viewModelScope.launch {

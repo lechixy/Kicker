@@ -72,7 +72,7 @@
     <string name="settings_dark">Dark</string>
     <string name="settings_dynamic_color">Dynamic colors</string>
     <string name="settings_blur_effects">Blur effects</string>
-    <string name="settings_blur_effects_description">Use blur on player controls, chat, banners, and other visual effects.</string>
+    <string name="settings_blur_effects_description">Use blur on player controls, chat, banners, and other visual effects</string>
     <string name="settings_group_seasonal_effects">Seasonal effects</string>
     <string name="settings_winter_snow">Winter mode</string>
     <string name="settings_winter_snow_description">Let it snow around the app, outside the video player</string>

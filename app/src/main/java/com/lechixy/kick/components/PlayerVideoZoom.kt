@@ -1,6 +1,7 @@
 package com.lechixy.kick.components
 
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.IntSize
 import kotlin.math.pow
 
@@ -8,6 +9,13 @@ internal data class PlayerVideoZoom(
     val scale: Float = 1f,
     val normalizedTranslation: Offset = Offset.Zero,
 ) {
+    fun mapBounds(bounds: Rect, viewport: IntSize): Rect {
+        val center = Offset(viewport.width / 2f, viewport.height / 2f)
+        val pan = Offset(normalizedTranslation.x * viewport.width, normalizedTranslation.y * viewport.height)
+        val origin = center * (1f - scale) + pan
+        return Rect(bounds.topLeft * scale + origin, bounds.bottomRight * scale + origin)
+    }
+
     fun transform(viewport: IntSize, centroid: Offset, pan: Offset, factor: Float): PlayerVideoZoom {
         if (viewport.width <= 0 || viewport.height <= 0) return this
 

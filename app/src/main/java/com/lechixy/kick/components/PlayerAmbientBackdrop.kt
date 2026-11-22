@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableFloatStateOf
@@ -23,6 +24,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -100,7 +102,11 @@ internal fun BoxScope.NavigationAmbientBackdrop(state: PlayerAmbientState) {
 }
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-internal fun PlayerAmbientState.updateBounds(texture: TextureView?, coordinates: LayoutCoordinates?) {
+internal fun PlayerAmbientState.updateBounds(
+    texture: TextureView?,
+    coordinates: LayoutCoordinates?,
+    zoom: PlayerVideoZoom = PlayerVideoZoom(),
+) {
     val player = generateSequence(texture?.parent) { it.parent }.filterIsInstance<PlayerView>().firstOrNull()
     if (texture == null || player == null || coordinates == null || !coordinates.isAttached ||
         texture.width <= 0 || texture.height <= 0
@@ -110,13 +116,13 @@ internal fun PlayerAmbientState.updateBounds(texture: TextureView?, coordinates:
     }
     val nativeBounds = android.graphics.Rect(0, 0, texture.width, texture.height)
     player.offsetDescendantRectToMyCoords(texture, nativeBounds)
-    val video = Rect(
+    val video = zoom.mapBounds(Rect(
         nativeBounds.left.toFloat(), nativeBounds.top.toFloat(),
         nativeBounds.right.toFloat(), nativeBounds.bottom.toFloat(),
-    )
+    ), coordinates.size)
     val window = Rect(coordinates.localToWindow(video.topLeft), coordinates.localToWindow(video.bottomRight))
-    val hasSpace = nativeBounds.left > 1 || nativeBounds.top > 1 ||
-        coordinates.size.width - nativeBounds.right > 1 || coordinates.size.height - nativeBounds.bottom > 1
+    val hasSpace = video.left > 1 || video.top > 1 ||
+        coordinates.size.width - video.right > 1 || coordinates.size.height - video.bottom > 1
     bounds = AmbientVideoBounds(video, window, hasSpace)
     val videoSize = player.player?.videoSize
     videoAspectRatio = if (videoSize != null && videoSize.width > 0 && videoSize.height > 0) {
@@ -130,17 +136,22 @@ internal fun PlayerAmbientState.updateBounds(texture: TextureView?, coordinates:
 internal fun TrackAmbientVideoLayout(
     state: PlayerAmbientState,
     texture: TextureView?,
+    zoom: () -> PlayerVideoZoom = { PlayerVideoZoom() },
     coordinates: () -> LayoutCoordinates?,
 ) {
     val currentCoordinates by rememberUpdatedState(coordinates)
+    val currentZoom by rememberUpdatedState(zoom)
+    LaunchedEffect(state, texture) {
+        snapshotFlow { currentZoom() }.collect { state.updateBounds(texture, currentCoordinates(), it) }
+    }
     DisposableEffect(state, texture) {
         val listener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-            state.updateBounds(texture, currentCoordinates())
+            state.updateBounds(texture, currentCoordinates(), currentZoom())
         }
         val parent = texture?.parent as? ViewGroup
         texture?.addOnLayoutChangeListener(listener)
         parent?.addOnLayoutChangeListener(listener)
-        state.updateBounds(texture, currentCoordinates())
+        state.updateBounds(texture, currentCoordinates(), currentZoom())
         onDispose {
             parent?.removeOnLayoutChangeListener(listener)
             texture?.removeOnLayoutChangeListener(listener)

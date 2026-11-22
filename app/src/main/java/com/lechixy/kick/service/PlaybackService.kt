@@ -181,6 +181,11 @@ class PlaybackService : MediaSessionService() {
                     }
                 }
                 val extras = player.currentMediaItem?.mediaMetadata?.extras
+                if (events.contains(Player.EVENT_PLAYBACK_STATE_CHANGED) &&
+                    player.playbackState == Player.STATE_ENDED && extras?.getBoolean(EXTRA_IS_LIVE) != true
+                ) {
+                    player.pause()
+                }
                 val channelId = extras?.getLong(EXTRA_VIEWER_CHANNEL_ID) ?: 0L
                 val livestreamId = extras?.getLong(EXTRA_VIEWER_LIVESTREAM_ID) ?: 0L
                 val watching = player.playWhenReady && player.playerError == null &&
