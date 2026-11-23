@@ -4,6 +4,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.IntSize
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlayerVideoZoomTest {
@@ -28,7 +29,7 @@ class PlayerVideoZoomTest {
     @Test fun zoomingOutToOneClearsThePan() {
         val zoom = PlayerVideoZoom().transform(viewport, Offset(300f, 50f), Offset.Zero, 2f)
 
-        assertEquals(PlayerVideoZoom(), zoom.transform(viewport, Offset(300f, 50f), Offset.Zero, 0.75f))
+        assertEquals(PlayerVideoZoom(), zoom.transform(viewport, Offset(300f, 50f), Offset.Zero, 0.5f))
     }
 
     @Test fun zoomedBoundsIncludeViewportRelativePanAndLetterboxing() {
@@ -37,5 +38,48 @@ class PlayerVideoZoomTest {
 
         assertEquals(Rect(-100f, -100f, 700f, 200f), zoom.mapBounds(video, viewport))
         assertEquals(video, PlayerVideoZoom().mapBounds(video, viewport))
+    }
+
+    @Test fun pinchSnapsToFillThenContinuesPastItWithOneTransitionEach() {
+        val gesture = PlayerPinchZoom()
+        val videoSize = IntSize(400, 160)
+        val focus = Offset(300f, 100f)
+        val pan = Offset(20f, 0f)
+        val fit = PlayerVideoZoom()
+        assertEquals(fit to null, gesture.transform(fit, viewport, videoSize, focus, pan, 1.025f))
+
+        val (filled, fillTransition) = gesture.transform(fit, viewport, videoSize, focus, pan, 1.025f)
+        assertEquals(PlayerVideoZoom(1.25f, isFill = true), filled)
+        assertEquals(PlayerZoomTransition.Fill, fillTransition)
+        assertEquals(filled to null, gesture.transform(filled, viewport, videoSize, focus, pan, 1f))
+        assertEquals(filled to null, gesture.transform(filled, viewport, videoSize, focus, pan, 1.04f))
+
+        assertEquals(filled to null,
+            gesture.transform(filled, viewport, videoSize, focus, pan, 1.13f, fillSettled = false))
+        val (free, freeTransition) = gesture.transform(filled, viewport, videoSize, focus, pan, 1f)
+        assertEquals(PlayerZoomTransition.Free, freeTransition)
+        assertTrue(free.scale > filled.scale)
+        assertTrue(free.normalizedTranslation.x < 0f)
+        val (panned, transition) = gesture.transform(free, viewport, videoSize, focus, pan, 1f)
+        assertTrue(panned.normalizedTranslation.x > free.normalizedTranslation.x)
+        assertEquals(null, transition)
+
+        assertEquals(filled to PlayerZoomTransition.Fill,
+            gesture.transform(free, viewport, videoSize, focus, pan, 0.9f))
+        assertEquals(fit to PlayerZoomTransition.Fit,
+            gesture.transform(filled, viewport, videoSize, focus, pan, 0.92f))
+    }
+
+    @Test fun pinchBelowOneReportsTheLimitOnceUntilTheNextGesture() {
+        val gesture = PlayerPinchZoom()
+        val fit = PlayerVideoZoom()
+        val center = Offset(200f, 100f)
+
+        assertEquals(fit to PlayerZoomTransition.Minimum,
+            gesture.transform(fit, viewport, viewport, center, Offset.Zero, 0.94f))
+        assertEquals(fit to null, gesture.transform(fit, viewport, viewport, center, Offset.Zero, 0.9f))
+        gesture.reset()
+        assertEquals(fit to PlayerZoomTransition.Minimum,
+            gesture.transform(fit, viewport, viewport, center, Offset.Zero, 0.94f))
     }
 }

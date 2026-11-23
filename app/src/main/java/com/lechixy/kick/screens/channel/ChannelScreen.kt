@@ -148,6 +148,7 @@ import com.lechixy.kick.data.channel.model.ChannelDetail
 import com.lechixy.kick.data.channel.model.ChannelEvent
 import com.lechixy.kick.data.channel.model.ChannelVideo
 import com.lechixy.kick.data.channel.model.ChannelLeaderboardUiState
+import com.lechixy.kick.data.channel.model.LeaderboardBoardType
 import com.lechixy.kick.data.channel.model.LeaderboardCategory
 import com.lechixy.kick.data.channel.model.getBannerUrl
 import com.lechixy.kick.data.chat.model.ChatTimestampMode
@@ -986,6 +987,7 @@ private fun ChannelChatSection(
     val loadedLeaderboard by viewModel.channelLeaderboard.collectAsChatState()
     val leaderboard = loadedLeaderboard.takeIf { it.channelId == channel.id } ?: ChannelLeaderboardUiState(channelId = channel.id)
     var showLeaderboard by remember(channel.id) { mutableStateOf(false) }
+    var initialLeaderboardBoard by remember(channel.id) { mutableStateOf<LeaderboardBoardType?>(null) }
     val uriHandler = LocalUriHandler.current
     val context = LocalContext.current
     LaunchedEffect(channel.id, chatActive) {
@@ -995,6 +997,7 @@ private fun ChannelChatSection(
     if (showLeaderboard && chatActive) {
         ChannelLeaderboardDialog(
             leaderboard,
+            initialBoard = initialLeaderboardBoard,
             onUserClick = { id ->
                 val entry = leaderboard.boards.firstNotNullOfOrNull { board -> board.entries.firstOrNull { it.userId == id } }
                 if (entry != null) {
@@ -1049,7 +1052,10 @@ private fun ChannelChatSection(
         onOpenChannel = onOpenChannel,
         floatingComposer = LocalConfiguration.current.smallestScreenWidthDp < 600 && channel.livestream != null,
         belowHeader = {
-            ChannelLeaderboardStrip(leaderboard, paused = showLeaderboard || !chatActive, onClick = { showLeaderboard = true })
+            ChannelLeaderboardStrip(leaderboard, paused = showLeaderboard || !chatActive) { board ->
+                initialLeaderboardBoard = board
+                showLeaderboard = true
+            }
         },
         composer = { chatContent -> com.lechixy.kick.components.channel.chat.AccountChatComposer(
             channel, chatConnectionState, chatSettings, pointsUpdated,

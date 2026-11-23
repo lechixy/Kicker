@@ -39,6 +39,9 @@ import com.lechixy.kick.data.common.repository.KickRepository
 import com.lechixy.kick.data.player.local.RECORDING_DOWNLOAD_DIRECTORY
 import com.lechixy.kick.data.player.local.RECORDING_DOWNLOAD_MIME_TYPE
 import com.lechixy.kick.data.player.model.RecordedPlayback
+import com.lechixy.kick.data.player.model.LiveDownloadSnapshot
+import com.lechixy.kick.data.player.model.RecordingDownloadRange
+import com.lechixy.kick.data.player.model.RecordingDownloadSelection
 import com.lechixy.kick.data.player.local.RecordingDownloadProgress
 import com.lechixy.kick.data.player.local.RecordingDownloadQueue
 import com.lechixy.kick.data.player.local.RecordingDownloadTask
@@ -49,6 +52,7 @@ import kotlinx.coroutines.flow.update
 import com.lechixy.kick.data.player.local.recordingThumbnail
 import com.lechixy.kick.data.player.local.removeRecordingMetadata
 import com.lechixy.kick.data.player.local.saveRecordingMetadata
+import com.lechixy.kick.util.FormatUtils
 import java.io.File
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -64,7 +68,6 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
 
 @androidx.annotation.OptIn(UnstableApi::class)
 class RecordingDownloadService : Service() {
@@ -88,19 +91,6 @@ class RecordingDownloadService : Service() {
                 return START_STICKY
             }
             ACTION_RETRY -> if (id != null) queue.retry(id)
-            ACTION_ENQUEUE -> {
-                val recording = intent.getStringExtra(EXTRA_RECORDING)?.let {
-                    runCatching { Json.decodeFromString<RecordedPlayback>(it) }.getOrNull()
-                }
-                if (recording != null) {
-                    val added = queue.enqueue(recording)
-                    toast(when {
-                        !added -> R.string.recording_download_already_queued
-                        worker != null -> R.string.recording_download_queued
-                        else -> R.string.recording_download_started
-                    })
-                }
-            }
         }
         val next = queue.tasks.value.firstOrNull { !it.failed }
         if (next == null) {
@@ -157,8 +147,9 @@ class RecordingDownloadService : Service() {
                 queryRecordingDownloads(this@RecordingDownloadService).any { it.metadata?.taskId == task.id }
             }
             if (!published) {
-                val resolved = resolveRecording(task.recording)
-                val source = Uri.parse(checkNotNull(resolved.directUrl))
+                val snapshot = task.liveSnapshot
+                val resolved = if (snapshot == null) resolveRecording(task.recording) else task.recording
+                val source = Uri.parse(checkNotNull(snapshot?.url ?: resolved.directUrl))
                 require(source.scheme == "https")
                 val file = withContext(Dispatchers.IO) {
                     val directory = File(cacheDir, "recording-download")
@@ -167,10 +158,21 @@ class RecordingDownloadService : Service() {
                     File.createTempFile("recording-", ".mp4", directory)
                 }
                 tempFile = file
-                export(source, file, task.id)
+                val mediaItem = recordingDownloadMediaItem(source.toString(), task.selection, snapshot, clip = true)
+                val result = export(mediaItem, file, task.id, snapshot)
                 val fileSize = withContext(Dispatchers.IO) { file.length() }
                 setProgress(RecordingDownloadProgress(task.id, percent = 100, saving = true, writtenBytes = fileSize))
-                saveToDownloads(file, task.id, resolved.copy(title = resolved.title.ifBlank { resolved.id }))
+                val range = task.selection?.range ?: if (snapshot != null && resolved.durationMs > 0) {
+                    RecordingDownloadRange(0, resolved.durationMs)
+                } else null
+                val offset = task.selection?.timelineOffsetMs ?: 0L
+                val sourceRange = range?.let { RecordingDownloadRange(it.startMs + offset, it.endMs + offset) }
+                val duration = result.approximateDurationMs.takeIf { it > 0 } ?: range?.durationMs ?: resolved.durationMs
+                saveToDownloads(file, task.id, resolved.copy(
+                    title = resolved.title.ifBlank { resolved.id },
+                    durationMs = duration,
+                    thumbnail = resolved.thumbnail.takeIf { range == null },
+                ), sourceRange)
             }
             queue.remove(task.id)
             showResult(task, R.string.recording_download_complete, success = true)
@@ -215,20 +217,25 @@ class RecordingDownloadService : Service() {
         notifications.notify(PROGRESS_NOTIFICATION, progressNotification(task, progress))
     }
 
-    private suspend fun export(source: Uri, file: File, id: String) = coroutineScope {
-        val completed = CompletableDeferred<Unit>()
+    private suspend fun export(
+        mediaItem: MediaItem,
+        file: File,
+        id: String,
+        snapshot: LiveDownloadSnapshot?,
+    ) = coroutineScope {
+        val completed = CompletableDeferred<ExportResult>()
         val transformer = Transformer.Builder(this@RecordingDownloadService)
             .setAssetLoaderFactory(
                 ExoPlayerAssetLoader.Factory(
                     this@RecordingDownloadService,
                     DefaultDecoderFactory.Builder(this@RecordingDownloadService).build(),
                     Clock.DEFAULT,
-                    DefaultMediaSourceFactory(playbackHttpDataSourceFactory())
+                    DefaultMediaSourceFactory(recordingDownloadDataSource(snapshot))
                 )
             )
             .addListener(object : Transformer.Listener {
                 override fun onCompleted(composition: Composition, exportResult: ExportResult) {
-                    completed.complete(Unit)
+                    completed.complete(exportResult)
                 }
 
                 override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
@@ -236,7 +243,7 @@ class RecordingDownloadService : Service() {
                 }
             })
             .build()
-        transformer.start(MediaItem.fromUri(source), file.absolutePath)
+        transformer.start(mediaItem, file.absolutePath)
         val progress = launch {
             val holder = ProgressHolder()
             while (true) {
@@ -256,12 +263,22 @@ class RecordingDownloadService : Service() {
         }
     }
 
-    private suspend fun saveToDownloads(file: File, id: String, recording: RecordedPlayback) = withContext(Dispatchers.IO) {
+    private suspend fun saveToDownloads(
+        file: File,
+        id: String,
+        recording: RecordedPlayback,
+        sourceRange: RecordingDownloadRange?,
+    ) = withContext(Dispatchers.IO) {
         check(file.length() > 0)
         val safeTitle = recording.title.replace(Regex("[\\\\/:*?\"<>|\\p{Cntrl}]"), "_").take(80).trim(' ', '.')
             .ifBlank { getString(R.string.recording_download_fallback_name) }
+        val rangeSuffix = sourceRange?.let { range ->
+            val start = FormatUtils.formatDuration(range.startMs).replace(':', '-')
+            val end = FormatUtils.formatDuration(range.endMs).replace(':', '-')
+            " ($start - $end)"
+        }.orEmpty()
         val values = ContentValues().apply {
-            put(MediaStore.Downloads.DISPLAY_NAME, "$safeTitle.mp4")
+            put(MediaStore.Downloads.DISPLAY_NAME, "$safeTitle$rangeSuffix.mp4")
             put(MediaStore.Downloads.MIME_TYPE, RECORDING_DOWNLOAD_MIME_TYPE)
             put(MediaStore.Downloads.RELATIVE_PATH, RECORDING_DOWNLOAD_DIRECTORY)
             put(MediaStore.Downloads.IS_PENDING, 1)
@@ -281,7 +298,7 @@ class RecordingDownloadService : Service() {
                     }
                 }
             }
-            saveRecordingMetadata(uri, id, recording, file.length())
+            saveRecordingMetadata(uri, id, recording, file.length(), sourceRange)
             saveThumbnail(uri, file, recording.thumbnail)
             ensureActive()
             val ready = ContentValues().apply { put(MediaStore.Downloads.IS_PENDING, 0) }
@@ -378,16 +395,24 @@ class RecordingDownloadService : Service() {
         private const val PROGRESS_NOTIFICATION = 241
         private const val RESULT_NOTIFICATION = 242
         internal const val ACTION_OPEN_DOWNLOADS = "com.lechixy.kick.OPEN_DOWNLOADS"
-        private const val ACTION_ENQUEUE = "com.lechixy.kick.ENQUEUE_RECORDING_DOWNLOAD"
         private const val ACTION_RETRY = "com.lechixy.kick.RETRY_RECORDING_DOWNLOAD"
         private const val EXTRA_TASK_ID = "task"
-        private const val EXTRA_RECORDING = "recording"
         private const val ACTION_CANCEL = "com.lechixy.kick.CANCEL_RECORDING_DOWNLOAD"
 
-        fun enqueue(context: Context, recording: RecordedPlayback) {
-            val request = Intent(context, RecordingDownloadService::class.java).setAction(ACTION_ENQUEUE)
-                .putExtra(EXTRA_RECORDING, Json.encodeToString(recording))
-            start(context, request)
+        internal fun enqueue(
+            context: Context,
+            recording: RecordedPlayback,
+            selection: RecordingDownloadSelection? = null,
+            snapshot: LiveDownloadSnapshot? = null,
+        ) {
+            val added = RecordingDownloadQueue.enqueue(recording, selection, snapshot)
+            val message = when {
+                !added -> R.string.recording_download_already_queued
+                RecordingDownloadQueue.progress.value != null -> R.string.recording_download_queued
+                else -> R.string.recording_download_started
+            }
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+            if (added) start(context, Intent(context, RecordingDownloadService::class.java))
         }
 
         internal fun resume(context: Context, retryId: String? = null) {

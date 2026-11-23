@@ -46,10 +46,12 @@ class ChatEventLocalizationTest {
         assertEquals("Alice raided with 2 viewers", raidEventSegments(context("en"), "Alice", 2, Color.Green).joinToString("") { it.text })
     }
 
-    @Test fun anniversaryAndOtherCelebrationsUseDifferentStars() {
+    @Test fun anniversariesAndRenewalsUseMultipleStars() {
         assertEquals(R.drawable.kick_star, subscriptionCelebrationIcon(ChatCelebration(type = "subscription")))
-        assertEquals(R.drawable.hotel_class_24dp_e3e3e3_fill1_wght400_grad0_opsz24,
+        assertEquals(R.drawable.kick_stars,
             subscriptionCelebrationIcon(ChatCelebration(type = "subscription_anniversary", totalMonths = 12)))
+        assertEquals(R.drawable.kick_stars,
+            subscriptionCelebrationIcon(ChatCelebration(type = "subscription_renewed", totalMonths = 7)))
     }
 
     @Test fun compactCountsLocalizeSuffixDecimalAndDigits() {

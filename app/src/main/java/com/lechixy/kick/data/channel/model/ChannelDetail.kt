@@ -87,7 +87,15 @@ data class ChannelLivestream(
     val tags: List<String> = emptyList(),
     val categories: List<RecentCategory> = emptyList(),
     @Transient val isMaturityKnown: Boolean = true,
-)
+) {
+    internal fun withLatestMetadata(fresh: ChannelLivestream): ChannelLivestream = copy(
+        sessionTitle = fresh.sessionTitle ?: sessionTitle,
+        categories = fresh.categories,
+        tags = fresh.tags,
+        language = fresh.language ?: language,
+        langIso = fresh.langIso ?: langIso,
+    )
+}
 
 @kotlinx.serialization.Serializable
 data class BannerImage(

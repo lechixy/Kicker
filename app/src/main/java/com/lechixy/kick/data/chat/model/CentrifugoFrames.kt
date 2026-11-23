@@ -39,6 +39,12 @@ data class CentrifugoSubscribeFrame(
 )
 
 @Serializable
+internal data class CentrifugoUnsubscribeFrame(val unsubscribe: UnsubscribePayload, val id: Int)
+
+@Serializable
+internal data class UnsubscribePayload(val channel: String)
+
+@Serializable
 internal data class CentrifugoSubscriptionRefresh(
     @SerialName("sub_refresh") val subscription: SubscriptionRefreshPayload,
     val id: Int,

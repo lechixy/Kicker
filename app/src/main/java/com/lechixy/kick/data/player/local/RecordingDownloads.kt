@@ -12,6 +12,7 @@ import android.provider.MediaStore.MediaColumns
 import android.provider.OpenableColumns
 import com.lechixy.kick.BuildConfig
 import com.lechixy.kick.data.player.model.RecordedPlayback
+import com.lechixy.kick.data.player.model.RecordingDownloadRange
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.awaitClose
@@ -50,6 +51,7 @@ internal data class RecordingDownloadMetadata(
     val channelSlug: String? = null,
     val sizeBytes: Long = 0,
     val channelAvatar: String? = null,
+    val sourceRange: RecordingDownloadRange? = null,
 )
 
 @Serializable
@@ -133,9 +135,15 @@ private fun Context.downloadAsset(uri: Uri, extension: String): File =
 
 internal fun Context.recordingThumbnail(uri: Uri): File = downloadAsset(uri, "jpg")
 
-internal fun Context.saveRecordingMetadata(uri: Uri, taskId: String, recording: RecordedPlayback, sizeBytes: Long) {
+internal fun Context.saveRecordingMetadata(
+    uri: Uri,
+    taskId: String,
+    recording: RecordedPlayback,
+    sizeBytes: Long,
+    sourceRange: RecordingDownloadRange?,
+) {
     val metadata = RecordingDownloadMetadata(taskId, recording.title, recording.channelName,
-        recording.durationMs, System.currentTimeMillis(), recording.channelSlug, sizeBytes, recording.channelAvatar)
+        recording.durationMs, System.currentTimeMillis(), recording.channelSlug, sizeBytes, recording.channelAvatar, sourceRange)
     val file = downloadAsset(uri, "json")
     file.parentFile?.mkdirs()
     file.writeText(metadataJson.encodeToString(metadata))

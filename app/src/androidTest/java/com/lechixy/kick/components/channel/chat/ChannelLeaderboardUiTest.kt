@@ -5,6 +5,7 @@ import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.test.espresso.Espresso.pressBack
 import androidx.test.platform.app.InstrumentationRegistry
 import com.lechixy.kick.R
 import com.lechixy.kick.data.channel.model.ChannelLeaderboardUiState
@@ -20,17 +21,30 @@ class ChannelLeaderboardUiTest {
     @get:Rule val compose = createComposeRule()
 
     @Test
-    fun stripUsesMonthlyGiftersUntilWeeklyHasEntries() {
+    fun stripOpensTheDisplayedBoardAndDialogClosesWithBack() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
         val monthly = LeaderboardBoard(LeaderboardBoardType.MONTHLY_GIFTERS, listOf(GiftLeaderboardEntry(1, "MonthlyLeader", 210)))
         val weekly = LeaderboardBoard(LeaderboardBoardType.WEEKLY_GIFTERS, emptyList())
         val kicks = LeaderboardBoard(LeaderboardBoardType.WEEKLY_KICKERS, listOf(GiftLeaderboardEntry(2, "KicksLeader", 300)))
         val state = mutableStateOf(ChannelLeaderboardUiState(isLoading = false, boards = listOf(monthly, weekly, kicks)))
+        val initialBoard = mutableStateOf<LeaderboardBoardType?>(null)
         compose.setContent {
             KickTheme(Theme.LIGHT, dynamicColor = false) {
-                ChannelLeaderboardStrip(state.value, paused = true, onClick = {})
+                ChannelLeaderboardStrip(state.value, paused = true, onClick = { initialBoard.value = it })
+                initialBoard.value?.let { board ->
+                    ChannelLeaderboardDialog(
+                        state.value, board, onUserClick = {}, onActionCtaClick = { _, _ -> },
+                        onRetry = {}, onDismiss = { initialBoard.value = null },
+                    )
+                }
             }
         }
-        compose.onNodeWithText("MonthlyLeader").assertExists()
+        val monthlyTitle = compose.onNodeWithText(context.getString(R.string.leaderboard_monthly_gifters))
+        compose.onNodeWithText("MonthlyLeader").performClick()
+        monthlyTitle.assertExists()
+        compose.onNodeWithContentDescription(context.getString(R.string.player_close)).assertDoesNotExist()
+        pressBack()
+        monthlyTitle.assertDoesNotExist()
         compose.onNodeWithText("KicksLeader").assertDoesNotExist()
 
         compose.runOnIdle {
@@ -38,9 +52,10 @@ class ChannelLeaderboardUiTest {
                 monthly, weekly.copy(entries = listOf(GiftLeaderboardEntry(3, "WeeklyLeader", 101))), kicks,
             ))
         }
-        compose.onNodeWithText("WeeklyLeader").assertExists()
         compose.onNodeWithText("MonthlyLeader").assertDoesNotExist()
         compose.onNodeWithText("KicksLeader").assertDoesNotExist()
+        compose.onNodeWithText("WeeklyLeader").performClick()
+        compose.onNodeWithText(context.getString(R.string.leaderboard_weekly_gifters)).assertExists()
     }
 
     @Test

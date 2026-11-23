@@ -13,6 +13,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.activity.ComponentActivity
 import org.junit.Before
 import com.lechixy.kick.R
+import com.lechixy.kick.screens.channel.DropsUiState
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Rule
 import org.junit.Test
@@ -145,5 +146,38 @@ class ChatComposerPanelTest {
         compose.mainClock.advanceTimeBy(6_000)
         compose.onNodeWithText("Composer contents").assertIsDisplayed()
         compose.onNodeWithContentDescription(label(R.string.chat_show_composer)).assertDoesNotExist()
+    }
+
+    @Test fun compactFooterButtonsMatchAndComposerOpensOverMultipleFrames() {
+        compose.mainClock.autoAdvance = false
+        show {
+            var expanded by remember { mutableStateOf(false) }
+            MaterialTheme {
+                ChatComposerPanel(
+                    compact = true, expanded = expanded, allowAutoHide = false,
+                    onExpandedChange = { expanded = it }, onHide = {},
+                    collapsedActions = { DropsRewardsButton(DropsUiState.Empty, compactOverlay = true) {} },
+                    chatContent = { Box(Modifier.fillMaxSize().testTag("messages")) }
+                ) { OutlinedTextField("", {}, Modifier.testTag("input")) }
+            }
+        }
+        val restore = compose.onNodeWithContentDescription(label(R.string.chat_show_composer))
+        val drops = compose.onNodeWithContentDescription(label(R.string.drops_and_rewards))
+        val chatBounds = restore.getUnclippedBoundsInRoot()
+        val dropsBounds = drops.getUnclippedBoundsInRoot()
+        org.junit.Assert.assertEquals(chatBounds.right - chatBounds.left, dropsBounds.right - dropsBounds.left)
+        org.junit.Assert.assertEquals(chatBounds.bottom - chatBounds.top, dropsBounds.bottom - dropsBounds.top)
+        org.junit.Assert.assertEquals(chatBounds.bottom, dropsBounds.bottom)
+        org.junit.Assert.assertTrue(dropsBounds.right < chatBounds.left)
+
+        val messages = compose.onNodeWithTag("messages")
+        val initial = messages.getUnclippedBoundsInRoot().bottom
+        restore.performClick()
+        compose.mainClock.advanceTimeBy(100)
+        val animating = messages.getUnclippedBoundsInRoot().bottom
+        compose.mainClock.advanceTimeBy(300)
+        val expanded = messages.getUnclippedBoundsInRoot().bottom
+        org.junit.Assert.assertTrue(animating < initial && animating > expanded)
+        compose.onNodeWithTag("input").assertIsDisplayed()
     }
 }

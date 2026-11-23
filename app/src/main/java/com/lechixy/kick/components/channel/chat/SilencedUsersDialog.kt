@@ -71,14 +71,16 @@ internal fun SilencedUsersDialog(
             Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(stringResource(R.string.chat_silenced_users), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
-                    val countLabel = pluralStringResource(R.plurals.chat_silenced_total, users.size, users.size)
-                    Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.secondaryContainer) {
-                        Text(
-                            users.size.toString(),
-                            Modifier.clearAndSetSemantics { contentDescription = countLabel }.padding(horizontal = 10.dp, vertical = 4.dp),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        )
+                    if (users.isNotEmpty()) {
+                        val countLabel = pluralStringResource(R.plurals.chat_silenced_total, users.size, users.size)
+                        Surface(shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.secondaryContainer) {
+                            Text(
+                                users.size.toString(),
+                                Modifier.clearAndSetSemantics { contentDescription = countLabel }.padding(horizontal = 10.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelLarge,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                        }
                     }
                 }
                 if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())

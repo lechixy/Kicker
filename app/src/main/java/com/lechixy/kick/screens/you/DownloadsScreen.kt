@@ -248,6 +248,18 @@ private fun DownloadTaskCard(
                     )
                 }
             }
+            task.selection?.let { selection ->
+                val span = selection.range
+                val end = span?.endMs ?: recording.durationMs
+                if (end > 0) {
+                    DownloadSourceRange((span?.startMs ?: 0L) + selection.timelineOffsetMs,
+                        end + selection.timelineOffsetMs, span?.durationMs ?: recording.durationMs)
+                }
+                selection.estimatedBytes?.let {
+                    Text(stringResource(R.string.recording_download_estimated_size, Formatter.formatFileSize(context, it)),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
             HorizontalDivider(color = settingsOutlineColor)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
@@ -301,6 +313,7 @@ private fun CompletedDownloadCard(recording: RecordingDownload, onPlay: () -> Un
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
                     recording.metadata?.let { DownloadChannel(it.channelSlug, it.channelName, it.channelAvatar) }
                     Text(details, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    recording.metadata?.sourceRange?.let { DownloadSourceRange(it.startMs, it.endMs, it.durationMs) }
                     if (recording.linked) {
                         Text(stringResource(R.string.you_download_linked), style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -317,6 +330,13 @@ private fun CompletedDownloadCard(recording: RecordingDownload, onPlay: () -> Un
             }
         }
     }
+}
+
+@Composable
+private fun DownloadSourceRange(startMs: Long, endMs: Long, durationMs: Long) {
+    Text(stringResource(R.string.recording_download_range_summary,
+        FormatUtils.formatDuration(startMs), FormatUtils.formatDuration(endMs), FormatUtils.formatDuration(durationMs)),
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
 @Composable
@@ -436,7 +456,7 @@ private fun DownloadThumbnail(recording: RecordingDownload, modifier: Modifier, 
             } else {
                 Icon(painterResource(R.drawable.play_circle_24dp_e3e3e3_fill0_wght400_grad0_opsz24), null, Modifier.size(24.dp))
             }
-            recording.metadata?.durationMs?.takeIf { it > 0 }?.let { duration ->
+            recording.metadata?.let { it.sourceRange?.durationMs ?: it.durationMs }?.takeIf { it > 0 }?.let { duration ->
                 Surface(Modifier.align(Alignment.BottomEnd).padding(4.dp), shape = MaterialTheme.shapes.extraSmall) {
                     Text(FormatUtils.formatDuration(duration), Modifier.padding(horizontal = 4.dp), style = MaterialTheme.typography.labelSmall)
                 }

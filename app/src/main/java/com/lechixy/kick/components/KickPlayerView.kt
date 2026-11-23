@@ -25,6 +25,8 @@ import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.tween
@@ -116,6 +118,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -124,6 +127,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -164,6 +168,7 @@ import com.lechixy.kick.components.channel.chat.rememberFullscreenChatPreference
 import com.lechixy.kick.components.channel.chat.rememberLegacyFullscreenChatFrame
 import com.lechixy.kick.components.settings.AmbientModeSettings
 import com.lechixy.kick.components.settings.SettingSwitch
+import com.lechixy.kick.components.settings.VideoNoiseReductionSetting
 import com.lechixy.kick.components.settings.titleResource
 import com.lechixy.kick.data.account.AccountGraph
 import com.lechixy.kick.data.channel.model.ChannelDetail
@@ -301,16 +306,25 @@ fun KickPlayerView(
     var reloadLiveSource by remember(stableId) { mutableIntStateOf(0) }
     var isSeeking by remember(stableId) { mutableStateOf(false) }
     var skipFeedback by remember(stableId, isMini, isInPipMode) { mutableStateOf<RecordingSkipFeedback?>(null) }
-    var videoZoom by remember(stableId) { mutableStateOf(PlayerVideoZoom()) }
-    var isPinching by remember(stableId) { mutableStateOf(false) }
-    var showZoomFeedback by remember(stableId, isMini, isInPipMode) { mutableStateOf(false) }
+    var videoZoom by remember(sessionId) { mutableStateOf(PlayerVideoZoom()) }
+    var lastZoom by remember(sessionId) { mutableStateOf<PlayerVideoZoom?>(null) }
+    var heldZoom by remember(sessionId) { mutableStateOf<PlayerVideoZoom?>(null) }
+    val pinchZoom = remember(sessionId) { PlayerPinchZoom() }
+    var isPinching by remember(sessionId) { mutableStateOf(false) }
+    var showZoomFeedback by remember(sessionId, isMini, isInPipMode) { mutableStateOf(false) }
+    var showFillFeedback by remember(sessionId, isMini, isInPipMode) { mutableStateOf(false) }
+    var fillFeedbackRevision by remember(sessionId) { mutableIntStateOf(0) }
+    var zoomMotion by remember(sessionId) { mutableStateOf<PlayerZoomMotion?>(null) }
+    val minimumZoom = remember(sessionId) { Animatable(1f) }
+    var minimumZoomPulse by remember(sessionId) { mutableIntStateOf(0) }
+    val zoomHaptics by rememberUpdatedState(LocalHapticFeedback.current)
     var playbackSpeed by remember(player, stableId) { mutableFloatStateOf(1f) }
     var fastForwardFrom by remember(player, stableId) { mutableStateOf<PlaybackParameters?>(null) }
     val multiplierFormat = remember(viewersLocale) {
         NumberFormat.getNumberInstance(viewersLocale).apply { maximumFractionDigits = 2 }
     }
     fun formatMultiplier(value: Float) = multiplierFormat.format(value.toDouble())
-    fun multiplierLabel(value: Float) = "x${formatMultiplier(value)}"
+    fun multiplierLabel(value: Float) = "${formatMultiplier(value)}x"
     fun stopFastForward() {
         val previous = fastForwardFrom ?: return
         fastForwardFrom = null
@@ -322,6 +336,17 @@ fun KickPlayerView(
             showZoomFeedback = false
         }
     }
+    LaunchedEffect(sessionId, fillFeedbackRevision) {
+        if (fillFeedbackRevision > 0) {
+            delay(450)
+            showFillFeedback = false
+        }
+    }
+    LaunchedEffect(zoomMotion) {
+        val motion = zoomMotion ?: return@LaunchedEffect
+        motion.progress.animateTo(1f, tween(motion.durationMillis, easing = LinearOutSlowInEasing))
+        if (zoomMotion === motion) zoomMotion = null
+    }
     var showControls by remember { mutableStateOf(false) }
     var isAdjustingVolume by remember { mutableStateOf(false) }
 
@@ -330,6 +355,14 @@ fun KickPlayerView(
     var settingsPage by remember { mutableStateOf(PlayerSettingsPage.MAIN) }
     var showStats by rememberSaveable { mutableStateOf(false) }
     var viewport by remember { mutableStateOf(IntSize.Zero) }
+    LaunchedEffect(sessionId, minimumZoomPulse) {
+        val dimension = maxOf(viewport.width, viewport.height)
+        if (minimumZoomPulse > 0 && dimension > 0) {
+            val target = (1f - 12f / dimension).coerceAtLeast(0.96f)
+            minimumZoom.animateTo(target, tween(80))
+            minimumZoom.animateTo(1f, tween(150))
+        }
+    }
     var playerTexture by remember { mutableStateOf<TextureView?>(null) }
     var ambientCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val hostedAmbient = LocalPlayerAmbientState.current
@@ -338,7 +371,9 @@ fun KickPlayerView(
     var chatBlurBounds by remember { mutableStateOf<FullscreenChatBackdropRegion?>(null) }
     val controlBlur = remember { FrostedPlayerRegions() }
     val updateChatBlurBounds: (FullscreenChatBackdropRegion?) -> Unit = remember { { chatBlurBounds = it } }
-    val downloadRecording = rememberRecordingDownloadAction()
+    val downloadRecording = rememberRecordingDownloadAction(
+        if (recording == null) com.lechixy.kick.service.LiveRecordingDownload(playbackUrl, dvrUrl, liveStartMs) else null,
+    )
     val sleepTimer by SleepTimer.state.collectAsStateWithLifecycle()
     val sleepTimerMinutes = sleepTimer.selectedMinutes
     val remainingTimerSeconds = sleepTimer.remainingSeconds
@@ -927,7 +962,15 @@ fun KickPlayerView(
             ((fullscreenChatOverlayEnabled && overlayHasOpacity) || editingChatPosition)
     }
     val visibleChatBlurStyle = chatBlurStyle.takeIf { chatBlurBounds != null }
-    val playbackZoom = { if (isMini || isInPipMode) PlayerVideoZoom() else videoZoom }
+    fun renderedZoom(): PlayerVideoZoom {
+        val target = heldZoom ?: if (videoZoom.scale == 1f) videoZoom.copy(scale = minimumZoom.value) else videoZoom
+        val motion = zoomMotion ?: return target
+        return motion.from.interpolateTo(target, motion.progress.value)
+    }
+    fun animateZoom(durationMillis: Int, snappingToFill: Boolean = false) {
+        zoomMotion = PlayerZoomMotion(renderedZoom(), durationMillis, snappingToFill)
+    }
+    val playbackZoom = { if (isMini || isInPipMode) PlayerVideoZoom() else renderedZoom() }
     val legacyBackdrop = if (Build.VERSION.SDK_INT < 31) {
         rememberLegacyFullscreenChatFrame(
             backdropTexture,
@@ -979,17 +1022,52 @@ fun KickPlayerView(
                     onPlayerCoordinatesChanged(rect)
                 }
             }
-            .pointerInput(gesturesEnabled, stableId) {
+            .pointerInput(gesturesEnabled, sessionId) {
                 if (gesturesEnabled) detectPlayerPinch(
                     onTransform = { centroid, pan, factor ->
-                        videoZoom = videoZoom.transform(size, centroid, pan, factor)
+                        heldZoom = null
+                        val texture = playerTexture
+                        val videoSize = if (texture != null && texture.width > 0 && texture.height > 0) {
+                            IntSize(texture.width, texture.height)
+                        } else size
+                        val motion = zoomMotion
+                        val fillSettled = motion == null || !motion.snappingToFill || motion.progress.value >= 0.9f
+                        val (zoom, transition) = pinchZoom.transform(
+                            videoZoom, size, videoSize, centroid, pan, factor, fillSettled,
+                        )
+                        when (transition) {
+                            PlayerZoomTransition.Fill -> {
+                                animateZoom(210, snappingToFill = true)
+                                showFillFeedback = true
+                                fillFeedbackRevision++
+                            }
+                            PlayerZoomTransition.Free -> animateZoom(140)
+                            PlayerZoomTransition.Fit -> {
+                                animateZoom(200)
+                                showFillFeedback = false
+                            }
+                            PlayerZoomTransition.Minimum -> minimumZoomPulse++
+                            null -> Unit
+                        }
+                        videoZoom = zoom
                         isPinching = true
-                        showZoomFeedback = videoZoom.scale > 1f
+                        if (zoom.scale > 1f || transition != null) showZoomFeedback = true
+                        when (transition) {
+                            PlayerZoomTransition.Fill, PlayerZoomTransition.Fit ->
+                                zoomHaptics.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+                            PlayerZoomTransition.Free, PlayerZoomTransition.Minimum ->
+                                zoomHaptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                            null -> Unit
+                        }
                     },
-                    onPinchEnd = { isPinching = false },
+                    onPinchEnd = {
+                        if (isPinching && videoZoom.scale > 1f) lastZoom = videoZoom
+                        isPinching = false
+                        pinchZoom.reset()
+                    },
                 )
             }
-            .pointerInput(gesturesEnabled, stableId, recording != null, player) {
+            .pointerInput(gesturesEnabled, stableId, recording != null, isLiveStream, player) {
                 if (gesturesEnabled) {
                     if (recording != null) {
                         detectRecordingTaps(
@@ -1011,6 +1089,26 @@ fun KickPlayerView(
                         detectTapGestures(
                             onDoubleTap = { onLiveDoubleTap() },
                             onTap = { showControls = !showControls },
+                            onLongPress = if (isLiveStream) {
+                                {
+                                    lastZoom?.takeUnless { it == videoZoom }?.let {
+                                        animateZoom(180)
+                                        heldZoom = it
+                                    }
+                                }
+                            } else null,
+                            onPress = {
+                                if (isLiveStream) {
+                                    try {
+                                        tryAwaitRelease()
+                                    } finally {
+                                        if (heldZoom != null) {
+                                            animateZoom(180)
+                                            heldZoom = null
+                                        }
+                                    }
+                                }
+                            },
                         )
                     }
                 }
@@ -1025,7 +1123,6 @@ fun KickPlayerView(
                 player, isPlaying,
                 Modifier.fillMaxSize(),
                 zoom = playbackZoom,
-                reduceNoise = videoNoiseReduction,
                 onTextureChanged = { playerTexture = it },
             )
         }
@@ -1061,14 +1158,15 @@ fun KickPlayerView(
             )
         }
 
-        if (backdropTexture != null) {
+        if (!isMini || isInPipMode) {
             val chatRegion = chatBlurBounds.takeIf { chatBlurStyle != null }
             VideoBackdropBlur(
-                backdropTexture,
-                listOfNotNull(chatRegion) + controlBlur.regions.values,
+                playerTexture,
+                if (backdropTexture != null) listOfNotNull(chatRegion) + controlBlur.regions.values else emptyList(),
                 controlOpacity = { controlsOpacity.value },
                 opacity = { if (editingChatPosition) 1f else playerHost?.fullscreenChatOverlayAlpha ?: 0f },
                 zoom = playbackZoom,
+                reduceNoise = videoNoiseReduction,
             )
         }
         if (overlayPreferences != null && playerHost != null && channel != null &&
@@ -1297,13 +1395,20 @@ fun KickPlayerView(
                 )
             }
             PlayerZoomResetButton(
-                label = if (!fastForward && videoZoom.scale > 1f && (showZoomFeedback || showPlaybackControls)) {
-                    multiplierLabel(videoZoom.scale).takeUnless { it == multiplierLabel(1f) }
-                } else null,
-                onReset = {
-                    videoZoom = PlayerVideoZoom()
-                    showZoomFeedback = false
+                label = when {
+                    fastForward -> null
+                    heldZoom != null -> stringResource(R.string.player_release_zoom, multiplierLabel(videoZoom.scale))
+                    showFillFeedback || (showZoomFeedback && videoZoom.isFill) -> stringResource(R.string.player_zoomed_to_fill)
+                    showZoomFeedback || (videoZoom.scale > 1f && showPlaybackControls) -> multiplierLabel(videoZoom.scale)
+                    else -> null
                 },
+                onReset = if (heldZoom != null || videoZoom.scale == 1f) null else ({
+                    animateZoom(200)
+                    lastZoom = videoZoom
+                    videoZoom = PlayerVideoZoom()
+                    showZoomFeedback = true
+                    showFillFeedback = false
+                }),
                 frame = legacyBackdrop,
                 backdrop = controlBlur,
                 videoReady = backdropTexture != null,
@@ -1331,7 +1436,9 @@ fun KickPlayerView(
         if (isMini && !isInPipMode) {
             MiniControlsOverlay(
                 isPlaying = playRequested,
-                texture = playerTexture.takeIf { hasRenderedFirstFrame },
+                texture = playerTexture,
+                videoReady = hasRenderedFirstFrame,
+                reduceNoise = videoNoiseReduction,
                 videoPlaying = isPlaying,
                 onTogglePlay = handleTogglePlay,
                 onClose = onClose
@@ -1499,20 +1606,30 @@ fun KickPlayerView(
                                                 onClick = { settingsPage = PlayerSettingsPage.CHAT_OVERLAY }
                                             )
                                         }
-                                        if (recording != null) {
+                                        if (recording != null || isLiveStream) {
                                             PlayerSettingsCategoryRow(
                                                 icon = R.drawable.download_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
                                                 title = stringResource(R.string.recording_download),
                                                 value = null,
                                                 showChevron = false,
                                                 onClick = {
-                            dismissSettings {
-                                downloadRecording(recording.copy(
-                                    channelName = channelName,
-                                    channelSlug = channel?.slug,
-                                    channelAvatar = channel?.user?.profilePic,
-                                ))
-                            }
+                                                    dismissSettings {
+                                                        val liveRecording = channel?.livestream
+                                                        val source = recording ?: RecordedPlayback(
+                                                            id = "live:$sessionId",
+                                                            title = liveRecording?.sessionTitle ?: streamTitle,
+                                                            durationMs = 0,
+                                                            thumbnail = previewThumbnailUrl ?: liveRecording?.thumbnail?.url,
+                                                            startTime = liveRecording?.startTime ?: liveRecording?.createdAt,
+                                                            vodId = liveRecording?.vodId,
+                                                            livestreamId = liveRecording?.id,
+                                                        )
+                                                        downloadRecording(source.copy(
+                                                            channelName = channelName.ifBlank { source.channelName },
+                                                            channelSlug = channel?.slug ?: source.channelSlug,
+                                                            channelAvatar = channel?.user?.profilePic ?: source.channelAvatar,
+                                                        ))
+                                                    }
                                                 }
                                             )
                                         }
@@ -1656,18 +1773,7 @@ fun KickPlayerView(
                                             icon = R.drawable.fullscreen_24dp_e3e3e3_fill0_wght400_grad0_opsz24
                                         )
 
-                                        val supportsNoiseReduction = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-                                        SettingSwitch(
-                                            key = SettingsKeys.VIDEO_NOISE_REDUCTION,
-                                            title = stringResource(R.string.player_video_noise_reduction),
-                                            description = stringResource(
-                                                if (supportsNoiseReduction) R.string.player_video_noise_reduction_description
-                                                else R.string.player_video_noise_reduction_requires_android_13
-                                            ),
-                                            icon = R.drawable.tune_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
-                                            enabled = supportsNoiseReduction,
-                                            badge = stringResource(R.string.player_experimental),
-                                        )
+                                        VideoNoiseReductionSetting()
                                     }
                                 }
 
@@ -2450,18 +2556,23 @@ private fun PlayerQualityBadge(
 private fun MiniControlsOverlay(
     isPlaying: Boolean,
     texture: TextureView?,
+    videoReady: Boolean,
+    reduceNoise: Boolean,
     videoPlaying: Boolean,
     onTogglePlay: () -> Unit,
     onClose: () -> Unit,
 ) {
     var playRegion by remember { mutableStateOf<FullscreenChatBackdropRegion?>(null) }
     var closeRegion by remember { mutableStateOf<FullscreenChatBackdropRegion?>(null) }
-    val legacyFrame = if (Build.VERSION.SDK_INT < 31 && texture != null) {
+    val legacyFrame = if (Build.VERSION.SDK_INT < 31 && texture != null && videoReady) {
         rememberLegacyFullscreenChatFrame(texture, videoPlaying)
     } else null
     val playBlur = FullscreenChatBlur(remember { { playRegion = it } }, legacyFrame)
     val closeBlur = FullscreenChatBlur(remember { { closeRegion = it } }, legacyFrame)
-    VideoBackdropBlur(texture, listOfNotNull(playRegion, closeRegion))
+    VideoBackdropBlur(
+        texture, if (videoReady) listOfNotNull(playRegion, closeRegion) else emptyList(),
+        reduceNoise = reduceNoise,
+    )
 
     Box(Modifier.fillMaxSize()) {
         MiniCornerButton(

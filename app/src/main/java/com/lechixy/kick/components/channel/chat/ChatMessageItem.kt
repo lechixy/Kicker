@@ -17,7 +17,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,11 +35,14 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -47,6 +52,8 @@ import androidx.core.graphics.ColorUtils
 import com.lechixy.kick.R
 import com.lechixy.kick.data.channel.model.SubscriberBadge
 import com.lechixy.kick.data.chat.model.ChatMessage
+import com.lechixy.kick.data.chat.model.ChatCelebration
+import com.lechixy.kick.data.chat.model.ChatSender
 import com.lechixy.kick.data.chat.model.MessageDeletedEvent
 
 @Composable
@@ -74,6 +81,7 @@ fun ChatMessageItem(
     subscriptionGoal: com.lechixy.kick.data.channel.model.KickGoalDto? = null
 ) {
     val eventContext = LocalContext.current
+    val lightTheme = isLightChatTheme()
     // Read configuration so in-place app language changes rebuild every event sentence.
     LocalConfiguration.current
     val onEventUserClick: ((String) -> Unit)? = onUserClick?.let { callback -> { username ->
@@ -110,10 +118,10 @@ fun ChatMessageItem(
         val primary = MaterialTheme.colorScheme.primary
         ChatEventBaseItem(
             iconRes = R.drawable.kicks_color,
-            segments = kicksGiftedSegments(eventContext, event, primary),
+            segments = kicksGiftedSegments(eventContext, event, primary, lightTheme),
             bodyContent = event.message.takeIf { it.isNotBlank() },
             fontSizeSp = fontSizeSp,
-            stripeColor = ChatTextParser.parseHexColor(event.sender.usernameColor, primary),
+            stripeColor = ChatTextParser.parseUsernameColor(event.sender.usernameColor, primary, lightTheme),
             onUsernameClick = onEventUserClick,
             iconTint = Color.Unspecified,
             streamerUsername = streamerUsername,
@@ -130,10 +138,10 @@ fun ChatMessageItem(
         val defaultPrimaryColor = MaterialTheme.colorScheme.primary
         val gifterName = giftedEvent.gifterUsername.ifBlank { stringResource(R.string.chat_event_anonymous) }
         val gifterRawColor = userColors[gifterName.lowercase()]
-        val gifterColor = remember(gifterRawColor, defaultPrimaryColor) {
-            ChatTextParser.parseHexColor(gifterRawColor, defaultPrimaryColor)
+        val gifterColor = remember(gifterRawColor, defaultPrimaryColor, lightTheme) {
+            ChatTextParser.parseUsernameColor(gifterRawColor, defaultPrimaryColor, lightTheme)
         }
-        val segments = giftedEventSegments(eventContext, giftedEvent, userColors, defaultPrimaryColor)
+        val segments = giftedEventSegments(eventContext, giftedEvent, userColors, defaultPrimaryColor, lightTheme)
         ChatEventBaseItem(
             iconRes = R.drawable.kick_star,
             segments = segments,
@@ -152,35 +160,14 @@ fun ChatMessageItem(
 
     // 3. Chat Celebration Event (Resub / Celebration message)
     if (message.isCelebration) {
-        val defaultPrimaryColor = MaterialTheme.colorScheme.primary
-        val celebration = message.metadata?.celebration
-        val senderName = message.sender?.username?.takeIf { it.isNotBlank() }
-            ?: celebration?.sender?.username?.takeIf { it.isNotBlank() }
-            ?: celebration?.username?.takeIf { it.isNotBlank() }
-            ?: stringResource(R.string.chat_event_someone)
-        val rawColor = message.sender?.identity?.color
-            ?: celebration?.sender?.identity?.color
-            ?: userColors[senderName.lowercase()]
-        val userColor = remember(rawColor, defaultPrimaryColor) {
-            ChatTextParser.parseHexColor(rawColor, defaultPrimaryColor)
-        }
-        val months = celebration?.totalMonths?.takeIf { it > 0 }
-
-        val segments = celebrationEventSegments(eventContext, senderName, months,
-            userColor = userColor, primaryColor = defaultPrimaryColor)
-        ChatEventBaseItem(
-            iconRes = subscriptionCelebrationIcon(celebration),
-            segments = segments,
-            bodyContent = message.content.takeIf { it.isNotBlank() }?.let {
-                stringResource(R.string.chat_event_celebration_message, senderName, it)
-            },
-            subtitle = months?.let { stringResource(R.string.chat_event_celebration_milestone, it) },
+        ChatCelebrationItem(
+            celebration = message.metadata?.celebration,
+            sender = message.sender,
+            message = message.content,
+            userColors = userColors,
             subscriptionGoal = subscriptionGoal,
-            contentPadding = 10.dp,
             fontSizeSp = fontSizeSp,
-            stripeColor = userColor,
             onUsernameClick = onEventUserClick,
-            iconTint = defaultPrimaryColor,
             streamerUsername = streamerUsername,
             streamerSlug = streamerSlug,
             modifier = modifier
@@ -194,8 +181,8 @@ fun ChatMessageItem(
         val defaultPrimaryColor = MaterialTheme.colorScheme.primary
         val subUsername = subEvent.username.ifBlank { stringResource(R.string.chat_event_someone) }
         val subRawColor = userColors[subUsername.lowercase()]
-        val userColor = remember(subRawColor, defaultPrimaryColor) {
-            ChatTextParser.parseHexColor(subRawColor, defaultPrimaryColor)
+        val userColor = remember(subRawColor, defaultPrimaryColor, lightTheme) {
+            ChatTextParser.parseUsernameColor(subRawColor, defaultPrimaryColor, lightTheme)
         }
         val months = subEvent.totalMonths ?: subEvent.months
         val extraSubscribers = (subEvent.userIds.size - 1).coerceAtLeast(0)
@@ -221,8 +208,8 @@ fun ChatMessageItem(
     val senderName = message.sender?.username ?: stringResource(R.string.chat_event_user)
     val defaultUsernameColor = MaterialTheme.colorScheme.primary
     val rawSenderColor = message.sender?.identity?.color ?: userColors[senderName.lowercase()]
-    val usernameColor = remember(rawSenderColor, defaultUsernameColor) {
-        ChatTextParser.parseHexColor(rawSenderColor, defaultUsernameColor)
+    val usernameColor = remember(rawSenderColor, defaultUsernameColor, lightTheme) {
+        ChatTextParser.parseUsernameColor(rawSenderColor, defaultUsernameColor, lightTheme)
     }
 
     val isBroadcaster = remember(
@@ -329,8 +316,8 @@ fun ChatMessageItem(
                 ?: originalMessage.sender?.identity?.color
                 ?: userColors[originalSenderName.lowercase()]
 
-            val originalSenderColor = remember(rawOriginalColor, defaultUsernameColor, broadcasterPalette) {
-                val parsed = ChatTextParser.parseHexColor(rawOriginalColor, defaultUsernameColor)
+            val originalSenderColor = remember(rawOriginalColor, defaultUsernameColor, broadcasterPalette, lightTheme) {
+                val parsed = ChatTextParser.parseUsernameColor(rawOriginalColor, defaultUsernameColor, lightTheme)
                 if (broadcasterPalette != null) {
                     ensureReadableColorOnBackground(parsed, broadcasterPalette.backgroundColor)
                 } else {
@@ -468,6 +455,56 @@ private fun ensureReadableColorOnBackground(
     return Color(fgArgb)
 }
 
+@Composable
+internal fun ChatCelebrationItem(
+    celebration: ChatCelebration?,
+    sender: ChatSender?,
+    message: String?,
+    userColors: Map<String, String>,
+    subscriptionGoal: com.lechixy.kick.data.channel.model.KickGoalDto?,
+    fontSizeSp: Int,
+    onUsernameClick: ((String) -> Unit)?,
+    streamerUsername: String?,
+    streamerSlug: String?,
+    modifier: Modifier = Modifier,
+    contentPadding: Dp = 10.dp,
+    trailingContent: (@Composable () -> Unit)? = null,
+) {
+    val primaryColor = MaterialTheme.colorScheme.primary
+    val lightTheme = isLightChatTheme()
+    val username = sender?.username?.takeIf { it.isNotBlank() }
+        ?: celebration?.sender?.username?.takeIf { it.isNotBlank() }
+        ?: celebration?.username?.takeIf { it.isNotBlank() }
+    val name = username ?: stringResource(R.string.chat_event_someone)
+    val rawColor = sender?.identity?.color ?: celebration?.sender?.identity?.color
+        ?: username?.let { userColors[it.lowercase()] }
+    val userColor = remember(rawColor, primaryColor, lightTheme) {
+        ChatTextParser.parseUsernameColor(rawColor, primaryColor, lightTheme)
+    }
+    val months = celebration?.totalMonths?.takeIf { it > 0 }
+    val description = when (months) {
+        null -> stringResource(R.string.chat_event_celebrates)
+        1 -> stringResource(R.string.chat_event_celebrates_month, months)
+        else -> stringResource(R.string.chat_event_celebrates_months, months)
+    }
+    ChatEventBaseItem(
+        iconRes = subscriptionCelebrationIcon(celebration),
+        segments = listOf(ChatTextParser.EventTextSegment(name, isBold = true, username = username)),
+        description = description,
+        bodyContent = message,
+        bodyAuthor = ChatTextParser.EventTextSegment(name, isBold = true, color = userColor, username = username),
+        subscriptionGoal = subscriptionGoal,
+        contentPadding = contentPadding,
+        fontSizeSp = fontSizeSp,
+        stripeColor = userColor,
+        onUsernameClick = onUsernameClick,
+        streamerUsername = streamerUsername,
+        streamerSlug = streamerSlug,
+        modifier = modifier,
+        trailingContent = trailingContent
+    )
+}
+
 /**
  * Reusable compact base layout for chat events (Reward Redeemed, Gifted Subscriptions, New Subscriptions, etc.).
  */
@@ -485,24 +522,16 @@ fun ChatEventBaseItem(
     streamerSlug: String? = null,
     onUsernameClick: ((String) -> Unit)? = null,
     subscriptionGoal: com.lechixy.kick.data.channel.model.KickGoalDto? = null,
-    subtitle: String? = null,
+    description: String? = null,
+    bodyAuthor: ChatTextParser.EventTextSegment? = null,
     trailingContent: (@Composable () -> Unit)? = null
 ) {
-    val boldColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.9f)
     val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.78f)
     val backgroundColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.95f)
+    val onSurface = MaterialTheme.colorScheme.onSurface
+    val bodyColor = if (description != null && backgroundColor.luminance() < 0.5f) Color.White else onSurface
     val headerFontSizeSp = (fontSizeSp - 1).coerceAtLeast(11)
     val stripeWidth = 4.dp
-
-    val parsedHeader = ChatTextParser.parseEventHeader(
-        iconRes = iconRes,
-        iconTint = iconTint,
-        segments = segments,
-        boldColor = boldColor,
-        mutedColor = mutedColor,
-        fontSizeSp = headerFontSizeSp,
-        onUsernameClick = onUsernameClick
-    )
 
     Row(
         modifier = modifier
@@ -522,7 +551,31 @@ fun ChatEventBaseItem(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        if (description != null) {
+            Icon(
+                painter = painterResource(iconRes),
+                contentDescription = null,
+                tint = iconTint,
+                modifier = Modifier.align(Alignment.Top).size(20.dp)
+            )
+        }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            val parsedHeader = if (description != null) {
+                ParsedChatMessage(
+                    ChatTextParser.buildEventAnnotatedString(segments, bodyColor, mutedColor, onUsernameClick),
+                    emptyMap()
+                )
+            } else {
+                ChatTextParser.parseEventHeader(
+                    iconRes = iconRes,
+                    iconTint = iconTint,
+                    segments = segments,
+                    boldColor = onSurface.copy(alpha = 0.9f),
+                    mutedColor = mutedColor,
+                    fontSizeSp = headerFontSizeSp,
+                    onUsernameClick = onUsernameClick
+                )
+            }
             Text(
                 text = parsedHeader.annotatedString,
                 inlineContent = parsedHeader.inlineContent,
@@ -532,8 +585,13 @@ fun ChatEventBaseItem(
                 modifier = Modifier.fillMaxWidth()
             )
 
-            if (subtitle != null) {
-                Text(subtitle, style = MaterialTheme.typography.labelSmall, color = mutedColor)
+            if (description != null) {
+                Text(
+                    text = description,
+                    fontSize = headerFontSizeSp.sp,
+                    lineHeight = (headerFontSizeSp + 4).sp,
+                    color = mutedColor
+                )
             }
 
             if (!bodyContent.isNullOrBlank()) {
@@ -555,13 +613,20 @@ fun ChatEventBaseItem(
                     streamerMentionShadow = streamerMentionShadow
                 )
 
-                ChatClipLinks(parsedBody.annotatedString) {
+                val body = if (bodyAuthor == null) parsedBody.annotatedString else buildAnnotatedString {
+                    append(ChatTextParser.buildEventAnnotatedString(
+                        listOf(bodyAuthor), bodyColor, mutedColor, onUsernameClick
+                    ))
+                    append(": ")
+                    append(parsedBody.annotatedString)
+                }
+                ChatClipLinks(body) {
                     Text(
-                        text = parsedBody.annotatedString.withMentionLinks(onUsernameClick),
+                        text = body.withMentionLinks(onUsernameClick),
                         inlineContent = parsedBody.inlineContent,
                         fontSize = fontSizeSp.sp,
                         lineHeight = (fontSizeSp + 5).sp,
-                        color = MaterialTheme.colorScheme.onSurface,
+                        color = bodyColor,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }

@@ -1,10 +1,12 @@
 package com.lechixy.kick.components.channel.chat
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
@@ -57,15 +59,11 @@ internal fun ChatComposerPanel(
                 if (collapsedActions != null) {
                     ChatRestoreOverlay(visible = !expanded, side = -1,
                         modifier = Modifier.align(Alignment.BottomStart).padding(start = 10.dp, bottom = 6.dp)) {
-                        Surface(
-                            shape = RoundedCornerShape(10.dp),
-                            color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                            shadowElevation = 4.dp
+                        Row(
+                            verticalAlignment = Alignment.Bottom,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Row(Modifier.padding(horizontal = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                                collapsedActions()
-                            }
+                            collapsedActions()
                         }
                     }
                 }
@@ -73,8 +71,16 @@ internal fun ChatComposerPanel(
         }
         if (rulesFooter != null) {
             rulesFooter()
-        } else if (!compact || expanded) {
+        } else if (!compact) {
             content()
+        } else {
+            AnimatedVisibility(
+                visible = expanded,
+                enter = expandVertically(tween(220), expandFrom = Alignment.Bottom) + fadeIn(tween(160)),
+                exit = shrinkVertically(tween(180), shrinkTowards = Alignment.Bottom) + fadeOut(tween(130))
+            ) {
+                content()
+            }
         }
     }
 }

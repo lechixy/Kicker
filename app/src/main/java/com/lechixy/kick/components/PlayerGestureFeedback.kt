@@ -1,6 +1,7 @@
 package com.lechixy.kick.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -46,6 +47,14 @@ import androidx.compose.ui.unit.dp
 import com.lechixy.kick.R
 import com.lechixy.kick.components.channel.chat.FullscreenChatVideoFrame
 
+internal class PlayerZoomMotion(
+    val from: PlayerVideoZoom,
+    val durationMillis: Int,
+    val snappingToFill: Boolean,
+) {
+    val progress = Animatable(0f)
+}
+
 internal suspend fun PointerInputScope.detectPlayerPinch(
     onTransform: (centroid: Offset, pan: Offset, zoom: Float) -> Unit,
     onPinchEnd: () -> Unit,
@@ -80,7 +89,7 @@ internal suspend fun PointerInputScope.detectPlayerPinch(
 @Composable
 internal fun PlayerZoomResetButton(
     label: String?,
-    onReset: () -> Unit,
+    onReset: (() -> Unit)?,
     frame: State<FullscreenChatVideoFrame?>?,
     backdrop: FrostedPlayerRegions?,
     videoReady: Boolean,
@@ -94,13 +103,16 @@ internal fun PlayerZoomResetButton(
         enter = playbackButtonEnter + fadeIn(tween(200)),
         exit = playbackButtonExit + fadeOut(tween(160)),
     ) {
-        Box(
-            Modifier.clip(CircleShape).clickable(
+        val resetModifier = if (onReset == null) Modifier else {
+            Modifier.clickable(
                 enabled = label != null,
                 role = Role.Button,
                 onClickLabel = stringResource(R.string.player_reset_zoom),
                 onClick = onReset,
-            ),
+            )
+        }
+        Box(
+            Modifier.clip(CircleShape).then(resetModifier),
             contentAlignment = Alignment.Center,
         ) {
             FrostedPlayerControl(frame, backdrop, videoReady, followsControlsOpacity = false)

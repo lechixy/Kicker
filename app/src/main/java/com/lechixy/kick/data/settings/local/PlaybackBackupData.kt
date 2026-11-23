@@ -32,7 +32,7 @@ internal data class PlaybackBackupData(
     fun withoutPlaybackUrls() = copy(
         history = history.map { it.copy(recording = it.recording?.copy(directUrl = null)) },
         downloadQueue = downloadQueue
-            .filter { it.recording.directUrl == null || it.recording.id.startsWith("clip_") }
+            .filter { it.liveSnapshot == null && (it.recording.directUrl == null || it.recording.id.startsWith("clip_")) }
             .map { it.copy(recording = it.recording.copy(directUrl = null)) },
     )
 }

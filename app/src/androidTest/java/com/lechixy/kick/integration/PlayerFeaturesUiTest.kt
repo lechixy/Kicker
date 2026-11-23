@@ -32,8 +32,11 @@ import androidx.compose.ui.test.click
 import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.longClick
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onNodeWithTag
@@ -68,9 +71,12 @@ import com.lechixy.kick.components.detectRecordingTaps
 import com.lechixy.kick.components.channel.ExpandableProfilePhoto
 import com.lechixy.kick.components.channel.ChannelMediaTags
 import com.lechixy.kick.components.channel.ChannelMediaTitle
+import com.lechixy.kick.components.channel.chat.FullscreenChatBackdropRegion
+import com.lechixy.kick.components.channel.chat.VideoBackdropBlur
 import com.lechixy.kick.components.settings.SettingSwitch
 import com.lechixy.kick.data.channel.model.ChannelEvent
 import com.lechixy.kick.data.common.remote.ConnectionNotice
+import com.lechixy.kick.data.settings.model.FullscreenChatBlurStyle
 import com.lechixy.kick.data.settings.repository.LocalSettingsRepository
 import com.lechixy.kick.data.settings.repository.LocalBlurEffectsEnabled
 import com.lechixy.kick.data.settings.repository.SettingsRepository
@@ -111,10 +117,11 @@ class PlayerFeaturesUiTest {
     @Test fun videoNoiseReductionSoftensFineNoiseAndPreservesStrongEdges() {
         assumeTrue(Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
         var enabled by mutableStateOf(false)
-        var texture: TextureView? = null
+        var texture by mutableStateOf<TextureView?>(null)
         compose.setContent {
             Box(Modifier.size(160.dp).testTag("noise-reduction-video")) {
-                PlayerVideoSurface(null, false, Modifier.fillMaxSize(), reduceNoise = enabled) { texture = it }
+                PlayerVideoSurface(null, false, Modifier.fillMaxSize()) { texture = it }
+                VideoBackdropBlur(texture, emptyList(), reduceNoise = enabled)
             }
         }
         compose.runOnIdle {
@@ -150,6 +157,61 @@ class PlayerFeaturesUiTest {
 
         compose.runOnIdle { enabled = false }
         compose.waitUntil(5_000) { sample().first >= noiseBefore - 0.005f }
+    }
+
+    @Test fun videoBackdropBlurSurvivesNoiseReductionAndCanBeToggledIndependently() {
+        assumeTrue(Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+        var texture by mutableStateOf<TextureView?>(null)
+        var blurEnabled by mutableStateOf(false)
+        var reduceNoise by mutableStateOf(false)
+        var region by mutableStateOf<FullscreenChatBackdropRegion?>(null)
+        compose.setContent {
+            CompositionLocalProvider(LocalBlurEffectsEnabled provides blurEnabled) {
+                Box(Modifier.size(180.dp).testTag("video-effects").onGloballyPositioned {
+                    val bounds = it.boundsInWindow()
+                    region = FullscreenChatBackdropRegion(
+                        Rect(bounds.left, bounds.top, bounds.right, bounds.center.y),
+                        style = FullscreenChatBlurStyle.FrostedGlass,
+                    )
+                }) {
+                    PlayerVideoSurface(null, false, Modifier.fillMaxSize()) { texture = it }
+                    VideoBackdropBlur(texture, listOfNotNull(region), reduceNoise = reduceNoise)
+                }
+            }
+        }
+        compose.runOnIdle {
+            val video = checkNotNull(texture)
+            video.rootView.findViewById<View>(androidx.media3.ui.R.id.exo_shutter).visibility = View.INVISIBLE
+            val canvas = checkNotNull(video.lockCanvas())
+            try {
+                canvas.drawColor(AndroidColor.BLACK)
+                canvas.drawRect(
+                    video.width / 2f, 0f, video.width.toFloat(), video.height.toFloat(),
+                    Paint().apply { color = AndroidColor.WHITE },
+                )
+            } finally {
+                video.unlockCanvasAndPost(canvas)
+            }
+        }
+        val video = compose.onNodeWithTag("video-effects")
+        fun sample(): Pair<Float, Float> {
+            val pixels = video.captureToImage().toPixelMap()
+            val x = pixels.width / 2 - pixels.width / 24
+            return pixels[x, pixels.height / 4].red to pixels[x, pixels.height * 3 / 4].red
+        }
+        compose.waitUntil(5_000) { sample().let { (inside, outside) -> inside < 0.05f && outside < 0.05f } }
+
+        fun assertBackdropBlur() {
+            compose.waitUntil(5_000) { sample().let { (inside, outside) -> inside > 0.10f && outside < 0.05f } }
+        }
+        compose.runOnIdle { blurEnabled = true }
+        assertBackdropBlur()
+        compose.runOnIdle { reduceNoise = true }
+        assertBackdropBlur()
+        compose.runOnIdle { blurEnabled = false }
+        compose.waitUntil(5_000) { sample().first < 0.05f }
+        compose.runOnIdle { blurEnabled = true }
+        assertBackdropBlur()
     }
 
     @Test fun liveDurationSitsAboveProgressAndFullscreenViewerCountFollowsLiveBadge() {

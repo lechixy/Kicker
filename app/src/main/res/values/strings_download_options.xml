@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="recording_download_entire">Entire recording</string>
+    <string name="recording_download_partial">Select a range</string>
+    <string name="recording_download_from_resume">Start where I left off (%1$s)</string>
+    <string name="recording_download_range_start">Start</string>
+    <string name="recording_download_range_end">End</string>
+    <string name="recording_download_range_summary">%1$s – %2$s · %3$s</string>
+    <string name="recording_download_invalid_range">Enter a range within the recording in HH:MM:SS.</string>
+    <string name="recording_download_estimated_size">Estimated size: %1$s</string>
+    <string name="recording_download_size_unknown">Estimated size unavailable</string>
+    <string name="recording_download_live_window">You can download the portion of the live stream available when this window opened.</string>
+    <string name="recording_download_source_failed">Couldn’t load the recording for download.</string>
+    <string name="recording_download_preview">Play preview</string>
+    <string name="recording_download_pause_preview">Pause preview</string>
+</resources>

@@ -2,7 +2,9 @@ package com.lechixy.kick.data.player.local
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.lechixy.kick.data.player.model.LiveDownloadSnapshot
 import com.lechixy.kick.data.player.model.RecordedPlayback
+import com.lechixy.kick.data.player.model.RecordingDownloadSelection
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -14,7 +16,15 @@ internal data class RecordingDownloadTask(
     val id: String,
     val recording: RecordedPlayback,
     val failed: Boolean = false,
+    val selection: RecordingDownloadSelection? = null,
+    val liveSnapshot: LiveDownloadSnapshot? = null,
 )
+
+private fun RecordingDownloadTask.sameDownload(other: RecordingDownloadTask): Boolean =
+    recording.progressId == other.recording.progressId &&
+        selection?.range == other.selection?.range &&
+        (selection?.timelineOffsetMs ?: 0L) == (other.selection?.timelineOffsetMs ?: 0L) &&
+        liveSnapshot == other.liveSnapshot
 
 internal data class RecordingDownloadProgress(
     val id: String,
@@ -39,10 +49,16 @@ internal object RecordingDownloadQueue {
         }.getOrDefault(emptyList())
     }
 
-    fun enqueue(recording: RecordedPlayback): Boolean {
-        if (tasks.value.any { it.recording.progressId == recording.progressId && !it.failed }) return false
-        val entries = tasks.value.filterNot { it.recording.progressId == recording.progressId }
-        update(entries + RecordingDownloadTask(UUID.randomUUID().toString(), recording))
+    fun enqueue(
+        recording: RecordedPlayback,
+        selection: RecordingDownloadSelection?,
+        liveSnapshot: LiveDownloadSnapshot?,
+    ): Boolean {
+        val entry = RecordingDownloadTask(UUID.randomUUID().toString(), recording,
+            selection = selection, liveSnapshot = liveSnapshot)
+        if (tasks.value.any { !it.failed && it.sameDownload(entry) }) return false
+        val entries = tasks.value.filterNot { it.sameDownload(entry) }
+        update(entries + entry)
         return true
     }
 
@@ -58,8 +74,12 @@ internal object RecordingDownloadQueue {
     fun updateProgress(progress: RecordingDownloadProgress?) { mutableProgress.value = progress }
 
     fun restore(entries: List<RecordingDownloadTask>) {
-        val valid = entries.filter { it.id.isNotBlank() && it.recording.id.isNotBlank() && it.recording.directUrl == null }
-        update((tasks.value + valid).distinctBy { it.id }.distinctBy { it.recording.progressId })
+        val valid = entries.filter {
+            it.id.isNotBlank() && it.recording.id.isNotBlank() && it.recording.directUrl == null && it.liveSnapshot == null
+        }
+        update((tasks.value + valid).distinctBy { it.id }.fold(emptyList()) { result, task ->
+            if (result.any { it.sameDownload(task) }) result else result + task
+        })
     }
 
     private fun update(entries: List<RecordingDownloadTask>) {

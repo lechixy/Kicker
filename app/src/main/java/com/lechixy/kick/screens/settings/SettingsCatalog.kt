@@ -229,6 +229,10 @@ internal fun settingsCatalog(expandGroups: Boolean = false): List<SettingsEntry>
                 icon = R.drawable.hd_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
                 options = listOf(-1 to stringResource(R.string.player_auto), 160 to "160p", 360 to "360p", 480 to "480p", 720 to "720p (HD)", 1080 to "1080p (FHD)"))
         },
+        SettingsEntry("video-noise-reduction", R.string.player_video_noise_reduction, R.string.player_video_noise_reduction_description,
+            playback, R.string.settings_group_streaming, searchTerms = listOf(R.string.player_experimental)) {
+            VideoNoiseReductionSetting()
+        },
         SettingsEntry("chat-connection", R.string.settings_chat_connection, null, chat, R.string.fullscreen_chat_connection) {
             SettingSwitch(SettingsKeys.AUTO_CONNECT_CHAT, stringResource(R.string.settings_chat_connection),
                 icon = R.drawable.chat_24dp_e3e3e3_fill0_wght400_grad0_opsz24)

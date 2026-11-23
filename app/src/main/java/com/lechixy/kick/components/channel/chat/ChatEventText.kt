@@ -19,6 +19,7 @@ import com.lechixy.kick.components.channel.StripedProgressBar
 import com.lechixy.kick.data.channel.model.KickGoalDto
 import com.lechixy.kick.util.FormatUtils
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import com.lechixy.kick.R
 import com.lechixy.kick.data.chat.model.ChatCelebration
 import com.lechixy.kick.data.chat.model.GiftedSubscriptionsEvent
@@ -29,11 +30,15 @@ import java.util.Locale
 internal fun subscriptionCelebrationIcon(celebration: ChatCelebration?): Int {
     val type = celebration?.type.orEmpty()
     val isAnniversary = type.contains("anniversary", ignoreCase = true) ||
+        type.equals("subscription_renewed", ignoreCase = true) ||
         (type.isBlank() && (celebration?.totalMonths ?: 0) > 0)
-    return if (isAnniversary) R.drawable.hotel_class_24dp_e3e3e3_fill1_wght400_grad0_opsz24 else R.drawable.kick_star
+    return if (isAnniversary) R.drawable.kick_stars else R.drawable.kick_star
 }
 
 private val eventArgument = Regex("%(?:(\\d+)[$]s|%)")
+
+@Composable
+internal fun isLightChatTheme(): Boolean = MaterialTheme.colorScheme.surface.luminance() > 0.5f
 
 /** Positional resource arguments retain their styling and links even when a translation reorders them. */
 internal fun eventTextSegments(
@@ -83,31 +88,17 @@ internal fun subscriptionEventSegments(
     }
 }
 
-internal fun celebrationEventSegments(
-    context: Context,
-    username: String,
-    months: Int?,
-    userColor: Color,
-    primaryColor: Color
-): List<ChatTextParser.EventTextSegment> {
-    if (months == null || months <= 0) {
-        return subscriptionEventSegments(context, username, months, userColor = userColor, primaryColor = primaryColor)
-    }
-    val template = context.getString(if (months == 1) R.string.chat_event_celebrates_month
-        else R.string.chat_event_celebrates_months)
-    return eventTextSegments(template, eventUser(username, userColor), context.eventCount(months, primaryColor))
-}
-
 internal fun giftedEventSegments(
     context: Context,
     event: GiftedSubscriptionsEvent,
     userColors: Map<String, String>,
-    primaryColor: Color
+    primaryColor: Color,
+    lightTheme: Boolean = false
 ): List<ChatTextParser.EventTextSegment> {
     val recipients = event.giftedUsernames.filter { it.isNotBlank() }
     val count = event.giftedTotal?.takeIf { it > 0 } ?: recipients.size.coerceAtLeast(1)
     fun user(name: String) = eventUser(name,
-        ChatTextParser.parseHexColor(userColors[name.lowercase(Locale.ROOT)], primaryColor))
+        ChatTextParser.parseUsernameColor(userColors[name.lowercase(Locale.ROOT)], primaryColor, lightTheme))
     val gifter = if (event.gifterUsername.isBlank())
         eventUser(context.getString(R.string.chat_event_anonymous), primaryColor, username = null)
         else user(event.gifterUsername)
@@ -137,10 +128,11 @@ internal fun raidEventSegments(context: Context, username: String, count: Int, c
 internal fun kicksGiftedSegments(
     context: Context,
     event: com.lechixy.kick.data.chat.model.KicksGiftedEvent,
-    accent: Color
+    accent: Color,
+    lightTheme: Boolean
 ) = eventTextSegments(
     context.getString(R.string.chat_event_kicks_gifted),
-    eventUser(event.sender.username, ChatTextParser.parseHexColor(event.sender.usernameColor, accent)),
+    eventUser(event.sender.username, ChatTextParser.parseUsernameColor(event.sender.usernameColor, accent, lightTheme)),
     context.eventCount(event.gift.amount, accent),
     eventUser(event.gift.name, accent, username = null)
 )

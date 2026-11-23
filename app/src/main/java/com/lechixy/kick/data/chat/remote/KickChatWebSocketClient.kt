@@ -40,6 +40,7 @@ import com.lechixy.kick.data.chat.model.CentrifugoPushFrame
 import com.lechixy.kick.data.chat.model.CentrifugoRefreshFrame
 import com.lechixy.kick.data.chat.model.CentrifugoSubscribeFrame
 import com.lechixy.kick.data.chat.model.CentrifugoSubscriptionRefresh
+import com.lechixy.kick.data.chat.model.CentrifugoUnsubscribeFrame
 import com.lechixy.kick.data.chat.model.ChannelSubscriptionEvent
 import com.lechixy.kick.data.chat.model.ChatCelebration
 import com.lechixy.kick.data.chat.model.ChatMessage
@@ -50,6 +51,9 @@ import com.lechixy.kick.data.chat.model.ConnectPayload
 import com.lechixy.kick.data.chat.model.ConnectionRefreshPayload
 import android.os.SystemClock
 import com.lechixy.kick.data.channel.model.KickGoalDto
+import com.lechixy.kick.data.channel.model.ChannelEventParticipation
+import com.lechixy.kick.data.channel.model.LivestreamUpdatedEvent
+import com.lechixy.kick.data.channel.model.ViewerCountUpdatedEvent
 import com.lechixy.kick.data.chat.model.ChatPointsUpdate
 import com.lechixy.kick.data.chat.model.GiftedSubscriptionsEvent
 import com.lechixy.kick.data.chat.model.GiftsLeaderboardUpdatedEvent
@@ -70,6 +74,7 @@ import com.lechixy.kick.data.chat.model.StreamHostedEvent
 import com.lechixy.kick.data.chat.model.StreamerIsLiveEvent
 import com.lechixy.kick.data.chat.model.SubscribePayload
 import com.lechixy.kick.data.chat.model.SubscriptionRefreshPayload
+import com.lechixy.kick.data.chat.model.UnsubscribePayload
 import com.lechixy.kick.data.chat.model.NewSubscriberUpdate
 import com.lechixy.kick.data.chat.model.UserBannedEvent
 import com.lechixy.kick.data.chat.model.mergeChatHistory
@@ -111,10 +116,13 @@ class KickChatWebSocketClient(
         .build()
 
     private var webSocket: WebSocket? = null
+    private var socketListener: ChatSocketListener? = null
     private val clientScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private var currentChannelId: Long? = null
     private var currentChatroomId: Long? = null
+    private var currentLivestreamId: Long? = null
+    private var currentDropsCategoryId: Long? = null
     private var reconnectJob: Job? = null
     private var heartbeatJob: Job? = null
     private var connectionRefreshJob: Job? = null
@@ -215,9 +223,10 @@ class KickChatWebSocketClient(
     }
 
     @Synchronized
-    fun connect(channelId: Long, chatroomId: Long) {
+    fun connect(channelId: Long, chatroomId: Long, livestreamId: Long?, dropsCategoryId: Long?) {
         val isSameChannel = currentChannelId == channelId && currentChatroomId == chatroomId
         if (isSameChannel && _connectionState.value in setOf(ChatConnectionState.CONNECTED, ChatConnectionState.CONNECTING)) {
+            updateLivestreamSubscriptions(channelId, livestreamId, dropsCategoryId)
             return
         }
 
@@ -226,6 +235,8 @@ class KickChatWebSocketClient(
 
         currentChannelId = channelId
         currentChatroomId = chatroomId
+        currentLivestreamId = livestreamId
+        currentDropsCategoryId = dropsCategoryId
         retryDelayMs = 1_000L
 
         batchJob = clientScope.launch {
@@ -243,6 +254,14 @@ class KickChatWebSocketClient(
         connectionJob = clientScope.launch {
             startConnectionFlow(channelId, chatroomId, generation)
         }
+    }
+
+    @Synchronized
+    internal fun updateLivestreamSubscriptions(channelId: Long, livestreamId: Long?, dropsCategoryId: Long?) {
+        if (currentChannelId != channelId) return
+        currentLivestreamId = livestreamId
+        currentDropsCategoryId = dropsCategoryId
+        webSocket?.let { socketListener?.syncLivestreamSubscriptions(it) }
     }
 
     private suspend fun startConnectionFlow(channelId: Long, chatroomId: Long, generation: Long) {
@@ -305,6 +324,7 @@ class KickChatWebSocketClient(
                 val listener = ChatSocketListener(
                     token, guestClientId, channelId, chatroomId, authenticatedToken != null, refreshToken,
                 )
+                socketListener = listener
                 val socket = client.newWebSocket(request, listener)
                 webSocket = socket
                 lastChatMessageAt = SystemClock.elapsedRealtime()
@@ -342,6 +362,9 @@ class KickChatWebSocketClient(
         private var nextCommandId = 10
         private val commandReplies = mutableMapOf<Int, CompletableDeferred<JsonObject>>()
         private val confirmedSubscriptions = mutableSetOf<String>()
+        private var connectionAccepted = false
+        private val requestedLivestreamTopics = mutableSetOf<String>()
+        private val livestreamSubscribeReplies = mutableMapOf<Int, String>()
         private val roomRepliesPending = subscriptions.filterValues { it.startsWith("chatroom") }.keys.toMutableSet()
         private val startedAt = SystemClock.elapsedRealtime()
         private var lastFrameAt = startedAt
@@ -431,6 +454,10 @@ class KickChatWebSocketClient(
                             confirmedSubscriptions.remove(pointsChannel)
                             startPointsSubscription(webSocket)
                         } else if (push["unsubscribe"] != null && unsubscribedChannel != null &&
+                            requestedLivestreamTopics.remove(unsubscribedChannel)
+                        ) {
+                            syncLivestreamSubscriptions(webSocket)
+                        } else if (push["unsubscribe"] != null && unsubscribedChannel != null &&
                             unsubscribedChannel in confirmedSubscriptions
                         ) {
                             reconnect(webSocket, "Server removed a chat subscription")
@@ -468,9 +495,19 @@ class KickChatWebSocketClient(
                         return
                     }
                 }
+                connectionAccepted = true
+                syncLivestreamSubscriptions(socket)
+                if (this@KickChatWebSocketClient.webSocket !== socket) return
                 connectionRefreshJob?.cancel()
                 connectionRefreshJob = clientScope.launch { refreshConnection(socket, result) }
                 if (authenticated) startPointsSubscription(socket)
+                return
+            }
+
+            livestreamSubscribeReplies.remove(id)?.let { topic ->
+                if (root["subscribe"] !is JsonObject || root["error"] != null) {
+                    Log.w(tag, "Livestream subscription rejected for $topic")
+                }
                 return
             }
 
@@ -485,6 +522,33 @@ class KickChatWebSocketClient(
                 }
             } else if (isChatroom && connectedAt == null && roomRepliesPending.isEmpty()) {
                 reconnect(socket, "Chat room subscriptions rejected")
+            }
+        }
+
+        fun syncLivestreamSubscriptions(socket: WebSocket) {
+            if (!connectionAccepted) return
+            val desired = buildSet {
+                add("viewer-count.$channelId")
+                currentLivestreamId?.let { add("private-livestream.$it") }
+                currentDropsCategoryId?.let { add("drops_category_$it") }
+            }
+            for (topic in requestedLivestreamTopics - desired) {
+                val frame = CentrifugoUnsubscribeFrame(UnsubscribePayload(topic), nextCommandId++)
+                if (!socket.send(json.encodeToString(frame))) {
+                    reconnect(socket, "Could not send livestream unsubscribe command")
+                    return
+                }
+                requestedLivestreamTopics.remove(topic)
+            }
+            for (topic in desired - requestedLivestreamTopics) {
+                val id = nextCommandId++
+                val frame = CentrifugoSubscribeFrame(SubscribePayload(topic), id)
+                if (!socket.send(json.encodeToString(frame))) {
+                    reconnect(socket, "Could not send livestream subscribe command")
+                    return
+                }
+                requestedLivestreamTopics.add(topic)
+                livestreamSubscribeReplies[id] = topic
             }
         }
 
@@ -603,6 +667,17 @@ class KickChatWebSocketClient(
             val isChannelPublication = publicationChannel == "channel_$channelId" || publicationChannel == "channel.$channelId"
 
             when (eventType) {
+                "App\\Events\\EventParticipantJoined", "EventParticipantJoined",
+                "App\\Events\\EventParticipantLeft", "EventParticipantLeft" -> {
+                    if (!isChannelPublication) return
+                    val event = rawData?.let { decodeEventPayload<ChannelEventParticipation>(it) } ?: return
+                    if (event.channelId != channelId || event.eventId.isBlank()) return
+                    publishEvent(ChatWebSocketEvent.EventParticipationChanged(
+                        event = event,
+                        joined = eventType.endsWith("EventParticipantJoined"),
+                    ))
+                }
+
                 "App\\Events\\ChatMoveToSupportedChannelEvent", "ChatMoveToSupportedChannelEvent" -> {
                     if ((pushFrame.push?.channel ?: pushFrame.channel) != "channel.$channelId") return
                     val event = rawData?.let { decodeEventPayload<com.lechixy.kick.data.chat.model.ChannelRaid>(it) } ?: return
@@ -799,6 +874,22 @@ class KickChatWebSocketClient(
                     publishEvent(ChatWebSocketEvent.StreamerIsLive(event))
                 }
 
+                "App\\Events\\LivestreamUpdated", "LivestreamUpdated" -> {
+                    val livestreamId = currentLivestreamId ?: return
+                    if (publicationChannel != "private-livestream.$livestreamId") return
+                    val update = rawData?.let { decodeEventPayload<LivestreamUpdatedEvent>(it) }?.livestream ?: return
+                    if (update.id != livestreamId || update.channelId != channelId) return
+                    publishEvent(ChatWebSocketEvent.LivestreamUpdated(update))
+                }
+
+                "App\\Events\\ViewerCountUpdated", "ViewerCountUpdated" -> {
+                    val livestreamId = currentLivestreamId ?: return
+                    if (publicationChannel != "viewer-count.$channelId") return
+                    val event = rawData?.let { decodeEventPayload<ViewerCountUpdatedEvent>(it) } ?: return
+                    if (event.channelId != channelId || event.viewerCount < 0) return
+                    publishEvent(ChatWebSocketEvent.ViewerCountUpdated(livestreamId, event))
+                }
+
                 "App\\Events\\StopStreamBroadcast",
                 "StopStreamBroadcast" -> {
                     val data = rawData ?: return
@@ -901,6 +992,7 @@ class KickChatWebSocketClient(
         val generation = ++connectionGeneration
         val socket = webSocket
         webSocket = null
+        socketListener = null
         socket?.cancel()
         heartbeatJob?.cancel()
         connectionRefreshJob?.cancel()
@@ -921,7 +1013,7 @@ class KickChatWebSocketClient(
         val chatroomId = currentChatroomId ?: return
         if (_connectionState.value == ChatConnectionState.DISCONNECTED) return
         disconnectInternal(clearMessages = false)
-        connect(channelId, chatroomId)
+        connect(channelId, chatroomId, currentLivestreamId, currentDropsCategoryId)
     }
 
     @Synchronized
@@ -944,10 +1036,13 @@ class KickChatWebSocketClient(
         _pointsUpdated.value = null
         val socket = webSocket
         webSocket = null
+        socketListener = null
         socket?.cancel()
         if (clearMessages) {
             currentChannelId = null
             currentChatroomId = null
+            currentLivestreamId = null
+            currentDropsCategoryId = null
             _messages.value = emptyList()
             _pinnedMessage.value = null
             _tickerEvents.value = emptyList()

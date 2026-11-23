@@ -14,7 +14,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.unit.dp
@@ -228,7 +230,7 @@ class ChatInputInteractionUiTest {
         compose.onNodeWithText(editor).assertDoesNotExist()
     }
 
-    @Test fun subscriptionCelebrationShowsItsMilestoneMessageAndLiveGoalAtTheRight() {
+    @Test fun subscriptionCelebrationStacksUsernameDescriptionAndMessageWithGoalAtTheRight() {
         val celebration = ChatMessage(
             id = "celebration", type = ChatMessageType.CELEBRATION, sender = ChatSender(id = 42, username = "Plevertk"),
             content = "nice aylara abim",
@@ -242,16 +244,22 @@ class ChatInputInteractionUiTest {
             }
         }
         val context = compose.activity
-        val message = compose.onNodeWithText(context.getString(R.string.chat_event_celebration_message, "Plevertk", celebration.content))
-        message.assertIsDisplayed()
-        compose.onNodeWithText(context.getString(R.string.chat_event_celebration_milestone, 26)).assertIsDisplayed()
+        val username = compose.onNodeWithText("Plevertk").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val description = compose.onNodeWithText(context.getString(R.string.chat_event_celebrates_months, 26))
+            .assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val message = compose.onNodeWithText("Plevertk: ${celebration.content}")
+            .assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        assertTrue(username.bottom <= description.top)
+        assertTrue(description.bottom <= message.top)
+        assertEquals(username.left, description.left, 1f)
+        assertEquals(username.left, message.left, 1f)
 
         val locale = context.resources.configuration.locales[0]
         val goalLabel = listOf(3_600L, 4_000L).joinToString(" / ") {
             com.lechixy.kick.util.FormatUtils.formatCompactCount(it, locale)
         }
         val goal = compose.onNodeWithText(goalLabel).assertIsDisplayed()
-        assertTrue(goal.fetchSemanticsNode().boundsInRoot.left > message.fetchSemanticsNode().boundsInRoot.left)
+        assertTrue(goal.fetchSemanticsNode().boundsInRoot.left >= message.right)
     }
 
     @Test fun giftedSubscriptionGoalAppearsOnceEvenWithTheGiftTickerVisible() {
@@ -279,6 +287,41 @@ class ChatInputInteractionUiTest {
         compose.mainClock.advanceTimeBy(500)
         compose.onNodeWithContentDescription(compose.activity.getString(R.string.hide)).assertIsDisplayed()
         compose.onAllNodesWithText(label).assertCountEquals(1)
+    }
+
+    @Test fun celebrationTickerStacksTheMessageAndUsesTheAdaptiveSenderColor() {
+        val message = ChatMessage(
+            id = "ticker", type = ChatMessageType.CELEBRATION, content = "sa",
+            sender = ChatSender(username = "suyaprak", identity = ChatIdentity(color = "#FFFFFF")),
+            metadata = ChatMessageMetadata(celebration = ChatCelebration(type = "subscription_renewed", totalMonths = 7)),
+        )
+        val event = TimedChatEvent(1, ChatWebSocketEvent.MessageReceived(message),
+            60_000L, SystemClock.elapsedRealtime() + 60_000L)
+        val goal = KickGoalDto(id = "goal", channelId = "channel", type = "subscriptions",
+            targetValue = 6_000, currentValue = 5_800, status = "active")
+        var tickerEvents by mutableStateOf(emptyList<TimedChatEvent>())
+        show {
+            Box(Modifier.size(360.dp, 320.dp)) {
+                ChatView(emptyList(), ChatConnectionState.CONNECTED, tickerEvents = tickerEvents, subscriptionGoal = goal)
+            }
+        }
+        compose.mainClock.autoAdvance = false
+        compose.runOnIdle { tickerEvents = listOf(event) }
+        compose.mainClock.advanceTimeBy(500)
+        val context = compose.activity
+        val username = compose.onNodeWithText("suyaprak").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val description = compose.onNodeWithText(context.getString(R.string.chat_event_celebrates_months, 7))
+            .assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val body = compose.onNodeWithText("suyaprak: sa").assertIsDisplayed().fetchSemanticsNode()
+        val bodyText = body.config[SemanticsProperties.Text].single()
+        assertTrue(bodyText.spanStyles.any { it.start == 0 && it.end == "suyaprak".length && it.item.color == Color.Black })
+        assertTrue(username.bottom <= description.top)
+        assertTrue(description.bottom <= body.boundsInRoot.top)
+        val label = listOf(5_800L, 6_000L).joinToString(" / ") {
+            com.lechixy.kick.util.FormatUtils.formatCompactCount(it, context.resources.configuration.locales[0])
+        }
+        val progress = compose.onNodeWithText(label).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        assertTrue(progress.left >= body.boundsInRoot.right)
     }
 
     @Test fun dropsButtonShowsItsTooltipAndEnablesOnlyWithAnActiveCampaign() {

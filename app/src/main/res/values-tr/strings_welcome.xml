@@ -2,7 +2,7 @@
     <string name="welcome_settings_title">Karşılama ekranı</string>
     <string name="welcome_settings_summary">Kurulumu yeniden aç, Kick hesabını bağla veya bir yedek içe aktar.</string>
     <string name="welcome_intro_title">Kicker’a hoş geldin</string>
-    <string name="welcome_intro_body">Kicker’ı sevdiğin yayınları kolayca bulman, favori yayıncılarını takip etmen ve yayınları kendi tarzında izlemen için geliştirdik.</string>
+    <string name="welcome_intro_body">Kicker’ı sevdiğin yayınları kolayca bulman, favori yayıncılarını takip etmen ve yayınları kendi tarzında izlemen için geliştirdim.</string>
     <string name="welcome_account_title">Kick hesabını bağlamak ister misin?</string>
     <string name="welcome_account_body">Takip ettiğin kanallara ulaş ve sohbete katıl. Misafir olarak da yayınları keşfedebilir ve izleyebilirsin.</string>
     <string name="welcome_account_connected">Kick hesabın bağlandı</string>
@@ -10,7 +10,7 @@
     <string name="welcome_backup_title">Kicker yedeğin var mı?</string>
     <string name="welcome_backup_body">Yedeğini içe aktararak ayarlarını ve izleme geçmişini geri getirebilir veya yeni bir kurulumla devam edebilirsin.</string>
     <string name="welcome_ready_title">Her şey hazır.</string>
-    <string name="welcome_ready_body">Umarız Kicker’ı keyifle kullanırsın. Sohbette görüşürüz!</string>
+    <string name="welcome_ready_body">Umarım Kicker’ı keyifle kullanırsın. Sohbette görüşürüz!</string>
     <string name="welcome_get_started">Başlayalım</string>
     <string name="welcome_continue">Devam et</string>
     <string name="welcome_skip">Şimdilik atla</string>

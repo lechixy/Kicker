@@ -903,6 +903,11 @@ object ChatTextParser {
         }
     }
 
+    internal fun parseUsernameColor(colorStr: String?, defaultColor: Color, lightTheme: Boolean): Color {
+        val color = parseHexColor(colorStr, defaultColor)
+        return if (lightTheme && color == Color.White) Color.Black else color
+    }
+
     fun parseHexColor(colorStr: String?, defaultColor: Color): Color {
         if (colorStr.isNullOrBlank()) return defaultColor
         return try {

@@ -147,9 +147,9 @@ private fun ComposerContent(
             (it.channelId == channel.id && it.livestreamId == channel.livestream.id &&
                 it.accountGeneration == session.generation))
     } ?: DropsUiState.Empty
-    val dropsButton: @Composable () -> Unit = {
+    val dropsButton: @Composable (Boolean) -> Unit = { compactOverlay ->
         if (drops != null) {
-            DropsRewardsButton(dropsState, onClick = {
+            DropsRewardsButton(dropsState, compactOverlay, onClick = {
                 dropsSelection = null
                 showDropsDialog = true
             })
@@ -365,15 +365,15 @@ private fun ComposerContent(
         },
         collapsedActions = if (session.signedIn || drops != null) {
             {
+                dropsButton(true)
                 if (session.signedIn) pointsButton()
-                dropsButton()
             }
         } else null,
         chatContent = {
             val dismissals = drops?.dismissals?.collectAsChatState()?.value
             val realBanner = if (drops != null && dismissals != null && chatActive) {
                 (dropsState as? DropsUiState.Success)?.campaigns?.firstOrNull {
-                    it.banner != null && drops.dismissalKey(channel.id, it.id) !in dismissals
+                    it.banner != null && channel.id !in dismissals
                 }?.banner
             } else null
             key(channel.livestream?.id) {
@@ -382,7 +382,7 @@ private fun ComposerContent(
                     previewId = previewId,
                     onDismiss = { campaignId ->
                         if (campaignId == DeveloperDropsPreview.campaignId) DeveloperDropsPreview.hide()
-                        else drops?.dismissBanner(channel.id, campaignId)
+                        else drops?.dismissBanner(channel.id)
                     },
                     onOpen = { campaignId, rewardId ->
                         dropsSelection = campaignId to rewardId
@@ -399,7 +399,7 @@ private fun ComposerContent(
             verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (!session.signedIn) {
                 AccountSignInState(compact = true)
-                dropsButton()
+                dropsButton(false)
                 return@Column
             }
             effectiveAccess?.settings?.let { settings ->
@@ -501,7 +501,7 @@ private fun ComposerContent(
                         Text(kicks?.let { FormatUtils.formatFollowersCount(it.toString(), androidx.compose.ui.platform.LocalConfiguration.current.locales[0]) } ?: "—", style = MaterialTheme.typography.labelMedium)
                     }
                 }
-                dropsButton()
+                dropsButton(false)
                 Spacer(Modifier.weight(1f))
                 ChatSendButton(sending = sending, loading = loading,
                     cooldown = cooldown.takeIf { inputBlock == null && connectionState == ChatConnectionState.CONNECTED && effectiveAccess != null },

@@ -22,6 +22,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -79,7 +80,7 @@ internal fun InteractiveCard(
             translationY = lift.toPx()
         },
         shape = RoundedCornerShape(12.dp),
-        color = color,
+        color = color.compositeOver(MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, outline),
         shadowElevation = elevation,
     ) {

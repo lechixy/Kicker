@@ -115,34 +115,33 @@ class DropsViewModel(application: Application) : AndroidViewModel(application) {
     private val _uiState = MutableStateFlow<DropsUiState>(DropsUiState.Empty)
     val uiState = _uiState.asStateFlow()
     private val preferences = application.dropsPreferences
-    private val _dismissals = MutableStateFlow<Set<String>?>(null)
+    private val _dismissals = MutableStateFlow<Set<Long>?>(null)
     val dismissals = _dismissals.asStateFlow()
 
     init {
         viewModelScope.launch {
             preferences.data
-                .map { it[dismissedCampaigns].orEmpty() }
+                .map { preferences ->
+                    preferences[dismissedCampaigns].orEmpty().mapNotNull { it.substringBefore(':').toLongOrNull() }.toSet()
+                }
                 .catch { if (it is IOException) emit(emptySet()) else throw it }
                 .collect { saved -> _dismissals.update { it.orEmpty() + saved } }
         }
     }
 
-    fun dismissBanner(channelId: Long, campaignId: String) {
-        val key = dismissalKey(channelId, campaignId)
-        _dismissals.update { it.orEmpty() + key }
+    fun dismissBanner(channelId: Long) {
+        _dismissals.update { it.orEmpty() + channelId }
         viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
             // Finish saving the user's dismissal even if they leave the channel immediately.
             withContext(NonCancellable) {
                 try {
-                    preferences.edit { it[dismissedCampaigns] = it[dismissedCampaigns].orEmpty() + key }
+                    preferences.edit { it[dismissedCampaigns] = it[dismissedCampaigns].orEmpty() + channelId.toString() }
                 } catch (_: IOException) {
                     // The banner stays dismissed for this ViewModel.
                 }
             }
         }
     }
-
-    internal fun dismissalKey(channelId: Long, campaignId: String): String = "$channelId:$campaignId"
 
     internal suspend fun loadDialogProgress(state: DropsUiState.Success): DropsUiState.Success {
         val summaries = AccountGraph.auth.getDropsProgressSummary(state.campaigns.map { it.id })

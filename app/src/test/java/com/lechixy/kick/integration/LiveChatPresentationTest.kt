@@ -1,10 +1,18 @@
 package com.lechixy.kick.integration
 
 import com.lechixy.kick.components.channel.chat.kicksGiftArtworkTier
+import com.lechixy.kick.data.channel.model.ChannelEvent
+import com.lechixy.kick.data.channel.model.ChannelEventPalette
+import com.lechixy.kick.data.channel.model.ChannelEventParticipation
+import com.lechixy.kick.data.channel.model.ChannelLivestream
 import com.lechixy.kick.data.channel.model.DropsCampaignsResponseDto
 import com.lechixy.kick.data.channel.model.DropsProgressSummaryResponseDto
 import com.lechixy.kick.data.channel.model.KickGoalDto
+import com.lechixy.kick.data.channel.model.LivestreamUpdatedEvent
+import com.lechixy.kick.data.channel.model.RecentCategory
+import com.lechixy.kick.data.channel.model.ViewerCountUpdatedEvent
 import com.lechixy.kick.data.channel.model.resolveDropsImageUrl
+import com.lechixy.kick.data.chat.model.CentrifugoPushFrame
 import com.lechixy.kick.data.chat.model.ChatPointsUpdate
 import com.lechixy.kick.data.chat.model.ChatWebSocketEvent
 import com.lechixy.kick.data.chat.model.GiftsLeaderboardUpdatedEvent
@@ -20,6 +28,7 @@ import com.lechixy.kick.screens.channel.DropRewardUiModel
 import com.lechixy.kick.screens.channel.progressFrom
 import java.time.Instant
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -27,6 +36,85 @@ import org.junit.Test
 
 class LiveChatPresentationTest {
     private val json = Json { ignoreUnknownKeys = true }
+
+    @Test fun eventParticipationAddsTheEventAndOnlyRemovesTheMatchingEvent() {
+        val joined = json.decodeFromString<CentrifugoPushFrame>(
+            """{"push":{"channel":"channel_26239555","pub":{"data":{"event":"EventParticipantJoined","data":"{\"event_id\":\"01a1e6f3-d07b-78ee-92d9-00940d64d184\",\"channel_id\":26239555,\"slug\":\"gta-vi-launch\",\"title\":\"GTA VI Launch\",\"thumbnail\":\"https://content.kick.com/public/events/thumbnails/01a1e6f0-de90-7eb2-838c-50ac88505f31.png\",\"participant_role\":\"ROLE_PARTICIPANT\"}"}}}}"""
+        ).push!!
+        assertEquals("channel_26239555", joined.channel)
+        assertEquals("EventParticipantJoined", joined.pub?.eventName)
+        val participation = json.decodeFromString<ChannelEventParticipation>(joined.pub!!.data!!.data!!.jsonPrimitive.content)
+        assertEquals(26239555L, participation.channelId)
+        val event = participation.joinedEvent(null)
+        assertEquals("gta-vi-launch", event.slug)
+        assertEquals("GTA VI Launch", event.title)
+        assertEquals("ROLE_PARTICIPANT", event.participantRole)
+        assertEquals(participation.thumbnail, event.assets?.thumbnail)
+        val palette = ChannelEventPalette(accentPromoPoster = "#005500")
+        assertEquals(palette, participation.joinedEvent(event.copy(palette = palette)).palette)
+
+        val left = json.decodeFromString<CentrifugoPushFrame>(
+            """{"push":{"channel":"channel_26239555","pub":{"data":{"event":"EventParticipantLeft","data":"{\"event_id\":\"01a1e6f3-d07b-78ee-92d9-00940d64d184\",\"channel_id\":26239555}"}}}}"""
+        ).push!!.pub!!
+        assertEquals("EventParticipantLeft", left.eventName)
+        val departure = json.decodeFromString<ChannelEventParticipation>(left.data!!.data!!.jsonPrimitive.content)
+        assertNull(departure.leftEvent(event))
+        val otherEvent = ChannelEvent(id = "other-event", title = "Other")
+        assertEquals(otherEvent, departure.leftEvent(otherEvent))
+    }
+
+    @Test fun metadataUpdatesPreserveTheActivePlaybackAndViewerCount() {
+        val stream = ChannelLivestream(id = 443, sessionTitle = "Before", source = "active-source", viewerCount = 456,
+            isLive = true, vodId = "active-vod", tags = listOf("old"))
+        val fresh = json.decodeFromString<ChannelLivestream>(
+            """{"id":443,"session_title":"After","source":"different-source","viewer_count":0,"tags":["new"],
+                "categories":[{"id":5,"name":"Grand Theft Auto VI","slug":"grand-theft-auto-vi"}]}"""
+        )
+        val updated = stream.withLatestMetadata(fresh)
+        assertEquals("After", updated.sessionTitle)
+        assertEquals("grand-theft-auto-vi", updated.categories.single().slug)
+        assertEquals(listOf("new"), updated.tags)
+        assertEquals(stream, updated.copy(sessionTitle = stream.sessionTitle, categories = stream.categories, tags = stream.tags))
+    }
+
+    @Test fun livestreamPublicationUpdatesTitleAndDropsCategoryWhileKeepingRestOnlyFields() {
+        val push = json.decodeFromString<CentrifugoPushFrame>(
+            """{"push":{"channel":"private-livestream.139765822","pub":{"data":{"event":"App\\Events\\LivestreamUpdated","data":"{\"livestream\":{\"id\":139765822,\"channel_id\":1743035,\"session_title\":\"CS MESELESİ\",\"is_live\":true,\"start_time\":\"2026-11-23 09:13:26\",\"source\":null,\"language\":\"Turkish\",\"is_mature\":false,\"viewer_count\":1337,\"tags\":[],\"lang_iso\":\"tr\",\"categories\":[{\"id\":1552,\"category_id\":1,\"name\":\"Counter-Strike 2\",\"slug\":\"counter-strike-2\",\"tags\":[\"Shooter\",\"Tactical\"]}]}}"},"tags":{"event":"App\\Events\\LivestreamUpdated"}}}}"""
+        ).push!!
+        val publication = push.pub!!
+        assertEquals("private-livestream.139765822", push.channel)
+        assertEquals("App\\Events\\LivestreamUpdated", publication.eventName)
+        val update = json.decodeFromString<LivestreamUpdatedEvent>(publication.data!!.data!!.jsonPrimitive.content).livestream
+        val stream = ChannelLivestream(
+            id = 139765822, vodId = "vod", source = "source", isMature = true, tags = listOf("old"),
+            categories = listOf(RecentCategory(15, "Previous", "previous")),
+        )
+
+        val updated = update.applyTo(stream)
+        assertEquals("CS MESELESİ", updated.sessionTitle)
+        assertEquals(1552L, updated.categories.single().id)
+        assertEquals(emptyList<String>(), updated.tags)
+        assertEquals("tr", updated.langIso)
+        assertEquals(false, updated.isMature)
+        assertEquals(1337, updated.viewerCount)
+        assertEquals(stream.vodId, updated.vodId)
+        assertEquals(stream.source, updated.source)
+        assertEquals(updated.categories, update.copy(categories = null).applyTo(updated).categories)
+        assertEquals(emptyList<RecentCategory>(), update.copy(categories = emptyList()).applyTo(updated).categories)
+    }
+
+    @Test fun viewerCountPublicationReadsTheFullSequenceAndMeasurementTime() {
+        val push = json.decodeFromString<CentrifugoPushFrame>(
+            """{"push":{"channel":"viewer-count.1743035","pub":{"data":{"event":"ViewerCountUpdated","data":"{\"channel_id\":1743035,\"viewer_count\":1046,\"measured_at\":1795427461,\"seq\":1795427461608}"},"tags":{"event":"ViewerCountUpdated"}}}}"""
+        ).push!!
+        val publication = push.pub!!
+        assertEquals("ViewerCountUpdated", publication.eventName)
+        val update = json.decodeFromString<ViewerCountUpdatedEvent>(publication.data!!.data!!.jsonPrimitive.content)
+        assertEquals("viewer-count.${update.channelId}", push.channel)
+        assertEquals(1046, update.viewerCount)
+        assertEquals(1795427461L, update.measuredAt)
+        assertEquals(1795427461608L, update.seq)
+    }
 
     @Test fun hostUsesRemainingTimeFromArrivalAndHonorsDurationLimits() {
         val host = ChatWebSocketEvent.StreamHosted(

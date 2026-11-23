@@ -101,7 +101,6 @@ import com.lechixy.kick.components.settings.SettingSlider
 import com.lechixy.kick.components.settings.SettingAction
 import com.lechixy.kick.components.settings.SettingSwitch
 import com.lechixy.kick.data.channel.model.SubscriberBadge
-import com.lechixy.kick.data.chat.model.ChatCelebration
 import com.lechixy.kick.data.chat.model.ChatMessage
 import android.os.SystemClock
 import com.lechixy.kick.data.channel.model.KickGoalDto
@@ -147,6 +146,16 @@ fun ChatView(
 ) {
     val repository = LocalSettingsRepository.current
     val chatActive = LocalChatContentActive.current
+    val now = SystemClock.elapsedRealtime()
+    val activeTicker = tickerEvents.firstOrNull { it.remainingMillis(now) > 0 }
+    val tickerGoal = subscriptionGoal.takeIf {
+        chatActive && when (val event = activeTicker?.event) {
+            is ChatWebSocketEvent.GiftedSubscriptions, is ChatWebSocketEvent.ChannelSubscribed,
+            is ChatWebSocketEvent.Celebration -> true
+            is ChatWebSocketEvent.MessageReceived -> event.message.isCelebration
+            else -> false
+        }
+    }
     val latestGiftMessageId = remember(messages, subscriptionGoal != null) {
         if (subscriptionGoal != null) messages.lastOrNull { it.isGiftedSubscriptions && !it.isHistory }?.id else null
     }
@@ -353,7 +362,8 @@ fun ChatView(
                                     !message.isDeleted && message.type in listOf("message", "reply"), onReply = { onReplyTo(message) }) {
                                 ChatMessageItem(
                                     subscriptionGoal = subscriptionGoal.takeIf {
-                                        message.id == latestGiftMessageId || message.id == latestCelebrationMessageId
+                                        tickerGoal == null &&
+                                            (message.id == latestGiftMessageId || message.id == latestCelebrationMessageId)
                                     },
                                     message = message,
                                     fontSizeSp = fontSize,
@@ -426,10 +436,14 @@ fun ChatView(
                     if (!chatActive) tickerOverlayHeightPx = 0
                 }
                 if (chatActive) ChatEventTickerOverlay(
+                    currentItem = activeTicker,
                     events = tickerEvents,
                     onDismiss = onDismissTickerEvents,
                     userColors = userColors,
                     fontSizeSp = fontSize,
+                    subscriptionGoal = tickerGoal,
+                    streamerUsername = streamerUsername,
+                    streamerSlug = streamerSlug,
                     onActiveHeightChanged = { tickerOverlayHeightPx = it },
                     onUsernameClick = { username -> streamerSlug?.let { slug ->
                         community.openProfile(slug, com.lechixy.kick.data.chat.model.ActiveChatter(username = username), subscriberBadges = subscriberBadges)
@@ -707,9 +721,10 @@ internal fun PinnedMessageOverlay(
             val headerFontSizeSp = (fontSizeSp - 2).coerceAtLeast(10)
             val mutedColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
             val primaryColor = MaterialTheme.colorScheme.primary
+            val lightTheme = isLightChatTheme()
 
-            val senderColor = remember(sender?.identity?.color, primaryColor) {
-                ChatTextParser.parseHexColor(sender?.identity?.color, primaryColor)
+            val senderColor = remember(sender?.identity?.color, primaryColor, lightTheme) {
+                ChatTextParser.parseUsernameColor(sender?.identity?.color, primaryColor, lightTheme)
             }
             val context = androidx.compose.ui.platform.LocalContext.current
             val senderBadges = remember(sender?.identity, subscriberBadges, context) {
@@ -849,8 +864,8 @@ internal fun PinnedMessageOverlay(
                                     .padding(top = 2.dp)
                             )
                         } else {
-                            val pinnedByColor = remember(pinnedBy.identity?.color, primaryColor) {
-                                ChatTextParser.parseHexColor(pinnedBy.identity?.color, primaryColor)
+                            val pinnedByColor = remember(pinnedBy.identity?.color, primaryColor, lightTheme) {
+                                ChatTextParser.parseUsernameColor(pinnedBy.identity?.color, primaryColor, lightTheme)
                             }
                             val pinnedByBadges = remember(pinnedBy.identity, subscriberBadges, context) {
                                 ChatTextParser.resolveBadges(pinnedBy.identity, subscriberBadges, context = context)
@@ -923,9 +938,10 @@ internal fun ChatRestoreOverlay(
 }
 
 @Composable
-internal fun ChatRestoreButton(@DrawableRes icon: Int, label: String, onClick: () -> Unit) {
+internal fun ChatRestoreButton(@DrawableRes icon: Int, label: String, enabled: Boolean = true, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
+        enabled = enabled,
         shape = RoundedCornerShape(10.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = 0.96f),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
@@ -934,7 +950,8 @@ internal fun ChatRestoreButton(@DrawableRes icon: Int, label: String, onClick: (
         Icon(
             painter = painterResource(icon),
             contentDescription = label,
-            tint = MaterialTheme.colorScheme.primary,
+            tint = if (enabled) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f),
             modifier = Modifier.padding(8.dp).size(18.dp)
         )
     }
@@ -1048,17 +1065,11 @@ private fun tickerContent(
     event: ChatWebSocketEvent,
     context: android.content.Context,
     userColors: Map<String, String>,
-    accent: Color
+    accent: Color,
+    lightTheme: Boolean
 ): ChatTickerContent? {
-    fun userColor(username: String, hex: String? = null) =
-        ChatTextParser.parseHexColor(hex ?: userColors[username.lowercase()], accent)
-
-    fun celebration(event: ChatCelebration, sender: com.lechixy.kick.data.chat.model.ChatSender?): ChatTickerContent {
-        val username = sender?.username?.takeIf { it.isNotBlank() } ?: event.username
-        return ChatTickerContent(subscriptionCelebrationIcon(event),
-            subscriptionEventSegments(context, username, event.totalMonths,
-                userColor = userColor(username, sender?.identity?.color), primaryColor = accent))
-    }
+    fun userColor(username: String) =
+        ChatTextParser.parseUsernameColor(userColors[username.lowercase()], accent, lightTheme)
 
     return when (event) {
         is ChatWebSocketEvent.StreamHosted -> ChatTickerContent(
@@ -1067,30 +1078,29 @@ private fun tickerContent(
                 userColor(event.event.user.username)))
         is ChatWebSocketEvent.GiftedSubscriptions -> ChatTickerContent(
             R.drawable.kick_star,
-            giftedEventSegments(context, event.event, userColors, accent))
+            giftedEventSegments(context, event.event, userColors, accent, lightTheme))
         is ChatWebSocketEvent.ChannelSubscribed -> ChatTickerContent(
             R.drawable.kick_star,
             subscriptionEventSegments(context, event.event.username, event.event.totalMonths ?: event.event.months,
                 (event.event.userIds.size - 1).coerceAtLeast(0), userColor(event.event.username), accent))
-        is ChatWebSocketEvent.Celebration -> celebration(event.event, event.event.sender)
-        is ChatWebSocketEvent.MessageReceived -> celebration(
-            event.message.metadata?.celebration ?: ChatCelebration(id = event.message.id), event.message.sender)
         else -> null
     }
 }
 
 @Composable
 private fun ChatEventTickerOverlay(
+    currentItem: TimedChatEvent?,
     events: List<TimedChatEvent>,
     onDismiss: (Set<Long>) -> Unit,
     userColors: Map<String, String>,
     fontSizeSp: Int,
+    subscriptionGoal: KickGoalDto?,
+    streamerUsername: String?,
+    streamerSlug: String?,
     onActiveHeightChanged: (Int) -> Unit,
     modifier: Modifier = Modifier,
     onUsernameClick: ((String) -> Unit)? = null
 ) {
-    val now = SystemClock.elapsedRealtime()
-    val currentItem = events.firstOrNull { it.remainingMillis(now) > 0 }
     var displayedItem by remember { mutableStateOf<TimedChatEvent?>(null) }
     var isShowing by remember { mutableStateOf(false) }
     var measuredHeightPx by remember { mutableIntStateOf(0) }
@@ -1132,11 +1142,37 @@ private fun ChatEventTickerOverlay(
 
     val active = displayedItem ?: return
     val accentColor = MaterialTheme.colorScheme.primary
+    val lightTheme = isLightChatTheme()
     val context = androidx.compose.ui.platform.LocalContext.current
     val configuration = androidx.compose.ui.platform.LocalConfiguration.current
-    val content = remember(active, context, configuration, userColors, accentColor) {
-        tickerContent(active.event, context, userColors, accentColor)
-    } ?: return
+    val content = remember(active, context, configuration, userColors, accentColor, lightTheme) {
+        tickerContent(active.event, context, userColors, accentColor, lightTheme)
+    }
+    val celebrationEvent = (active.event as? ChatWebSocketEvent.Celebration)?.event
+    val celebrationMessage = (active.event as? ChatWebSocketEvent.MessageReceived)?.message
+        ?.takeIf { it.isCelebration }
+    if (content == null && celebrationEvent == null && celebrationMessage == null) return
+    val dismissButton: @Composable () -> Unit = {
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+            modifier = Modifier.size(24.dp).clip(CircleShape).clickable {
+                if (isShowing) {
+                    isShowing = false
+                    onDismiss(events.mapTo(mutableSetOf()) { it.id })
+                }
+            }
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    painter = painterResource(R.drawable.close_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
+                    contentDescription = stringResource(R.string.hide),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+        }
+    }
 
     Box(
         modifier = modifier.onSizeChanged { size ->
@@ -1163,7 +1199,21 @@ private fun ChatEventTickerOverlay(
             Column(
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Row(
+                if (content == null) {
+                    ChatCelebrationItem(
+                        celebration = celebrationEvent ?: celebrationMessage?.metadata?.celebration,
+                        sender = celebrationMessage?.sender ?: celebrationEvent?.sender,
+                        message = celebrationMessage?.content,
+                        userColors = userColors,
+                        subscriptionGoal = subscriptionGoal,
+                        fontSizeSp = fontSizeSp,
+                        onUsernameClick = onUsernameClick,
+                        streamerUsername = streamerUsername,
+                        streamerSlug = streamerSlug,
+                        contentPadding = 4.dp,
+                        trailingContent = dismissButton
+                    )
+                } else Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(start = 14.dp, end = 10.dp, top = 9.dp, bottom = 9.dp),
@@ -1185,28 +1235,8 @@ private fun ChatEventTickerOverlay(
                         )
                     }
 
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                        modifier = Modifier
-                            .size(24.dp)
-                            .clip(CircleShape)
-                            .clickable {
-                                if (isShowing) {
-                                    isShowing = false
-                                    onDismiss(events.mapTo(mutableSetOf()) { it.id })
-                                }
-                            }
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                painter = painterResource(R.drawable.close_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
-                                contentDescription = stringResource(R.string.hide),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
+                    if (subscriptionGoal != null) ChatSubscriptionGoalProgress(subscriptionGoal)
+                    dismissButton()
                 }
 
                 // Full-width bottom progress bar whose width decreases to 0 as time runs out

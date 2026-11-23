@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -28,6 +30,7 @@ import com.lechixy.kick.data.channel.model.ChannelSectionState
 import com.lechixy.kick.data.channel.model.ChannelVideo
 import com.lechixy.kick.data.channel.model.KickChannelLinkDto
 import com.lechixy.kick.data.channel.model.KickGoalDto
+import com.lechixy.kick.data.channel.model.LivestreamUpdate
 import com.lechixy.kick.data.chat.model.ChatHistoryData
 import com.lechixy.kick.data.chat.model.ChatMessage
 import com.lechixy.kick.data.chat.model.ChatWebSocketEvent
@@ -40,6 +43,7 @@ import com.lechixy.kick.data.common.repository.KickRepository
 import com.lechixy.kick.data.player.local.WatchHistoryStore
 import com.lechixy.kick.data.player.model.toRecording
 import com.lechixy.kick.service.player.SleepTimer
+import com.lechixy.kick.util.FormatUtils
 
 data class ChannelUiState(
     val isLoading: Boolean = true,
@@ -69,7 +73,7 @@ class ChannelViewModel(
 
     companion object {
         private const val TAG = "ChannelViewModel"
-        private const val VIEWERS_POLL_INTERVAL_MS = 60_000L
+        private const val LIVE_METADATA_POLL_INTERVAL_MS = 60_000L
         private const val LIVE_METADATA_RETRY_DELAY_MS = 2_500L
         private const val LIVE_METADATA_MAX_ATTEMPTS = 4
     }
@@ -161,8 +165,12 @@ class ChannelViewModel(
         }
     }
 
-    private var viewersPollingJob: Job? = null
+    private var broadcastMetadataPollingJob: Job? = null
     private var liveRefreshJob: Job? = null
+    private var broadcastMetadataJob: Job? = null
+    private var realtimeMetadataLivestreamId: Long? = null
+    private var latestViewerCount: ChatWebSocketEvent.ViewerCountUpdated? = null
+    private var participationRevision = 0L
     private var leaderboardJob: Job? = null
     private var aboutJob: Job? = null
     private var loadedSlug: String? = null
@@ -171,6 +179,23 @@ class ChannelViewModel(
 
     init {
         observeWebSocketEvents()
+        viewModelScope.launch {
+            _uiState.map { state ->
+                state.channel?.let { channel ->
+                    Triple(channel.id, channel.livestream?.id, channel.livestream?.categories?.firstOrNull()?.id)
+                }
+            }.distinctUntilChanged().collect { target ->
+                if (target != null) {
+                    val (channelId, livestreamId, categoryId) = target
+                    repository.chatWebSocketClient.updateLivestreamSubscriptions(channelId, livestreamId, categoryId)
+                }
+            }
+        }
+        viewModelScope.launch {
+            chatConnectionState.collect { state ->
+                if (state != ChatConnectionState.CONNECTED) realtimeMetadataLivestreamId = null
+            }
+        }
         viewModelScope.launch {
             com.lechixy.kick.data.account.AccountGraph.auth.session
                 .collect { session ->
@@ -197,10 +222,56 @@ class ChannelViewModel(
                     }
                     is ChatWebSocketEvent.StreamerIsLive -> handleStreamerIsLive(wsEvent.event)
                     is ChatWebSocketEvent.StopStreamBroadcast -> handleStopStreamBroadcast(wsEvent.event)
+                    is ChatWebSocketEvent.LivestreamUpdated -> handleLivestreamUpdated(wsEvent.update)
+                    is ChatWebSocketEvent.ViewerCountUpdated -> handleViewerCountUpdated(wsEvent)
+                    is ChatWebSocketEvent.EventParticipationChanged -> handleEventParticipation(wsEvent)
                     else -> Unit
                 }
             }
         }
+    }
+
+    private fun handleLivestreamUpdated(update: LivestreamUpdate) {
+        val channel = _uiState.value.channel ?: return
+        val stream = channel.livestream ?: return
+        if (channel.id != update.channelId || stream.id != update.id) return
+        if (update.isLive == false) {
+            finishLivestream(channel, channel.isBanned)
+            return
+        }
+
+        realtimeMetadataLivestreamId = stream.id
+        broadcastMetadataJob?.cancel()
+        val updated = update.applyTo(stream)
+        val viewerCount = latestViewerCount?.takeIf { it.livestreamId == stream.id }?.event?.viewerCount
+        _uiState.update { it.copy(channel = channel.copy(livestream = updated.copy(
+            viewerCount = viewerCount ?: updated.viewerCount,
+        ))) }
+    }
+
+    private fun handleViewerCountUpdated(update: ChatWebSocketEvent.ViewerCountUpdated) {
+        val channel = _uiState.value.channel ?: return
+        val stream = channel.livestream ?: return
+        val event = update.event
+        if (channel.id != event.channelId || stream.id != update.livestreamId) return
+        val startedAt = FormatUtils.parseUtcStartTimeToMillis(stream.startTime) / 1_000
+        if (event.measuredAt < startedAt) return
+        val previous = latestViewerCount?.takeIf { it.livestreamId == stream.id }
+        if (previous != null && event.seq <= previous.event.seq) return
+        latestViewerCount = update
+        _uiState.update { it.copy(channel = channel.copy(livestream = stream.copy(viewerCount = event.viewerCount))) }
+    }
+
+    private fun handleEventParticipation(change: ChatWebSocketEvent.EventParticipationChanged) {
+        val channel = _uiState.value.channel ?: return
+        val participation = change.event
+        if (channel.id != participation.channelId) return
+        participationRevision++
+        _uiState.update { state ->
+            val event = if (change.joined) participation.joinedEvent(state.event) else participation.leftEvent(state.event)
+            state.copy(event = event)
+        }
+        channel.livestream?.let { refreshBroadcastMetadata(it.id, retryAfterEvent = true) }
     }
 
     fun dismissRaid() { _uiState.update { it.copy(raid = null) } }
@@ -221,6 +292,7 @@ class ChannelViewModel(
         if (liveInfo.channelId != null && liveInfo.channelId != currentChannel.id) return
 
         liveRefreshJob?.cancel()
+        broadcastMetadataJob?.cancel()
 
         val normalizedStartTime = liveInfo.createdAt
             ?.trim()
@@ -230,7 +302,7 @@ class ChannelViewModel(
             ?.takeIf { it.isNotBlank() }
         val previousBroadcast = currentChannel.livestream?.takeIf { it.id == liveInfo.id }
 
-        val optimisticLivestream = ChannelLivestream(
+        val optimisticLivestream = previousBroadcast ?: ChannelLivestream(
             id = liveInfo.id,
             channelId = liveInfo.channelId ?: currentChannel.id,
             sessionTitle = liveInfo.sessionTitle ?: currentChannel.livestream?.sessionTitle,
@@ -238,11 +310,9 @@ class ChannelViewModel(
             createdAt = liveInfo.createdAt ?: currentChannel.livestream?.createdAt,
             startTime = normalizedStartTime ?: currentChannel.livestream?.startTime,
             isLive = true,
-            viewerCount = currentChannel.livestream?.viewerCount ?: 0,
             language = currentChannel.livestream?.language,
             langIso = currentChannel.livestream?.langIso,
-            isMature = previousBroadcast?.isMature ?: false,
-            isMaturityKnown = previousBroadcast?.isMaturityKnown == true,
+            isMaturityKnown = false,
             thumbnail = currentChannel.livestream?.thumbnail,
             tags = currentChannel.livestream?.tags.orEmpty(),
             categories = currentChannel.livestream?.categories?.ifEmpty { currentChannel.recentCategories }
@@ -258,9 +328,10 @@ class ChannelViewModel(
             )
         }
 
-        startViewersPolling(liveInfo.id)
+        startBroadcastMetadataPolling(liveInfo.id)
 
         val slug = loadedSlug ?: currentChannel.slug
+        val startingParticipationRevision = participationRevision
         liveRefreshJob = viewModelScope.launch {
             repeat(LIVE_METADATA_MAX_ATTEMPTS) { attempt ->
                 if (attempt > 0) {
@@ -268,13 +339,18 @@ class ChannelViewModel(
                 }
                 try {
                     val freshChannel = repository.getChannel(slug)
-                    val freshEvent = runCatching { repository.getChannelEvent(freshChannel.id) }.getOrNull()
+                    val freshEvent = try {
+                        repository.getChannelEvent(freshChannel.id)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        null
+                    }
                     var hasCompleteLiveMetadata = false
 
                     _uiState.update { current ->
                         val currentCh = current.channel ?: return@update current
-                        // StopStreamBroadcast geldiyse canlı yayını tekrar açma
-                        if (currentCh.livestream == null) return@update current
+                        if (currentCh.id != currentChannel.id || currentCh.livestream?.id != liveInfo.id) return@update current
 
                         val freshLivestream = freshChannel.livestream?.takeIf { it.id == liveInfo.id }
                         val mergedLivestream = freshLivestream?.copy(
@@ -284,9 +360,7 @@ class ChannelViewModel(
                             startTime = freshLivestream.startTime
                                 ?: normalizedStartTime
                                 ?: currentCh.livestream.startTime
-                        ) ?: currentCh.livestream.copy(
-                            sessionTitle = liveInfo.sessionTitle ?: currentCh.livestream.sessionTitle
-                        )
+                        )?.withRealtimeState(currentCh.livestream) ?: currentCh.livestream
 
                         hasCompleteLiveMetadata =
                             freshLivestream != null && !freshChannel.playbackUrl.isNullOrBlank()
@@ -296,11 +370,13 @@ class ChannelViewModel(
                                 playbackUrl = freshChannel.playbackUrl ?: currentCh.playbackUrl,
                                 livestream = mergedLivestream
                             ),
-                            event = freshEvent ?: current.event
+                            event = freshEvent?.takeIf { participationRevision == startingParticipationRevision } ?: current.event
                         )
                     }
 
                     if (hasCompleteLiveMetadata) return@launch
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
                 } catch (_: Exception) {
                 }
             }
@@ -356,7 +432,10 @@ class ChannelViewModel(
         }
 
         liveRefreshJob?.cancel()
-        viewersPollingJob?.cancel()
+        broadcastMetadataJob?.cancel()
+        broadcastMetadataPollingJob?.cancel()
+        realtimeMetadataLivestreamId = null
+        latestViewerCount = null
 
         _uiState.update { current ->
             val ch = current.channel ?: return@update current
@@ -369,7 +448,7 @@ class ChannelViewModel(
                 liveAnnouncementId = null
             )
         }
-        nextBroadcast?.let { startViewersPolling(it.id) }
+        nextBroadcast?.let { startBroadcastMetadataPolling(it.id) }
 
         val slug = loadedSlug ?: currentChannel.slug
         viewModelScope.launch {
@@ -396,12 +475,18 @@ class ChannelViewModel(
             emotesJob?.cancel()
             loadEmotes()
             liveRefreshJob?.cancel()
-            viewersPollingJob?.cancel()
+            broadcastMetadataJob?.cancel()
+            broadcastMetadataPollingJob?.cancel()
+            if (changedChannel) {
+                realtimeMetadataLivestreamId = null
+                latestViewerCount = null
+            }
             leaderboardJob?.cancel()
             val previous = if (changedChannel) ChannelUiState() else _uiState.value
             _uiState.value = previous.copy(isLoading = previous.channel == null || previous.isLoading,
                 error = null, liveAnnouncementId = null, lastHourGiftedSubsRank = null, raid = null)
 
+            val startingParticipationRevision = participationRevision
             try {
                 val channelDeferred = async { preloadedChannel ?: repository.getChannel(slug) }
                 val videosDeferred = async {
@@ -415,10 +500,16 @@ class ChannelViewModel(
                 val channel = channelDeferred.await()
                 if (loadedSlug != slug) return@launch
                 // Size the player, banner, and channel header before the slower tab data arrives.
-                _uiState.update { it.copy(channel = channel) }
+                _uiState.update { current ->
+                    current.copy(channel = channel.copy(
+                        livestream = channel.livestream?.withRealtimeState(current.channel?.livestream),
+                    ))
+                }
                 val eventDeferred = async {
                     try {
                         repository.getChannelEvent(channel.id)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
                     } catch (_: Exception) {
                         null
                     }
@@ -437,14 +528,15 @@ class ChannelViewModel(
 
                 if (loadedSlug != slug) return@launch
                 WatchHistoryStore.attachRecordings(slug, videos.mapNotNull { it.toRecording() })
-                _uiState.value = ChannelUiState(
-                    isLoading = false,
-                    channel = channel,
-                    event = event,
-                    videos = videos,
-                    chatHistory = history,
-                    error = null
-                )
+                _uiState.update { current ->
+                    ChannelUiState(
+                        isLoading = false,
+                        channel = current.channel ?: channel,
+                        event = if (participationRevision == startingParticipationRevision) event else current.event,
+                        videos = videos,
+                        chatHistory = history,
+                    )
+                }
 
                 // Clip loading must not delay live playback or channel metadata.
                 startLeaderboardPolling(channel.id)
@@ -460,8 +552,8 @@ class ChannelViewModel(
                 repository.chatWebSocketClient.updatePinnedMessage(history?.pinnedMessage)
                 repository.chatWebSocketClient.cacheUserColorsFromMessages(history?.messages.orEmpty())
 
-                channel.livestream?.id?.let { livestreamId ->
-                    startViewersPolling(livestreamId)
+                _uiState.value.channel?.livestream?.id?.let { livestreamId ->
+                    startBroadcastMetadataPolling(livestreamId)
                 }
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
@@ -570,12 +662,47 @@ class ChannelViewModel(
         }
     }
 
-    private fun startViewersPolling(livestreamId: Long) {
-        viewersPollingJob?.cancel()
-        viewersPollingJob = viewModelScope.launch {
+    private fun ChannelLivestream.withRealtimeState(current: ChannelLivestream?): ChannelLivestream {
+        if (current?.id != id) return this
+        return if (realtimeMetadataLivestreamId == id) {
+            current.copy(vodId = vodId ?: current.vodId, thumbnail = thumbnail ?: current.thumbnail)
+        } else {
+            copy(viewerCount = current.viewerCount)
+        }
+    }
+
+    private fun startBroadcastMetadataPolling(livestreamId: Long) {
+        broadcastMetadataPollingJob?.cancel()
+        broadcastMetadataPollingJob = viewModelScope.launch {
             while (isActive) {
-                delay(VIEWERS_POLL_INTERVAL_MS.milliseconds)
-                updateLivestreamViewers(livestreamId)
+                delay(LIVE_METADATA_POLL_INTERVAL_MS.milliseconds)
+                refreshBroadcastMetadata(livestreamId)
+            }
+        }
+    }
+
+    private fun refreshBroadcastMetadata(livestreamId: Long, retryAfterEvent: Boolean = false) {
+        val channel = _uiState.value.channel ?: return
+        if (channel.livestream?.id != livestreamId || realtimeMetadataLivestreamId == livestreamId) return
+        if (retryAfterEvent) broadcastMetadataJob?.cancel()
+        else if (broadcastMetadataJob?.isActive == true) return
+        broadcastMetadataJob = viewModelScope.launch {
+            repeat(if (retryAfterEvent) 2 else 1) { attempt ->
+                if (attempt > 0) delay(LIVE_METADATA_RETRY_DELAY_MS.milliseconds)
+                val fresh = try {
+                    repository.getChannel(channel.slug)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    return@repeat
+                }
+                val freshStream = fresh.livestream?.takeIf { fresh.id == channel.id && it.id == livestreamId } ?: return@repeat
+                _uiState.update { state ->
+                    val current = state.channel ?: return@update state
+                    val stream = current.livestream ?: return@update state
+                    if (current.id != channel.id || stream.id != livestreamId) return@update state
+                    state.copy(channel = current.copy(livestream = stream.withLatestMetadata(freshStream)))
+                }
             }
         }
     }
@@ -593,28 +720,6 @@ class ChannelViewModel(
         }
     }
 
-    suspend fun updateLivestreamViewers(livestreamId: Long) {
-        try {
-            val viewerInfo = repository.getCurrentViewers(livestreamId) ?: return
-            _uiState.update { current ->
-                val currentChannel = current.channel
-                if (currentChannel?.livestream != null && currentChannel.livestream.id == livestreamId) {
-                    current.copy(
-                        channel = currentChannel.copy(
-                            livestream = currentChannel.livestream.copy(
-                                viewerCount = viewerInfo.viewers
-                            )
-                        )
-                    )
-                } else {
-                    current
-                }
-            }
-        } catch (_: Exception) {
-            // Ağ veya API hatalarında kullanıcı deneyimini kesintiye uğratma
-        }
-    }
-
     fun refreshLivePlayback(onReady: (ChannelDetail) -> Unit) {
         val requested = _uiState.value.channel ?: return
         livePlaybackRefreshJob?.cancel()
@@ -628,8 +733,10 @@ class ChannelViewModel(
                 requested
             }
             if (_uiState.value.channel?.id != requested.id) return@launch
-            _uiState.update { it.copy(channel = fresh) }
-            if (fresh.livestream != null && !fresh.playbackUrl.isNullOrBlank()) onReady(fresh)
+            val current = _uiState.value.channel ?: return@launch
+            val channel = fresh.copy(livestream = fresh.livestream?.withRealtimeState(current.livestream))
+            _uiState.update { it.copy(channel = channel) }
+            if (channel.livestream != null && !channel.playbackUrl.isNullOrBlank()) onReady(channel)
         }
     }
 
@@ -649,7 +756,9 @@ class ChannelViewModel(
         }
         repository.chatWebSocketClient.connect(
             channelId = channel.id,
-            chatroomId = chatroomId
+            chatroomId = chatroomId,
+            livestreamId = channel.livestream?.id,
+            dropsCategoryId = channel.livestream?.categories?.firstOrNull()?.id,
         )
         if (existingHistory != null) {
             if (repository.chatWebSocketClient.pinnedMessage.value == null && existingHistory.pinnedMessage != null) {
@@ -681,7 +790,8 @@ class ChannelViewModel(
     override fun onCleared() {
         super.onCleared()
         liveRefreshJob?.cancel()
-        viewersPollingJob?.cancel()
+        broadcastMetadataJob?.cancel()
+        broadcastMetadataPollingJob?.cancel()
         repository.chatWebSocketClient.disconnect()
     }
 }

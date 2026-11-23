@@ -392,6 +392,10 @@ data class NewSubscriberUpdate(
 )
 
 sealed interface ChatWebSocketEvent {
+    data class EventParticipationChanged(
+        val event: com.lechixy.kick.data.channel.model.ChannelEventParticipation,
+        val joined: Boolean,
+    ) : ChatWebSocketEvent
     data class Raid(val event: ChannelRaid) : ChatWebSocketEvent
     data class StreamHosted(val event: StreamHostedEvent) : ChatWebSocketEvent
     data class MessageReceived(val message: ChatMessage) : ChatWebSocketEvent
@@ -412,6 +416,11 @@ sealed interface ChatWebSocketEvent {
     data object PinnedMessageDeleted : ChatWebSocketEvent
     data class StreamerIsLive(val event: StreamerIsLiveEvent) : ChatWebSocketEvent
     data class StopStreamBroadcast(val event: StopStreamBroadcastEvent) : ChatWebSocketEvent
+    data class LivestreamUpdated(val update: com.lechixy.kick.data.channel.model.LivestreamUpdate) : ChatWebSocketEvent
+    data class ViewerCountUpdated(
+        val livestreamId: Long,
+        val event: com.lechixy.kick.data.channel.model.ViewerCountUpdatedEvent,
+    ) : ChatWebSocketEvent
 }
 
 fun ChatIdentity.withSelectedBadgesOnly(): ChatIdentity = copy(

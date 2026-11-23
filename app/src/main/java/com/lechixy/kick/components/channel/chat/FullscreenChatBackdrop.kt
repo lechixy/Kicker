@@ -312,28 +312,36 @@ internal fun VideoBackdropBlur(
     regions: List<FullscreenChatBackdropRegion>,
     controlOpacity: () -> Float = { 1f },
     zoom: () -> PlayerVideoZoom = { PlayerVideoZoom() },
+    reduceNoise: Boolean = false,
     opacity: () -> Float = { 1f },
 ) {
-    if (!LocalBlurEffectsEnabled.current || Build.VERSION.SDK_INT < 31 || texture == null || regions.isEmpty()) return
+    if (Build.VERSION.SDK_INT < 31 || texture == null) return
+    val blurRegions = if (LocalBlurEffectsEnabled.current) regions else emptyList()
+    val noiseReduction = remember(reduceNoise) {
+        if (reduceNoise && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            RenderEffect.createRuntimeShaderEffect(RuntimeShader(VIDEO_NOISE_REDUCTION_SHADER), "video")
+        } else null
+    }
+    if (blurRegions.isEmpty() && noiseReduction == null) return
     val radius = with(LocalDensity.current) { 15.dp.toPx() }
     val maxFeather = with(LocalDensity.current) { 28.dp.toPx() }
     val glassRadius = with(LocalDensity.current) { frostedRadius.toPx() }
     val glassFeather = with(LocalDensity.current) { frostedChatFeather.toPx() }
     val controlFeather = with(LocalDensity.current) { 1.dp.toPx() }
     val roundedRadius = with(LocalDensity.current) { 8.dp.toPx() }
-    val masks = remember(texture, regions.size) { List(regions.size) { VideoBlurMask() } }
+    val masks = remember(texture, blurRegions.size) { List(blurRegions.size) { VideoBlurMask() } }
     val opaquePixel = remember(texture) {
         Bitmap.createBitmap(1, 1, Bitmap.Config.ALPHA_8).apply { eraseColor(android.graphics.Color.WHITE) }
     }
-    val progressiveEffects = remember(texture, regions.size) {
-        arrayOfNulls<ProgressiveBlurShader>(regions.size)
+    val progressiveEffects = remember(texture, blurRegions.size) {
+        arrayOfNulls<ProgressiveBlurShader>(blurRegions.size)
     }
-    val currentRegions by rememberUpdatedState(regions)
+    val currentRegions by rememberUpdatedState(blurRegions)
     val currentControlOpacity by rememberUpdatedState(controlOpacity)
     val currentOpacity by rememberUpdatedState(opacity)
     val currentZoom by rememberUpdatedState(zoom)
     val scope = rememberCoroutineScope()
-    DisposableEffect(texture, radius, maxFeather, glassRadius, glassFeather, controlFeather, roundedRadius, masks) {
+    DisposableEffect(texture, radius, maxFeather, glassRadius, glassFeather, controlFeather, roundedRadius, masks, noiseReduction) {
         val location = IntArray(2)
         var lastRegions = emptyList<FullscreenChatBackdropRegion>()
         var lastOpacity = 0f
@@ -437,6 +445,10 @@ internal fun VideoBackdropBlur(
                     blurredOverlay(it, textureSize, glassRadius / zoomScale, Shader.TileMode.MIRROR, blurSource),
                 )
             }
+            // Compose both filters on the same TextureView so they share the video input.
+            if (noiseReduction != null) {
+                effect = effect?.let { RenderEffect.createChainEffect(it, noiseReduction) } ?: noiseReduction
+            }
             val hadEffect = appliedEffect != null
             appliedEffect = effect
             texture.setRenderEffect(effect)
@@ -462,6 +474,33 @@ internal fun VideoBackdropBlur(
         }
     }
 }
+
+// Blend nearby colors only across small differences to preserve text and object edges.
+private const val VIDEO_NOISE_REDUCTION_SHADER = """
+    uniform shader video;
+
+    half weight(half4 center, half4 neighbor) {
+        half3 delta = abs(neighbor.rgb - center.rgb);
+        half difference = max(delta.r, max(delta.g, delta.b));
+        return (1.0 - smoothstep(0.02, 0.10, difference)) * neighbor.a;
+    }
+
+    half4 main(float2 xy) {
+        half4 center = video.eval(xy);
+        half4 left = video.eval(xy + float2(-1.0, 0.0));
+        half4 right = video.eval(xy + float2(1.0, 0.0));
+        half4 top = video.eval(xy + float2(0.0, -1.0));
+        half4 bottom = video.eval(xy + float2(0.0, 1.0));
+
+        half wl = weight(center, left);
+        half wr = weight(center, right);
+        half wt = weight(center, top);
+        half wb = weight(center, bottom);
+        half3 rgb = (4.0 * center.rgb + wl * left.rgb + wr * right.rgb
+                    + wt * top.rgb + wb * bottom.rgb) / (4.0 + wl + wr + wt + wb);
+        return half4(mix(center.rgb, rgb, center.a), center.a);
+    }
+"""
 
 @RequiresApi(31)
 private fun composite(background: RenderEffect?, foreground: RenderEffect): RenderEffect =

@@ -142,7 +142,7 @@ private fun LeaderboardPeriod.resetLabel(): String? {
 internal fun ChannelLeaderboardStrip(
     state: ChannelLeaderboardUiState,
     paused: Boolean,
-    onClick: () -> Unit,
+    onClick: (LeaderboardBoardType?) -> Unit,
 ) {
     val board = state.boards.firstOrNull { it.type == LeaderboardBoardType.WEEKLY_GIFTERS && it.entries.isNotEmpty() }
         ?: state.boards.firstOrNull { it.type == LeaderboardBoardType.MONTHLY_GIFTERS }
@@ -152,7 +152,9 @@ internal fun ChannelLeaderboardStrip(
         Column {
             Box(
                 Modifier.fillMaxWidth().heightIn(min = 30.dp)
-                    .clickable(role = Role.Button, onClickLabel = stringResource(R.string.leaderboard_open), onClick = onClick),
+                    .clickable(role = Role.Button, onClickLabel = stringResource(R.string.leaderboard_open)) {
+                        onClick(board?.type)
+                    },
                 contentAlignment = Alignment.CenterStart,
             ) {
                 if (board == null || board.entries.isEmpty()) {
@@ -197,6 +199,7 @@ internal fun ChannelLeaderboardStrip(
 @Composable
 internal fun ChannelLeaderboardDialog(
     state: ChannelLeaderboardUiState,
+    initialBoard: LeaderboardBoardType?,
     onUserClick: (Long) -> Unit,
     onActionCtaClick: (LeaderboardBoardType, Long) -> Unit,
     onRetry: () -> Unit,
@@ -209,14 +212,15 @@ internal fun ChannelLeaderboardDialog(
             color = MaterialTheme.colorScheme.surfaceContainer,
         ) {
             Column {
-                Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(stringResource(R.string.leaderboard_title), Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
-                    IconButton(onClick = onDismiss) {
-                        Icon(painterResource(R.drawable.close_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
-                            stringResource(R.string.player_close))
-                    }
-                }
-                ChannelLeaderboardPager(state, onUserClick, onActionCtaClick, onRetry, Modifier.weight(1f, fill = false))
+                Text(
+                    stringResource(R.string.leaderboard_title),
+                    Modifier.padding(start = 16.dp, top = 16.dp, end = 16.dp, bottom = 8.dp),
+                    style = MaterialTheme.typography.titleSmall,
+                )
+                ChannelLeaderboardPager(
+                    state, onUserClick, onActionCtaClick, onRetry, Modifier.weight(1f, fill = false),
+                    initialBoard = initialBoard,
+                )
             }
         }
     }
@@ -230,6 +234,7 @@ internal fun ChannelLeaderboardPager(
     onActionCtaClick: (LeaderboardBoardType, Long) -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
+    initialBoard: LeaderboardBoardType? = null,
 ) {
     val boards = uiState.boards
     Column(modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainer)) {
@@ -256,10 +261,13 @@ internal fun ChannelLeaderboardPager(
             return@Column
         }
 
-        key(uiState.channelId, boards.map { it.type }) {
+        key(uiState.channelId, boards.map { it.type }, initialBoard) {
             val cyclic = boards.size > 1
             val center = (Int.MAX_VALUE / 2).let { it - it % boards.size }
-            val pager = rememberPagerState(initialPage = if (cyclic) center else 0) { if (cyclic) Int.MAX_VALUE else 1 }
+            val initialIndex = boards.indexOfFirst { it.type == initialBoard }.coerceAtLeast(0)
+            val pager = rememberPagerState(initialPage = if (cyclic) center + initialIndex else 0) {
+                if (cyclic) Int.MAX_VALUE else 1
+            }
             val scope = rememberCoroutineScope()
             val board = boards[pager.currentPage % boards.size]
             LeaderboardHeader(board.type.title(), board.type.period.resetLabel(), cyclic,

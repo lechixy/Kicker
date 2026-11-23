@@ -195,21 +195,26 @@ internal fun DropsImage(url: String, modifier: Modifier, contentScale: ContentSc
 }
 
 @Composable
-internal fun DropsRewardsButton(uiState: DropsUiState, onClick: () -> Unit) {
+internal fun DropsRewardsButton(uiState: DropsUiState, compactOverlay: Boolean = false, onClick: () -> Unit) {
     val label = stringResource(R.string.drops_and_rewards)
     val colors = MaterialTheme.colorScheme
+    val enabled = uiState is DropsUiState.Success && uiState.campaigns.isNotEmpty()
     ChatControlTooltip(label) {
-        IconButton(
-            onClick = onClick,
-            enabled = uiState is DropsUiState.Success && uiState.campaigns.isNotEmpty(),
-            modifier = Modifier.size(40.dp),
-            colors = IconButtonDefaults.iconButtonColors(
-                contentColor = colors.primary,
-                disabledContentColor = colors.onSurfaceVariant.copy(alpha = 0.38f)
-            )
-        ) {
-            Icon(painterResource(R.drawable.kick_drops_and_rewards),
-                contentDescription = label, modifier = Modifier.size(chatBalanceIconSize))
+        if (compactOverlay) {
+            ChatRestoreButton(R.drawable.kick_drops_and_rewards, label, enabled, onClick)
+        } else {
+            IconButton(
+                onClick = onClick,
+                enabled = enabled,
+                modifier = Modifier.size(40.dp),
+                colors = IconButtonDefaults.iconButtonColors(
+                    contentColor = colors.primary,
+                    disabledContentColor = colors.onSurfaceVariant.copy(alpha = 0.38f)
+                )
+            ) {
+                Icon(painterResource(R.drawable.kick_drops_and_rewards),
+                    contentDescription = label, modifier = Modifier.size(chatBalanceIconSize))
+            }
         }
     }
 }

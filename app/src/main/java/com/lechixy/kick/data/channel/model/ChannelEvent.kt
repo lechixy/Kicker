@@ -103,6 +103,29 @@ data class ChannelEvent(
 )
 
 @Serializable
+data class ChannelEventParticipation(
+    @SerialName("event_id") val eventId: String,
+    @SerialName("channel_id") val channelId: Long,
+    val slug: String? = null,
+    val title: String? = null,
+    val thumbnail: String? = null,
+    @SerialName("participant_role") val participantRole: String? = null,
+) {
+    internal fun joinedEvent(current: ChannelEvent?): ChannelEvent {
+        val matching = current?.takeIf { it.id == eventId } ?: ChannelEvent(id = eventId)
+        return matching.copy(
+            slug = slug ?: matching.slug,
+            title = title ?: matching.title,
+            assets = thumbnail?.let { (matching.assets ?: ChannelEventAssets()).copy(thumbnail = it) } ?: matching.assets,
+            participantRole = participantRole ?: matching.participantRole,
+        )
+    }
+
+    internal fun leftEvent(current: ChannelEvent?): ChannelEvent? =
+        current?.takeUnless { it.id == eventId }
+}
+
+@Serializable
 data class EventOrganiser(
     val role: String? = null,
     val user: EventOrganiserUser? = null,
