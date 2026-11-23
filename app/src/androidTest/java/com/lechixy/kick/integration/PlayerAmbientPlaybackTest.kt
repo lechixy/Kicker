@@ -25,6 +25,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -38,6 +39,7 @@ import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.unit.dp
+import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -53,15 +55,23 @@ import com.lechixy.kick.components.FrostedPlayerRegions
 import com.lechixy.kick.components.PlayerAmbientBackdrop
 import com.lechixy.kick.components.PlayerAmbientState
 import com.lechixy.kick.components.PlayerVideoSurface
+import com.lechixy.kick.components.PlayerVideoZoom
 import com.lechixy.kick.components.TrackAmbientVideoLayout
 import com.lechixy.kick.components.channel.chat.FullscreenChatVideoFrame
 import com.lechixy.kick.components.channel.chat.VideoBackdropBlur
 import com.lechixy.kick.components.channel.chat.rememberLegacyFullscreenChatFrame
 import com.lechixy.kick.components.updateBounds
 import com.lechixy.kick.data.settings.model.PlayerAmbientMode
+import com.lechixy.kick.data.settings.model.SettingsKeys
+import com.lechixy.kick.data.settings.repository.SettingsRepository
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertSame
@@ -73,6 +83,54 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 @OptIn(UnstableApi::class)
 class PlayerAmbientPlaybackTest {
+    @Test
+    fun savedAmbientModesStayVisibleAcrossEveryTransitionWithZoomAndNoiseReduction() = withFixture { fixture ->
+        val scope = CoroutineScope(Dispatchers.IO)
+        val preferences = File(fixture.parentFile, "${fixture.name}.preferences_pb")
+        val settings = SettingsRepository(PreferenceDataStoreFactory.create(scope = scope) { preferences })
+        try {
+            withPlayback(fixture, settings) { playback ->
+                playback.await("first paused video frame") { firstFrame > 0 }
+                val transitions = listOf(
+                    PlayerAmbientMode.Dynamic, PlayerAmbientMode.Live, PlayerAmbientMode.Off,
+                    PlayerAmbientMode.Live, PlayerAmbientMode.Dynamic, PlayerAmbientMode.Off,
+                )
+                for ((scale, noise) in listOf(1f to false, 1.04f to false, 1.04f to true, 1f to true, 1f to false)) {
+                    if (noise && Build.VERSION.SDK_INT < 33) continue
+                    playback.onMain {
+                        zoom = PlayerVideoZoom(scale)
+                        reduceNoise = noise
+                    }
+                    for (selectedMode in transitions) {
+                        runBlocking { settings.set(SettingsKeys.AMBIENT_MODE, selectedMode.value) }
+                        playback.await("applied setting ${selectedMode.value}") { appliedMode == selectedMode }
+                        playback.await("ambient ${selectedMode.value}, zoom=$scale, noise=$noise") {
+                            when (selectedMode) {
+                                PlayerAmbientMode.Dynamic -> state.frame is AmbientFrame.Palette
+                                PlayerAmbientMode.Live -> state.frame is AmbientFrame.Projection
+                                PlayerAmbientMode.Off -> state.frame == null
+                            }
+                        }
+                        val pixel = playback.readLetterboxPixel()
+                        assertTrue(
+                            "Mode ${selectedMode.value}, zoom=$scale, noise=$noise rendered $pixel",
+                            if (selectedMode == PlayerAmbientMode.Off) pixel < 5 else pixel > 10,
+                        )
+                    }
+                }
+                playback.onMain { surfaceRevision++ }
+                runBlocking { settings.set(SettingsKeys.AMBIENT_MODE, PlayerAmbientMode.Live.value) }
+                playback.await("live ambient after replacing the texture view") {
+                    firstFrame > 1 && state.frame is AmbientFrame.Projection
+                }
+                assertTrue(playback.readLetterboxPixel() > 10)
+            }
+        } finally {
+            scope.cancel()
+            preferences.delete()
+        }
+    }
+
     @Test
     fun letterboxUsesTheAmbientColorAndDarkThemeMakesItStronger() = withVideo { playback ->
         playback.await("video in letterbox layout") { state.bounds?.hasLetterboxSpace == true }
@@ -244,39 +302,51 @@ class PlayerAmbientPlaybackTest {
         }
     }
 
-    private fun withVideo(test: (Playback) -> Unit) {
+    private fun withVideo(test: (Playback) -> Unit) = withFixture { withPlayback(it, null, test) }
+
+    private fun withPlayback(fixture: File, settings: SettingsRepository?, test: (Playback) -> Unit) {
+        ActivityScenario.launch(ComponentActivity::class.java).use { scenario ->
+            lateinit var playback: Playback
+            scenario.onActivity { playback = Playback(it, fixture, settings) }
+            try {
+                test(playback)
+            } finally {
+                playback.onMain { player.release() }
+            }
+        }
+    }
+
+    private fun withFixture(test: (File) -> Unit) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val fixture = File.createTempFile("ambient-edges", ".mp4", instrumentation.targetContext.cacheDir)
         try {
             instrumentation.context.assets.open("ambient-edges-60fps.mp4").use { source ->
                 fixture.outputStream().use { source.copyTo(it) }
             }
-            ActivityScenario.launch(ComponentActivity::class.java).use { scenario ->
-                lateinit var playback: Playback
-                scenario.onActivity { playback = Playback(it, fixture) }
-                try {
-                    test(playback)
-                } finally {
-                    playback.onMain { player.release() }
-                }
-            }
+            test(fixture)
         } finally {
             fixture.delete()
         }
     }
 
-    private class Playback(activity: ComponentActivity, fixture: File) {
+    private class Playback(activity: ComponentActivity, fixture: File, settings: SettingsRepository?) {
         val window: Window = activity.window
         val state = PlayerAmbientState()
         val player = ExoPlayer.Builder(activity).build()
         var mode by mutableStateOf(PlayerAmbientMode.Off)
+        var appliedMode = PlayerAmbientMode.Off
+            private set
         var fps by mutableIntStateOf(30)
         var darkTheme by mutableStateOf(false)
+        var zoom by mutableStateOf(PlayerVideoZoom())
+        var reduceNoise by mutableStateOf(false)
+        var surfaceRevision by mutableIntStateOf(0)
         private var playing by mutableStateOf(false)
         var firstFrame by mutableIntStateOf(0)
             private set
         private var seek by mutableStateOf<AmbientSeek?>(null)
-        private var texture by mutableStateOf<TextureView?>(null)
+        private val textureState = mutableStateOf<TextureView?>(null)
+        private val texture by textureState
         private var coordinates: LayoutCoordinates? = null
         var showControls by mutableStateOf(false)
         var frostedControls by mutableStateOf(false)
@@ -296,16 +366,25 @@ class PlayerAmbientPlaybackTest {
             player.prepare()
             activity.setContent {
                 MaterialTheme(colorScheme = if (darkTheme) darkColorScheme() else lightColorScheme()) {
-                    TrackAmbientVideoLayout(state, texture) { coordinates }
+                    val ambientMode = if (settings == null) mode else {
+                        val storedMode by remember(settings) { settings.get(SettingsKeys.AMBIENT_MODE) }
+                            .collectAsStateWithLifecycle(SettingsKeys.AMBIENT_MODE.defaultValue)
+                        PlayerAmbientMode.fromValue(storedMode)
+                    }
+                    SideEffect { appliedMode = ambientMode }
+                    TrackAmbientVideoLayout(state, texture, { zoom }) { coordinates }
                     CapturePlayerAmbient(
-                        state, texture, mode, fps, firstFrame > 0, playing, "fixture", "fixture", firstFrame, seek,
+                        state, texture, ambientMode, fps, firstFrame > 0, playing, "fixture", "fixture", firstFrame, seek,
                     )
                     Box(Modifier.fillMaxSize().background(Color.Black).onGloballyPositioned {
                         coordinates = it
-                        state.updateBounds(texture, it)
+                        state.updateBounds(texture, it, zoom)
                     }) {
                         PlayerAmbientBackdrop(state, modifier = Modifier.matchParentSize())
-                        PlayerVideoSurface(player, playing, Modifier.fillMaxSize(), onTextureChanged = { texture = it })
+                        key(surfaceRevision) {
+                            PlayerVideoSurface(player, playing, Modifier.fillMaxSize(), zoom = { zoom }, textureState = textureState)
+                        }
+                        if (reduceNoise) VideoBackdropBlur(texture, emptyList(), reduceNoise = true)
                         if (showControls) {
                             val regions = remember { FrostedPlayerRegions() }
                             val backdropTexture = texture.takeIf { frostedControls && firstFrame > 0 }
@@ -359,13 +438,27 @@ class PlayerAmbientPlaybackTest {
             return bitmap.getPixel(0, 0)
         }
 
+        fun readLetterboxPixel(): Int {
+            await("letterbox") { state.bounds?.hasLetterboxSpace == true }
+            val bounds = onMain { checkNotNull(state.bounds) }
+            val video = bounds.videoInWindow
+            val horizontalBar = bounds.videoInPlayer.top > 8f
+            val x = if (horizontalBar) (video.left + video.width * 0.25f).toInt() else video.left.toInt() - 6
+            val y = if (horizontalBar) video.top.toInt() - 6 else video.center.y.toInt()
+            return AndroidColor.red(readWindowPixel(x, y))
+        }
+
         fun await(description: String, condition: Playback.() -> Boolean) {
-            val deadline = SystemClock.elapsedRealtime() + TimeUnit.SECONDS.toMillis(8)
-            while (SystemClock.elapsedRealtime() < deadline) {
-                if (onMain(condition)) return
-                SystemClock.sleep(32)
-            }
-            assertTrue("Timed out waiting for $description", onMain(condition))
+            awaitCondition(description) { onMain(condition) }
         }
     }
+}
+
+private fun awaitCondition(description: String, condition: () -> Boolean) {
+    val deadline = SystemClock.elapsedRealtime() + TimeUnit.SECONDS.toMillis(8)
+    while (SystemClock.elapsedRealtime() < deadline) {
+        if (condition()) return
+        SystemClock.sleep(32)
+    }
+    assertTrue("Timed out waiting for $description", condition())
 }

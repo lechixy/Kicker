@@ -37,7 +37,9 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.suspendCoroutine
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -134,15 +136,15 @@ private class AmbientCapture(
     private val preserveBlackBars: Boolean,
 ) {
     private var surfaceTexture: SurfaceTexture? = null
-    private var liveCopy: AmbientLiveCopy? = null
+    private var surfaceCopy: AmbientSurfaceCopy? = null
     private var dynamicBitmap: Bitmap? = null
     private val dynamicPixels by lazy { IntArray(32 * 32) }
 
     private fun currentSurface(): SurfaceTexture? {
         val surface = texture.surfaceTexture?.takeIf { texture.isAvailable && !it.isReleased }
         if (surface !== surfaceTexture) {
-            liveCopy?.close()
-            liveCopy = null
+            surfaceCopy?.close()
+            surfaceCopy = null
             surfaceTexture = surface
             state.frame = null
         }
@@ -152,8 +154,10 @@ private class AmbientCapture(
     suspend fun sampleDynamic() {
         while (true) {
             val previous = state.frame as? AmbientFrame.Palette
-            val next = currentSurface()?.takeIf { it.timestamp != 0L }?.let { readPalette() }
-            if (previous == null || next == null || state.frame == null ||
+            val next = currentSurface()?.let { readPalette(it) }
+            if (next == null) {
+                delay(DYNAMIC_INTERVAL_MS.toLong())
+            } else if (previous == null || state.frame == null ||
                 previous.colors == next.colors || previous.bars != next.bars
             ) {
                 state.frame = next
@@ -180,7 +184,7 @@ private class AmbientCapture(
                 previousSurface = surface
             }
             if (cadence.accept(surface.timestamp, frameTime, fps())) {
-                readProjection(surface)
+                if (!readProjection(surface)) cadence.retryCurrentFrame()
             }
         }
     }
@@ -193,27 +197,32 @@ private class AmbientCapture(
                 withFrameNanos { it }
                 val surface = currentSurface() ?: continue
                 val timestamp = surface.timestamp
-                if (timestamp == 0L || timestamp == seek?.previousTimestamp) continue
-                if (mode == PlayerAmbientMode.Dynamic) state.frame = readPalette()
-                else readProjection(surface)
-                break
+                if (timestamp == seek?.previousTimestamp) continue
+                val captured = if (mode == PlayerAmbientMode.Dynamic) {
+                    readPalette(surface)?.let { state.frame = it } != null
+                } else {
+                    readProjection(surface)
+                }
+                if (captured) break
             }
         }
     }
 
-    private fun readPalette(): AmbientFrame.Palette? {
+    private suspend fun readPalette(surface: SurfaceTexture): AmbientFrame.Palette? {
         val size = sampleSize(texture.width, texture.height, 32) ?: return null
-        val bitmap = dynamicBitmap?.takeIf { it.width == size.width && it.height == size.height }
+        val buffer = dynamicBitmap?.takeIf { it.width == size.width && it.height == size.height }
             ?: Bitmap.createBitmap(size.width, size.height, Bitmap.Config.ARGB_8888).also { dynamicBitmap = it }
-        // TextureView leaves the destination unchanged if copying fails.
-        bitmap.eraseColor(android.graphics.Color.TRANSPARENT)
-        try {
-            texture.getBitmap(bitmap)
-        } catch (_: IllegalStateException) {
-            return null
+        // Some devices can't read the texture layer until it draws again. The
+        // underlying video surface may already have the frame, even while paused.
+        if (!texture.copyAmbientBitmap(buffer)) {
+            val copy = surfaceCopy ?: AmbientSurfaceCopy(surface).also { surfaceCopy = it }
+            if (!state.liveCopyLock.withLock { copy.copyInto(buffer) }) return null
         }
-        if (android.graphics.Color.alpha(bitmap.getPixel(bitmap.width / 2, bitmap.height / 2)) == 0) return null
+        if (currentSurface() !== surface) return null
+        return paletteFrom(buffer)
+    }
 
+    private fun paletteFrom(bitmap: Bitmap): AmbientFrame.Palette {
         val left = 0f..0.15f
         val center = 0.35f..0.65f
         val right = 0.85f..1f
@@ -237,15 +246,17 @@ private class AmbientCapture(
         ), bars)
     }
 
-    private suspend fun readProjection(surface: SurfaceTexture) {
-        val size = sampleSize(texture.width, texture.height, 96) ?: return
-        val copy = liveCopy ?: AmbientLiveCopy(surface).also { liveCopy = it }
-        val bitmap = state.liveCopyLock.withLock { copy.read(size, preserveBlackBars) }
-        if (currentSurface() === surface) state.frame = bitmap?.let { AmbientFrame.Projection(it) }
+    private suspend fun readProjection(surface: SurfaceTexture): Boolean {
+        val size = sampleSize(texture.width, texture.height, 96) ?: return false
+        val copy = surfaceCopy ?: AmbientSurfaceCopy(surface).also { surfaceCopy = it }
+        val bitmap = state.liveCopyLock.withLock { copy.read(texture, size, preserveBlackBars) }
+        if (currentSurface() !== surface || bitmap == null) return false
+        state.frame = AmbientFrame.Projection(bitmap)
+        return true
     }
 
     fun close() {
-        liveCopy?.close()
+        surfaceCopy?.close()
     }
 }
 
@@ -267,9 +278,13 @@ internal class AmbientFrameCadence {
     }
 
     fun reset() {
-        lastTimestamp = 0L
+        retryCurrentFrame()
         nextFrame = Long.MIN_VALUE
         lastFps = 0
+    }
+
+    fun retryCurrentFrame() {
+        lastTimestamp = 0L
     }
 }
 
@@ -301,14 +316,29 @@ private fun Bitmap.average(xRange: ClosedFloatingPointRange<Float>, yRange: Clos
     return Color(red / count, green / count, blue / count)
 }
 
-private class AmbientLiveCopy(texture: SurfaceTexture) : AutoCloseable {
+private fun TextureView.copyAmbientBitmap(bitmap: Bitmap): Boolean {
+    // TextureView leaves the destination unchanged if copying fails.
+    bitmap.eraseColor(android.graphics.Color.TRANSPARENT)
+    return try {
+        getBitmap(bitmap)
+        android.graphics.Color.alpha(bitmap.getPixel(bitmap.width / 2, bitmap.height / 2)) != 0
+    } catch (_: IllegalStateException) {
+        false
+    }
+}
+
+private class AmbientSurfaceCopy(texture: SurfaceTexture) : AutoCloseable {
     private val surface = Surface(texture)
     private val completionHandler = Handler(Looper.getMainLooper())
     private var buffer: Bitmap? = null
     private var pixels = IntArray(0)
     private var scratch = IntArray(0)
 
-    suspend fun read(size: AmbientSampleSize, preserveBlackBars: Boolean): Bitmap? = withContext(Dispatchers.Default) {
+    suspend fun read(
+        texture: TextureView,
+        size: AmbientSampleSize,
+        preserveBlackBars: Boolean,
+    ): Bitmap? {
         val (width, height) = size
         val bitmap = buffer?.takeIf { it.width == width && it.height == height }
             ?: Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also {
@@ -316,16 +346,26 @@ private class AmbientLiveCopy(texture: SurfaceTexture) : AutoCloseable {
                 pixels = IntArray(width * height)
                 scratch = IntArray(width * height)
             }
-        // Finish any outstanding copy before releasing its target buffer or Surface.
-        val result = suspendCoroutine { continuation ->
+        if (!copyInto(bitmap) && !texture.copyAmbientBitmap(bitmap)) return null
+        return withContext(Dispatchers.Default) { blurProjection(bitmap, preserveBlackBars) }
+    }
+
+    // Wait for PixelCopy to finish before cancellation can release the buffer or Surface.
+    suspend fun copyInto(bitmap: Bitmap): Boolean {
+        val copied = suspendCoroutine { continuation ->
             try {
-                PixelCopy.request(surface, bitmap, { continuation.resume(it) }, completionHandler)
+                PixelCopy.request(surface, bitmap, { continuation.resume(it == PixelCopy.SUCCESS) }, completionHandler)
             } catch (_: IllegalArgumentException) {
-                continuation.resume(PixelCopy.ERROR_SOURCE_INVALID)
+                continuation.resume(false)
             }
         }
-        if (result != PixelCopy.SUCCESS) return@withContext null
+        currentCoroutineContext().ensureActive()
+        return copied
+    }
 
+    private fun blurProjection(bitmap: Bitmap, preserveBlackBars: Boolean): Bitmap {
+        val width = bitmap.width
+        val height = bitmap.height
         bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
         val bars = if (preserveBlackBars) detectAmbientBlackBars(pixels, width, height) else AmbientBlackBars()
         val radius = (maxOf(width, height) / 12).coerceAtLeast(1)
@@ -341,7 +381,7 @@ private class AmbientLiveCopy(texture: SurfaceTexture) : AutoCloseable {
             }
         }
         // Canvas may retain the image in its display list after the next capture starts.
-        Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
+        return Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
     }
 
     override fun close() = surface.release()

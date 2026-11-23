@@ -363,7 +363,8 @@ fun KickPlayerView(
             minimumZoom.animateTo(1f, tween(150))
         }
     }
-    var playerTexture by remember { mutableStateOf<TextureView?>(null) }
+    val playerTextureState = remember { mutableStateOf<TextureView?>(null) }
+    val playerTexture by playerTextureState
     var ambientCoordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
     val hostedAmbient = LocalPlayerAmbientState.current
     val ambient = hostedAmbient ?: remember { PlayerAmbientState() }
@@ -1123,7 +1124,7 @@ fun KickPlayerView(
                 player, isPlaying,
                 Modifier.fillMaxSize(),
                 zoom = playbackZoom,
-                onTextureChanged = { playerTexture = it },
+                textureState = playerTextureState,
             )
         }
 

@@ -1,10 +1,20 @@
 package com.lechixy.kick.components.channel.chat
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toPixelMap
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.junit4.v2.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.unit.dp
 import androidx.test.espresso.Espresso.pressBack
 import androidx.test.platform.app.InstrumentationRegistry
 import com.lechixy.kick.R
@@ -14,11 +24,45 @@ import com.lechixy.kick.data.channel.model.LeaderboardBoardType
 import com.lechixy.kick.data.chat.model.GiftLeaderboardEntry
 import com.lechixy.kick.theme.KickTheme
 import com.lechixy.kick.theme.Theme
+import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
 
 class ChannelLeaderboardUiTest {
     @get:Rule val compose = createComposeRule()
+
+    @Test
+    fun stripShowsTheBackdropAndCentersEntriesUntilTheyOverflow() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val board = LeaderboardBoard(
+            LeaderboardBoardType.WEEKLY_GIFTERS,
+            listOf(GiftLeaderboardEntry(1, "LeaderboardMemberWithALongName", 42)),
+        )
+        val state = ChannelLeaderboardUiState(isLoading = false, boards = listOf(board))
+        val width = mutableStateOf(340.dp)
+        compose.setContent {
+            KickTheme(Theme.LIGHT, dynamicColor = false) {
+                Box(Modifier.width(width.value).background(Color.Red).testTag("leaderboardBackdrop")) {
+                    ChannelLeaderboardStrip(state, paused = true, onClick = {})
+                }
+            }
+        }
+
+        val backdrop = compose.onNodeWithTag("leaderboardBackdrop")
+        val badge = compose.onNodeWithContentDescription(context.getString(R.string.leaderboard_rank, 1), useUnmergedTree = true)
+        val quantity = compose.onNodeWithText("42", useUnmergedTree = true)
+        val stripBounds = backdrop.fetchSemanticsNode().boundsInRoot
+        val entryCenter = (badge.fetchSemanticsNode().boundsInRoot.left + quantity.fetchSemanticsNode().boundsInRoot.right) / 2
+        assertEquals(stripBounds.center.x, entryCenter, 1f)
+        val pixels = backdrop.captureToImage().toPixelMap()
+        assertEquals(Color.Red, pixels[1, pixels.height / 2])
+
+        compose.runOnIdle { width.value = 110.dp }
+        val narrowBounds = backdrop.fetchSemanticsNode().boundsInRoot
+        val badgeLeft = badge.fetchSemanticsNode().boundsInRoot.left
+        val padding = with(compose.density) { 10.dp.roundToPx() }
+        assertEquals(narrowBounds.left + padding, badgeLeft, 1f)
+    }
 
     @Test
     fun stripOpensTheDisplayedBoardAndDialogClosesWithBack() {

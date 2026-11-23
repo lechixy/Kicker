@@ -5,6 +5,7 @@ import android.view.TextureView
 import android.view.ViewGroup
 import androidx.annotation.OptIn
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
@@ -20,9 +21,9 @@ internal fun PlayerVideoSurface(
     isPlaying: Boolean,
     modifier: Modifier = Modifier,
     zoom: () -> PlayerVideoZoom = { PlayerVideoZoom() },
-    onTextureChanged: (TextureView?) -> Unit = {},
+    showControls: Boolean = false,
+    textureState: MutableState<TextureView?>? = null,
 ) {
-    val textureCallback = rememberUpdatedState(onTextureChanged)
     val currentZoom = rememberUpdatedState(zoom)
     AndroidView(
         factory = { context ->
@@ -30,16 +31,31 @@ internal fun PlayerVideoSurface(
             (LayoutInflater.from(context).inflate(R.layout.kick_player_view, null) as PlayerView).apply {
                 layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                 addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> applyVideoZoom(currentZoom.value()) }
-                textureCallback.value(videoSurfaceView as? TextureView)
             }
         },
         update = { view ->
+            // AndroidView can be moved or replaced by the player host. Publish the
+            // texture from the active view instead of publishing during inflation.
+            textureState?.value = view.videoSurfaceView as? TextureView
             if (view.player !== player) view.player = player
+            if (view.useController != showControls) {
+                view.useController = showControls
+                if (showControls) {
+                    view.setShowPreviousButton(false)
+                    view.setShowNextButton(false)
+                    view.setShowSubtitleButton(false)
+                    view.controllerShowTimeoutMs = 0
+                    view.controllerHideOnTouch = false
+                    view.showController()
+                }
+            }
             view.keepScreenOn = isPlaying
             view.applyVideoZoom(currentZoom.value())
         },
         onRelease = {
-            textureCallback.value(null)
+            if (textureState != null && textureState.value === it.videoSurfaceView) {
+                textureState.value = null
+            }
             it.player = null
         },
         modifier = modifier,

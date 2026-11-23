@@ -1,16 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="recording_download_entire">Entire recording</string>
+    <string name="recording_download_title">Download options</string>
+    <string name="recording_download_entire">Entire video</string>
     <string name="recording_download_partial">Select a range</string>
     <string name="recording_download_from_resume">Start where I left off (%1$s)</string>
     <string name="recording_download_range_start">Start</string>
     <string name="recording_download_range_end">End</string>
+    <string name="recording_download_trim_help">Drag both handles or enter the start and end times.</string>
     <string name="recording_download_range_summary">%1$s – %2$s · %3$s</string>
     <string name="recording_download_invalid_range">Enter a range within the recording in HH:MM:SS.</string>
     <string name="recording_download_estimated_size">Estimated size: %1$s</string>
     <string name="recording_download_size_unknown">Estimated size unavailable</string>
     <string name="recording_download_live_window">You can download the portion of the live stream available when this window opened.</string>
     <string name="recording_download_source_failed">Couldn’t load the recording for download.</string>
-    <string name="recording_download_preview">Play preview</string>
-    <string name="recording_download_pause_preview">Pause preview</string>
+    <string name="recording_download_preview">Video preview</string>
+    <string name="recording_download_selected_preview">Selected range preview</string>
+    <string name="recording_download_preview_start">Show start</string>
+    <string name="recording_download_preview_end">Show end</string>
+    <string name="recording_download_mute_preview">Mute preview</string>
+    <string name="recording_download_unmute_preview">Unmute preview</string>
 </resources>

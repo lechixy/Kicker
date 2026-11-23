@@ -1,16 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="recording_download_entire">Tamamını indir</string>
+    <string name="recording_download_title">İndirme seçenekleri</string>
+    <string name="recording_download_entire">Tamamı</string>
     <string name="recording_download_partial">Aralık seç</string>
     <string name="recording_download_from_resume">Kaldığım yerden başla (%1$s)</string>
     <string name="recording_download_range_start">Başlangıç</string>
     <string name="recording_download_range_end">Bitiş</string>
+    <string name="recording_download_trim_help">Uçları sürükle veya başlangıç ve bitiş zamanlarını gir.</string>
     <string name="recording_download_range_summary">%1$s – %2$s · %3$s</string>
     <string name="recording_download_invalid_range">Kayıt içinde kalan bir aralığı saat:dakika:saniye biçiminde gir.</string>
     <string name="recording_download_estimated_size">Tahmini boyut: %1$s</string>
     <string name="recording_download_size_unknown">Tahmini boyut hesaplanamadı</string>
     <string name="recording_download_live_window">Diyalog açıldığında canlı yayının erişilebilen kısmını indirebilirsin.</string>
     <string name="recording_download_source_failed">İndirme için kayıt yüklenemedi.</string>
-    <string name="recording_download_preview">Önizlemeyi oynat</string>
-    <string name="recording_download_pause_preview">Önizlemeyi duraklat</string>
+    <string name="recording_download_preview">Video önizlemesi</string>
+    <string name="recording_download_selected_preview">Seçili aralığın önizlemesi</string>
+    <string name="recording_download_preview_start">Başlangıcı göster</string>
+    <string name="recording_download_preview_end">Bitişi göster</string>
+    <string name="recording_download_mute_preview">Önizleme sesini kapat</string>
+    <string name="recording_download_unmute_preview">Önizleme sesini aç</string>
 </resources>

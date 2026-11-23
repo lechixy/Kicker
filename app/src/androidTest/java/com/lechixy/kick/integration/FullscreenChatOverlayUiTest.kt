@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.lechixy.kick.R
@@ -351,9 +352,8 @@ class FullscreenChatOverlayUiTest {
         compose.onNodeWithText(frosted).assertIsNotEnabled()
     }
 
-    private fun verifyTextureBlurTracksFrames(style: FullscreenChatBlurStyle) {
+    private fun verifyTextureBlurTracksFrames(style: FullscreenChatBlurStyle) = withSettings { settings ->
         var frameIndex by mutableStateOf(1)
-        var blurEnabled by mutableStateOf(true)
         var blurOpacity by mutableStateOf(0f)
         var dockedTop by mutableStateOf(false)
         val displayedFrame = AtomicInteger()
@@ -362,6 +362,8 @@ class FullscreenChatOverlayUiTest {
         val inset = if (frosted) 0.35f else 0.25f
         var texture by mutableStateOf<TextureView?>(null)
         compose.setContent {
+            val blurEnabled by remember { settings.get(SettingsKeys.BLUR_EFFECTS) }
+                .collectAsStateWithLifecycle(SettingsKeys.BLUR_EFFECTS.defaultValue)
             var region by remember { mutableStateOf<Rect?>(null) }
             var viewport by remember { mutableStateOf<Rect?>(null) }
             Box(Modifier.size(paneSize).testTag("live-video").onGloballyPositioned {
@@ -428,9 +430,9 @@ class FullscreenChatOverlayUiTest {
         assertTrue("Expected blur inside the region, got $inside", inside.red > 0.10f)
         assertTrue("Expected sharp video outside the region, got $outside", outside.red < 0.05f)
 
-        compose.runOnIdle { blurEnabled = false }
+        runBlocking { settings.set(SettingsKeys.BLUR_EFFECTS, false) }
         compose.waitUntil(5_000) { video.captureToImage().toPixelMap()[x, first.height / 2].red < 0.05f }
-        compose.runOnIdle { blurEnabled = true }
+        runBlocking { settings.set(SettingsKeys.BLUR_EFFECTS, true) }
         compose.waitUntil(5_000) { video.captureToImage().toPixelMap()[x, first.height / 2].red > 0.10f }
 
         compose.runOnIdle { frameIndex = 2 }

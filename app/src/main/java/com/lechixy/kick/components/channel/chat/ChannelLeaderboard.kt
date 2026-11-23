@@ -148,7 +148,7 @@ internal fun ChannelLeaderboardStrip(
         ?: state.boards.firstOrNull { it.type == LeaderboardBoardType.MONTHLY_GIFTERS }
     if (state.boards.isEmpty() && !state.isLoading && !state.hasError) return
 
-    Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
+    Surface(color = Color.Transparent, contentColor = MaterialTheme.colorScheme.onSurface) {
         Column {
             Box(
                 Modifier.fillMaxWidth().heightIn(min = 30.dp)
@@ -167,12 +167,12 @@ internal fun ChannelLeaderboardStrip(
                 } else {
                     key(state.channelId, board.type) {
                         Row(
-                            Modifier.basicMarquee(
+                            Modifier.align(Alignment.Center).basicMarquee(
                                 iterations = if (paused) 0 else Int.MAX_VALUE,
                                 initialDelayMillis = 7_000,
                                 repeatDelayMillis = 7_000,
                                 spacing = MarqueeSpacing(16.dp),
-                                velocity = 36.dp,
+                                velocity = 42.dp,
                             ).padding(horizontal = 10.dp, vertical = 4.dp),
                             horizontalArrangement = Arrangement.spacedBy(16.dp),
                             verticalAlignment = Alignment.CenterVertically,

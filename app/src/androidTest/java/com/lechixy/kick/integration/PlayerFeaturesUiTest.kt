@@ -117,10 +117,11 @@ class PlayerFeaturesUiTest {
     @Test fun videoNoiseReductionSoftensFineNoiseAndPreservesStrongEdges() {
         assumeTrue(Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
         var enabled by mutableStateOf(false)
-        var texture by mutableStateOf<TextureView?>(null)
+        val textureState = mutableStateOf<TextureView?>(null)
+        val texture by textureState
         compose.setContent {
             Box(Modifier.size(160.dp).testTag("noise-reduction-video")) {
-                PlayerVideoSurface(null, false, Modifier.fillMaxSize()) { texture = it }
+                PlayerVideoSurface(null, false, Modifier.fillMaxSize(), textureState = textureState)
                 VideoBackdropBlur(texture, emptyList(), reduceNoise = enabled)
             }
         }
@@ -161,7 +162,8 @@ class PlayerFeaturesUiTest {
 
     @Test fun videoBackdropBlurSurvivesNoiseReductionAndCanBeToggledIndependently() {
         assumeTrue(Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-        var texture by mutableStateOf<TextureView?>(null)
+        val textureState = mutableStateOf<TextureView?>(null)
+        val texture by textureState
         var blurEnabled by mutableStateOf(false)
         var reduceNoise by mutableStateOf(false)
         var region by mutableStateOf<FullscreenChatBackdropRegion?>(null)
@@ -174,7 +176,7 @@ class PlayerFeaturesUiTest {
                         style = FullscreenChatBlurStyle.FrostedGlass,
                     )
                 }) {
-                    PlayerVideoSurface(null, false, Modifier.fillMaxSize()) { texture = it }
+                    PlayerVideoSurface(null, false, Modifier.fillMaxSize(), textureState = textureState)
                     VideoBackdropBlur(texture, listOfNotNull(region), reduceNoise = reduceNoise)
                 }
             }
@@ -519,11 +521,12 @@ class PlayerFeaturesUiTest {
     }
 
     @Test fun zoomScalesTheViewWithoutResizingItsTexture() {
-        var texture: TextureView? = null
+        val textureState = mutableStateOf<TextureView?>(null)
+        val texture by textureState
         var zoom by mutableStateOf(PlayerVideoZoom())
         compose.setContent {
             Box(Modifier.size(200.dp).clipToBounds()) {
-                PlayerVideoSurface(null, false, Modifier.fillMaxSize(), zoom = { zoom }) { texture = it }
+                PlayerVideoSurface(null, false, Modifier.fillMaxSize(), zoom = { zoom }, textureState = textureState)
             }
         }
         val originalWidth = compose.runOnIdle { requireNotNull(texture).width }

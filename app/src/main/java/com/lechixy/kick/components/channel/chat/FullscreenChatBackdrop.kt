@@ -19,6 +19,7 @@ import android.graphics.SurfaceTexture
 import android.os.Build
 import android.view.Choreographer
 import android.view.TextureView
+import android.view.View
 import android.view.ViewTreeObserver
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.background
@@ -322,27 +323,25 @@ internal fun VideoBackdropBlur(
             RenderEffect.createRuntimeShaderEffect(RuntimeShader(VIDEO_NOISE_REDUCTION_SHADER), "video")
         } else null
     }
-    if (blurRegions.isEmpty() && noiseReduction == null) return
     val radius = with(LocalDensity.current) { 15.dp.toPx() }
     val maxFeather = with(LocalDensity.current) { 28.dp.toPx() }
     val glassRadius = with(LocalDensity.current) { frostedRadius.toPx() }
     val glassFeather = with(LocalDensity.current) { frostedChatFeather.toPx() }
     val controlFeather = with(LocalDensity.current) { 1.dp.toPx() }
     val roundedRadius = with(LocalDensity.current) { 8.dp.toPx() }
-    val masks = remember(texture, blurRegions.size) { List(blurRegions.size) { VideoBlurMask() } }
     val opaquePixel = remember(texture) {
         Bitmap.createBitmap(1, 1, Bitmap.Config.ALPHA_8).apply { eraseColor(android.graphics.Color.WHITE) }
-    }
-    val progressiveEffects = remember(texture, blurRegions.size) {
-        arrayOfNulls<ProgressiveBlurShader>(blurRegions.size)
     }
     val currentRegions by rememberUpdatedState(blurRegions)
     val currentControlOpacity by rememberUpdatedState(controlOpacity)
     val currentOpacity by rememberUpdatedState(opacity)
     val currentZoom by rememberUpdatedState(zoom)
     val scope = rememberCoroutineScope()
-    DisposableEffect(texture, radius, maxFeather, glassRadius, glassFeather, controlFeather, roundedRadius, masks, noiseReduction) {
+    DisposableEffect(texture, radius, maxFeather, glassRadius, glassFeather, controlFeather, roundedRadius, noiseReduction) {
         val location = IntArray(2)
+        val masks = mutableListOf<VideoBlurMask>()
+        val progressiveEffects = mutableListOf<ProgressiveBlurShader?>()
+        var lastSurface: SurfaceTexture? = null
         var lastRegions = emptyList<FullscreenChatBackdropRegion>()
         var lastOpacity = 0f
         var lastControlOpacity = 0f
@@ -369,18 +368,21 @@ internal fun VideoBackdropBlur(
             }
         }
         fun updateEffect() {
+            val regionsInWindow = currentRegions
+            if (regionsInWindow.isEmpty() && noiseReduction == null && appliedEffect == null) return
+            val surface = texture.surfaceTexture
             texture.getLocationInWindow(location)
             val origin = IntOffset(location[0], location[1])
             val textureSize = IntSize(texture.width, texture.height)
             val zoomScale = currentZoom().scale
-            val regionsInWindow = currentRegions
             val textureBounds = Rect(0f, 0f, textureSize.width.toFloat(), textureSize.height.toFloat())
             val alpha = currentOpacity().coerceIn(0f, 1f)
             val visibleOpacity = if (!textureBounds.isEmpty) alpha else 0f
             val visibleControlOpacity = currentControlOpacity().coerceIn(0f, 1f)
             if (regionsInWindow == lastRegions && visibleOpacity == lastOpacity &&
                 visibleControlOpacity == lastControlOpacity && textureSize == lastTextureSize &&
-                origin == lastOrigin && zoomScale == lastZoomScale) return
+                origin == lastOrigin && zoomScale == lastZoomScale && surface === lastSurface) return
+            lastSurface = surface
             lastRegions = regionsInWindow
             lastOpacity = visibleOpacity
             lastControlOpacity = visibleControlOpacity
@@ -391,6 +393,10 @@ internal fun VideoBackdropBlur(
             var softMask: RenderEffect? = null
             var frostedMask: RenderEffect? = null
             var frostedBounds: Rect? = null
+            while (masks.size < regionsInWindow.size) {
+                masks.add(VideoBlurMask())
+                progressiveEffects.add(null)
+            }
             regionsInWindow.forEachIndexed { index, regionInWindow ->
                 val shifted = regionInWindow.bounds.translate(-origin.x.toFloat(), -origin.y.toFloat())
                 val bounds = Rect(shifted.topLeft / zoomScale, shifted.bottomRight / zoomScale)
@@ -460,8 +466,21 @@ internal fun VideoBackdropBlur(
             updateEffect()
             true
         }
-        val observer = texture.viewTreeObserver
-        observer.addOnPreDrawListener(listener)
+        var observer: ViewTreeObserver? = null
+        val attachment = object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(view: View) {
+                observer = view.viewTreeObserver.also { it.addOnPreDrawListener(listener) }
+                view.invalidate()
+            }
+
+            override fun onViewDetachedFromWindow(view: View) {
+                observer?.takeIf { it.isAlive }?.removeOnPreDrawListener(listener)
+                observer = null
+                lastSurface = null
+            }
+        }
+        texture.addOnAttachStateChangeListener(attachment)
+        if (texture.isAttachedToWindow) attachment.onViewAttachedToWindow(texture)
         val updates = scope.launch {
             snapshotFlow { currentZoom() to Triple(currentRegions, currentOpacity(), currentControlOpacity()) }
                 .collect { texture.invalidate() }
@@ -469,7 +488,8 @@ internal fun VideoBackdropBlur(
         onDispose {
             updates.cancel()
             choreographer?.removeFrameCallback(refreshTexture)
-            (if (observer.isAlive) observer else texture.viewTreeObserver).removeOnPreDrawListener(listener)
+            texture.removeOnAttachStateChangeListener(attachment)
+            attachment.onViewDetachedFromWindow(texture)
             texture.setRenderEffect(null)
         }
     }

@@ -1,33 +1,46 @@
 package com.lechixy.kick.components
 
 import android.text.format.Formatter
-import androidx.annotation.OptIn
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.RangeSliderState
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.movableContentOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -36,25 +49,20 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.Player
-import androidx.media3.common.Tracks
-import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.SeekParameters
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-import coil3.compose.AsyncImage
+import androidx.compose.ui.window.DialogProperties
 import com.lechixy.kick.R
 import com.lechixy.kick.data.player.local.PlaybackProgressStore
 import com.lechixy.kick.data.player.local.WatchHistoryEntry
@@ -63,17 +71,12 @@ import com.lechixy.kick.data.player.model.LiveDownloadSnapshot
 import com.lechixy.kick.data.player.model.RecordedPlayback
 import com.lechixy.kick.data.player.model.RecordingDownloadRange
 import com.lechixy.kick.data.player.model.RecordingDownloadSelection
-import com.lechixy.kick.service.ClipAudioHandoff
 import com.lechixy.kick.service.LiveRecordingDownload
 import com.lechixy.kick.service.PreparedRecordingDownload
-import com.lechixy.kick.service.kickPlaybackAudioAttributes
 import com.lechixy.kick.service.prepareRecordingDownload
-import com.lechixy.kick.service.recordingDownloadDataSource
-import com.lechixy.kick.service.recordingDownloadMediaItem
 import com.lechixy.kick.util.FormatUtils
 import kotlin.math.roundToLong
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
 
 @Composable
 internal fun RecordingDownloadDialog(
@@ -108,11 +111,11 @@ internal fun RecordingDownloadDialog(
     var partial by remember(recording) { mutableStateOf(false) }
     var start by remember(source) { mutableLongStateOf(0L) }
     var end by remember(source, duration) { mutableLongStateOf(duration) }
-    var startInput by remember(source) { mutableStateOf<String?>(null) }
-    var endInput by remember(source) { mutableStateOf<String?>(null) }
+    var startInput by remember(source) { mutableStateOf<TextFieldValue?>(null) }
+    var endInput by remember(source) { mutableStateOf<TextFieldValue?>(null) }
     var showEnd by remember(source) { mutableStateOf(false) }
-    val selectedStart = startInput?.let { parseDownloadTime(it)?.minus(offset) } ?: start.takeIf { startInput == null }
-    val selectedEnd = endInput?.let { parseDownloadTime(it)?.minus(offset) } ?: end.takeIf { endInput == null }
+    val selectedStart = startInput?.let { parseDownloadTime(it.text)?.minus(offset) } ?: start.takeIf { startInput == null }
+    val selectedEnd = endInput?.let { parseDownloadTime(it.text)?.minus(offset) } ?: end.takeIf { endInput == null }
     val trimmedRange = if (selectedStart != null && selectedEnd != null &&
         selectedStart >= 0 && selectedStart < selectedEnd && selectedEnd <= duration
     ) RecordingDownloadRange(selectedStart, selectedEnd) else null
@@ -132,128 +135,278 @@ internal fun RecordingDownloadDialog(
         endInput = null
     }
 
-    PredictiveAlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.recording_download)) },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) } },
-        confirmButton = {
-            TextButton(enabled = source != null && range != null, onClick = {
-                if (source != null && range != null) {
-                    onConfirm(duration, source.selection.copy(
-                        range = range.takeIf { partial },
-                        estimatedBytes = estimatedBytes,
-                    ), source.snapshot)
-                }
-            }) { Text(stringResource(R.string.recording_download)) }
-        },
-        text = {
-            Column(
-                Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                Text(recording.title.ifBlank { recording.channelName ?: recording.id },
-                    style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                if (source != null) {
-                    RecordingDownloadPreview(source, recording.thumbnail, range, partial, showEnd,
-                        onChooseEnd = { showEnd = it },
-                        onDuration = { measuredDuration = it },
-                        onBitrate = { measuredBitrate = it })
-                } else {
-                    DownloadPreviewFrame(recording.thumbnail) {
-                        if (loadFailed) {
+    val preview: @Composable (Dp) -> Unit = { frameWidth ->
+        if (source != null) {
+            RecordingDownloadPreview(source, recording.thumbnail, range, partial, showEnd,
+                onDuration = { measuredDuration = it }, onBitrate = { measuredBitrate = it },
+                frameWidth = frameWidth)
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                DownloadPreviewFrame(recording.thumbnail, frameWidth) {
+                    if (loadFailed) {
+                        Surface(shape = MaterialTheme.shapes.large) {
                             TextButton(onClick = { attempt++ }) { Text(stringResource(R.string.clip_preview_retry)) }
-                        } else CircularProgressIndicator()
-                    }
-                    if (loadFailed) Text(stringResource(R.string.recording_download_source_failed),
-                        color = MaterialTheme.colorScheme.error)
+                        }
+                    } else CircularProgressIndicator()
                 }
-                if (live != null) {
-                    Text(stringResource(R.string.recording_download_live_window), style = MaterialTheme.typography.bodySmall)
+                if (loadFailed) {
+                    Text(stringResource(R.string.recording_download_source_failed),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                 }
-                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = !partial, onClick = {
-                        partial = false
+            }
+        }
+    }
+
+    val options: @Composable () -> Unit = {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                SegmentedButton(
+                    selected = !partial,
+                    onClick = { partial = false },
+                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                ) { Text(stringResource(R.string.recording_download_entire)) }
+                SegmentedButton(
+                    selected = partial,
+                    onClick = { partial = true },
+                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                    enabled = whole != null,
+                ) { Text(stringResource(R.string.recording_download_partial)) }
+            }
+            if (live != null) {
+                Text(stringResource(R.string.recording_download_live_window),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (partial && whole != null) {
+                Text(stringResource(R.string.recording_download_trim_help),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                DownloadRangeSlider(trimmedRange ?: whole, duration, ::pickRange)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(FormatUtils.formatDuration(offset), style = MaterialTheme.typography.labelSmall)
+                    Text(FormatUtils.formatDuration(offset + duration), style = MaterialTheme.typography.labelSmall)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DownloadTimeField(R.string.recording_download_range_start,
+                        startInput ?: TextFieldValue(FormatUtils.formatDuration(start + offset)),
+                        trimmedRange == null, Modifier.weight(1f)) {
+                        startInput = it
                         showEnd = false
-                    },
-                        label = { Text(stringResource(R.string.recording_download_entire)) })
-                    FilterChip(selected = partial, onClick = { partial = true }, enabled = whole != null,
-                        label = { Text(stringResource(R.string.recording_download_partial)) })
-                }
-                if (partial && whole != null) {
-                    val sliderRange = trimmedRange ?: whole
-                    val sliderState = remember(duration) {
-                        RangeSliderState(endValue = duration.toFloat(), trackRange = 0f..duration.toFloat())
                     }
-                    SideEffect {
-                        val lower = sliderRange.startMs.toFloat()
-                        val upper = sliderRange.endMs.toFloat()
-                        if (lower > sliderState.endValue) sliderState.endValue = upper
-                        sliderState.startValue = lower
-                        sliderState.endValue = upper
-                    }
-                    RangeSlider(
-                        state = sliderState,
-                        onValueChange = { values ->
-                            val step = minOf(1_000L, duration)
-                            val sliderStart = ((values.start / step).roundToLong() * step)
-                                .coerceIn(0, duration - step)
-                            val sliderEnd = if (values.endInclusive == duration.toFloat()) duration else
-                                ((values.endInclusive / step).roundToLong() * step).coerceIn(sliderStart + step, duration)
-                            pickRange(sliderStart, sliderEnd)
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        DownloadTimeField(R.string.recording_download_range_start,
-                            startInput ?: FormatUtils.formatDuration(start + offset),
-                            trimmedRange == null, Modifier.weight(1f)) {
-                            startInput = it
-                            showEnd = false
-                        }
-                        DownloadTimeField(R.string.recording_download_range_end,
-                            endInput ?: FormatUtils.formatDuration(end + offset),
-                            trimmedRange == null, Modifier.weight(1f)) {
-                            endInput = it
-                            showEnd = true
-                        }
-                    }
-                    if (trimmedRange == null) {
-                        Text(stringResource(R.string.recording_download_invalid_range),
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    DownloadTimeField(R.string.recording_download_range_end,
+                        endInput ?: TextFieldValue(FormatUtils.formatDuration(end + offset)),
+                        trimmedRange == null, Modifier.weight(1f)) {
+                        endInput = it
+                        showEnd = true
                     }
                 }
-                if (savedPosition != null) {
-                    TextButton(onClick = {
-                        val upper = selectedEnd?.takeIf { it > savedPosition && it <= duration } ?: duration
-                        partial = true
-                        pickRange(savedPosition, upper)
-                    }) {
+                if (trimmedRange == null) {
+                    Text(stringResource(R.string.recording_download_invalid_range),
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                }
+            }
+            if (savedPosition != null) {
+                TextButton(onClick = {
+                    val upper = selectedEnd?.takeIf { it > savedPosition && it <= duration } ?: duration
+                    partial = true
+                    pickRange(savedPosition, upper)
+                }) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(painterResource(R.drawable.history_24dp_e3e3e3_fill0_wght400_grad0_opsz24), null)
                         Text(stringResource(R.string.recording_download_from_resume,
                             FormatUtils.formatDuration(savedPosition + offset)))
                     }
                 }
-                if (range != null) {
-                    Text(stringResource(R.string.recording_download_range_summary,
-                        FormatUtils.formatDuration(range.startMs + offset),
-                        FormatUtils.formatDuration(range.endMs + offset),
-                        FormatUtils.formatDuration(range.durationMs)))
-                    Text(if (estimatedBytes != null) stringResource(R.string.recording_download_estimated_size,
-                        Formatter.formatFileSize(context, estimatedBytes))
-                    else stringResource(R.string.recording_download_size_unknown),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+            }
+        }
+    }
+
+    RecordingDownloadPanel(
+        title = recording.title.ifBlank { recording.channelName ?: recording.id },
+        range = range,
+        offset = offset,
+        estimatedSize = estimatedBytes?.let { Formatter.formatFileSize(context, it) },
+        canDownload = source != null && range != null,
+        onDismiss = onDismiss,
+        onDownload = {
+            if (source != null && range != null) {
+                onConfirm(duration, source.selection.copy(
+                    range = range.takeIf { partial },
+                    estimatedBytes = estimatedBytes,
+                ), source.snapshot)
             }
         },
+        preview = preview,
+        options = options,
+    )
+}
+
+@Composable
+private fun RecordingDownloadPanel(
+    title: String,
+    range: RecordingDownloadRange?,
+    offset: Long,
+    estimatedSize: String?,
+    canDownload: Boolean,
+    onDismiss: () -> Unit,
+    onDownload: () -> Unit,
+    preview: @Composable (Dp) -> Unit,
+    options: @Composable () -> Unit,
+) {
+    val currentPreview by rememberUpdatedState(preview)
+    val movablePreview = remember { movableContentOf<Dp> { currentPreview(it) } }
+    PredictiveDialog(onDismiss, DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val fullScreen = maxWidth < 480.dp || maxHeight < 440.dp
+            val color = MaterialTheme.colorScheme.surfaceContainerLow
+            val backdrop = if (fullScreen) Modifier.background(color) else Modifier
+            val margin = if (fullScreen) Modifier else Modifier.padding(16.dp)
+            BoxWithConstraints(
+                Modifier.fillMaxSize().then(backdrop).windowInsetsPadding(WindowInsets.safeDrawing).imePadding().then(margin),
+                contentAlignment = Alignment.Center,
+            ) {
+                val columns = maxWidth >= 620.dp
+                val shortWindow = maxHeight < 280.dp
+                if (!fullScreen) {
+                    Box(Modifier.matchParentSize().pointerInput(onDismiss) { detectTapGestures { onDismiss() } })
+                }
+                Surface(
+                    if (fullScreen) Modifier.fillMaxSize()
+                    else Modifier.widthIn(max = if (columns) 860.dp else 520.dp).fillMaxWidth(),
+                    shape = if (fullScreen) RectangleShape else MaterialTheme.shapes.extraLarge,
+                    color = color,
+                ) {
+                    Box(contentAlignment = Alignment.TopCenter) {
+                        val contentScroll = if (shortWindow) Modifier.verticalScroll(rememberScrollState()) else Modifier
+                        Column(Modifier.widthIn(max = 940.dp).fillMaxWidth().then(contentScroll)) {
+                            DownloadPanelHeader(title, onDismiss)
+                            val body = if (shortWindow) Modifier else Modifier.weight(1f, fill = fullScreen)
+                            if (columns) {
+                                Row(body.fillMaxWidth().padding(horizontal = 20.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                                    BoxWithConstraints(Modifier.weight(1.1f).padding(bottom = 14.dp)) {
+                                        val frameHeight = if (shortWindow) 144.dp else (maxHeight - 36.dp).coerceAtLeast(104.dp)
+                                        val scroll = if (shortWindow) Modifier else Modifier.verticalScroll(rememberScrollState())
+                                        Column(Modifier.fillMaxWidth().then(scroll)) { movablePreview(frameHeight * (16f / 9f)) }
+                                    }
+                                    val scroll = if (shortWindow) Modifier else Modifier.verticalScroll(rememberScrollState())
+                                    Column(Modifier.weight(1f).then(scroll).padding(bottom = 14.dp)) { options() }
+                                }
+                            } else {
+                                val scroll = if (shortWindow) Modifier else Modifier.verticalScroll(rememberScrollState())
+                                Column(body.fillMaxWidth().then(scroll).padding(start = 20.dp, end = 20.dp, bottom = 14.dp),
+                                    verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                                    movablePreview(Dp.Infinity)
+                                    options()
+                                }
+                            }
+                            DownloadPanelFooter(range, offset, estimatedSize, canDownload, columns, onDismiss, onDownload)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DownloadPanelHeader(title: String, onDismiss: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 12.dp, bottom = 12.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Column(Modifier.weight(1f).padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(stringResource(R.string.recording_download_title),
+                modifier = Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge)
+            Text(title, style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        }
+        IconButton(onClick = onDismiss) {
+            Icon(painterResource(R.drawable.close_24dp_e3e3e3_fill0_wght400_grad0_opsz24),
+                stringResource(R.string.welcome_close))
+        }
+    }
+}
+
+@Composable
+private fun DownloadPanelFooter(
+    range: RecordingDownloadRange?,
+    offset: Long,
+    estimatedSize: String?,
+    canDownload: Boolean,
+    inlineActions: Boolean,
+    onDismiss: () -> Unit,
+    onDownload: () -> Unit,
+) {
+    HorizontalDivider()
+    Surface(color = MaterialTheme.colorScheme.surfaceContainer) {
+        val padding = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp)
+        val actions: @Composable (Modifier) -> Unit = { modifier ->
+            FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                TextButton(onClick = onDismiss) { Text(stringResource(android.R.string.cancel)) }
+                Button(onClick = onDownload, enabled = canDownload) { Text(stringResource(R.string.recording_download)) }
+            }
+        }
+        if (range != null && inlineActions) {
+            Row(padding, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                DownloadRangeSummary(range, offset, estimatedSize, Modifier.weight(1f))
+                actions(Modifier.widthIn(max = 300.dp))
+            }
+        } else {
+            Column(padding, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (range != null) DownloadRangeSummary(range, offset, estimatedSize, Modifier)
+                actions(Modifier.fillMaxWidth())
+            }
+        }
+    }
+}
+
+@Composable
+private fun DownloadRangeSummary(range: RecordingDownloadRange, offset: Long, estimatedSize: String?, modifier: Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(stringResource(R.string.recording_download_range_summary,
+            FormatUtils.formatDuration(range.startMs + offset),
+            FormatUtils.formatDuration(range.endMs + offset),
+            FormatUtils.formatDuration(range.durationMs)),
+            style = MaterialTheme.typography.titleSmall)
+        Text(
+            estimatedSize?.let { stringResource(R.string.recording_download_estimated_size, it) }
+                ?: stringResource(R.string.recording_download_size_unknown),
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun DownloadRangeSlider(range: RecordingDownloadRange, duration: Long, onRangeChange: (Long, Long) -> Unit) {
+    val slider = remember(duration) {
+        RangeSliderState(endValue = duration.toFloat(), trackRange = 0f..duration.toFloat())
+    }
+    SideEffect {
+        val lower = range.startMs.toFloat()
+        val upper = range.endMs.toFloat()
+        if (lower > slider.endValue) slider.endValue = upper
+        slider.startValue = lower
+        slider.endValue = upper
+    }
+    RangeSlider(
+        state = slider,
+        onValueChange = { values ->
+            val step = minOf(1_000L, duration)
+            val start = ((values.start / step).roundToLong() * step).coerceIn(0, duration - step)
+            val end = if (values.endInclusive == duration.toFloat()) duration else
+                ((values.endInclusive / step).roundToLong() * step).coerceIn(start + step, duration)
+            onRangeChange(start, end)
+        },
+        modifier = Modifier.fillMaxWidth(),
     )
 }
 
 @Composable
 private fun DownloadTimeField(
     label: Int,
-    value: String,
+    value: TextFieldValue,
     invalid: Boolean,
     modifier: Modifier,
-    onChange: (String) -> Unit,
+    onChange: (TextFieldValue) -> Unit,
 ) {
     val focus = LocalFocusManager.current
     OutlinedTextField(value = value, onValueChange = onChange, modifier = modifier,
@@ -293,132 +446,4 @@ internal fun parseDownloadTime(value: String): Long? {
         seconds = seconds * 60 + number
     }
     return seconds * 1000
-}
-
-@Composable
-private fun DownloadPreviewFrame(thumbnail: String?, content: @Composable () -> Unit) {
-    Surface(Modifier.fillMaxWidth().aspectRatio(16f / 9), shape = MaterialTheme.shapes.medium,
-        color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-        Box(contentAlignment = Alignment.Center) {
-            AsyncImage(thumbnail, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-            content()
-        }
-    }
-}
-
-@OptIn(UnstableApi::class)
-@Composable
-private fun RecordingDownloadPreview(
-    source: PreparedRecordingDownload,
-    thumbnail: String?,
-    range: RecordingDownloadRange?,
-    partial: Boolean,
-    showEnd: Boolean,
-    onChooseEnd: (Boolean) -> Unit,
-    onDuration: (Long) -> Unit,
-    onBitrate: (Long) -> Unit,
-) {
-    val context = LocalContext.current
-    val lifecycle = LocalLifecycleOwner.current.lifecycle
-    val reportDuration by rememberUpdatedState(onDuration)
-    val reportBitrate by rememberUpdatedState(onBitrate)
-    val player = remember(source) {
-        ExoPlayer.Builder(context)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(recordingDownloadDataSource(source.snapshot)))
-            .setSeekParameters(SeekParameters.EXACT)
-            .build().apply {
-                setMediaItem(recordingDownloadMediaItem(source.url, source.selection, source.snapshot, clip = false))
-            }
-    }
-    var ready by remember(player) { mutableStateOf(false) }
-    var playing by remember(player) { mutableStateOf(false) }
-    var failed by remember(player) { mutableStateOf(false) }
-    DisposableEffect(player, lifecycle) {
-        val listener = object : Player.Listener {
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                if (playbackState == Player.STATE_READY) {
-                    ready = true
-                    if (player.duration > 0) reportDuration(player.duration)
-                }
-            }
-
-            override fun onTracksChanged(tracks: Tracks) {
-                var bitrate = 0L
-                for (group in tracks.groups) {
-                    for (index in 0 until group.length) {
-                        if (group.isTrackSelected(index)) bitrate += group.getTrackFormat(index).bitrate.coerceAtLeast(0)
-                    }
-                }
-                reportBitrate(bitrate)
-            }
-
-            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-                playing = playWhenReady
-                ClipAudioHandoff.update(playWhenReady)
-            }
-
-            override fun onPlayerError(error: PlaybackException) {
-                ready = false
-                failed = true
-                player.pause()
-            }
-        }
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_PAUSE) player.pause()
-        }
-        lifecycle.addObserver(observer)
-        player.addListener(listener)
-        player.prepare()
-        onDispose {
-            lifecycle.removeObserver(observer)
-            player.removeListener(listener)
-            if (player.playWhenReady) ClipAudioHandoff.update(false)
-            player.release()
-        }
-    }
-    LaunchedEffect(player, ready, range, showEnd) {
-        if (ready && range != null) {
-            player.pause()
-            player.seekTo(if (showEnd) (range.endMs - 200).coerceAtLeast(range.startMs) else range.startMs)
-        } else if (range == null) {
-            player.pause()
-        }
-    }
-    LaunchedEffect(player, playing, range) {
-        if (!playing || range == null) return@LaunchedEffect
-        while (player.currentPosition < range.endMs && player.playbackState != Player.STATE_ENDED) delay(40)
-        player.pause()
-    }
-
-    DownloadPreviewFrame(thumbnail) {
-        if (!failed) PlayerVideoSurface(player, playing, Modifier.fillMaxSize().clip(MaterialTheme.shapes.medium))
-        if (failed) {
-            TextButton(onClick = { failed = false; player.prepare() }) { Text(stringResource(R.string.clip_preview_retry)) }
-        } else if (!ready) CircularProgressIndicator()
-    }
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        TextButton(enabled = ready && range != null, onClick = {
-            if (playing) player.pause()
-            else if (range != null) {
-                if (player.currentPosition !in range.startMs until (range.endMs - 250).coerceAtLeast(range.startMs)) {
-                    player.seekTo(range.startMs)
-                }
-                ClipAudioHandoff.update(true)
-                player.setAudioAttributes(kickPlaybackAudioAttributes, true)
-                player.play()
-            }
-        }) { Text(stringResource(if (playing) R.string.recording_download_pause_preview else R.string.recording_download_preview)) }
-        if (partial) {
-            TextButton(enabled = ready && range != null, onClick = {
-                player.pause()
-                onChooseEnd(false)
-                range?.let { player.seekTo(it.startMs) }
-            }) { Text(stringResource(R.string.recording_download_range_start)) }
-            TextButton(enabled = ready && range != null, onClick = {
-                player.pause()
-                onChooseEnd(true)
-                range?.let { player.seekTo((it.endMs - 200).coerceAtLeast(it.startMs)) }
-            }) { Text(stringResource(R.string.recording_download_range_end)) }
-        }
-    }
 }

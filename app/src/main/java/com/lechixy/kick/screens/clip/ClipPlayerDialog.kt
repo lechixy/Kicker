@@ -83,15 +83,19 @@ internal fun ClipPlayerDialog(
     val state by model.state.collectAsStateWithLifecycle()
     var fullscreen by rememberSaveable(clipId) { mutableStateOf(false) }
     var showChat by rememberSaveable(clipId) { mutableStateOf(true) }
-    var videoTexture by remember(clipId) { mutableStateOf<TextureView?>(null) }
+    val videoTextureState = remember(clipId) { mutableStateOf<TextureView?>(null) }
+    val videoTexture by videoTextureState
 
     val playback = state.clip?.let { rememberClipPlayback(it) }
     val video = remember(playback) {
         movableContentOf {
             if (playback != null) {
-                PlayerVideoSurface(playback.player, playback.state.playing, Modifier.fillMaxSize()) {
-                    videoTexture = it
-                }
+                PlayerVideoSurface(
+                    playback.player,
+                    playback.state.playing,
+                    Modifier.fillMaxSize(),
+                    textureState = videoTextureState,
+                )
             }
         }
     }

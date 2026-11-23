@@ -289,7 +289,7 @@ class ChatInputInteractionUiTest {
         compose.onAllNodesWithText(label).assertCountEquals(1)
     }
 
-    @Test fun celebrationTickerStacksTheMessageAndUsesTheAdaptiveSenderColor() {
+    @Test fun celebrationTickerKeepsTheSingleLineAndUsesTheAdaptiveSenderColor() {
         val message = ChatMessage(
             id = "ticker", type = ChatMessageType.CELEBRATION, content = "sa",
             sender = ChatSender(username = "suyaprak", identity = ChatIdentity(color = "#FFFFFF")),
@@ -309,19 +309,20 @@ class ChatInputInteractionUiTest {
         compose.runOnIdle { tickerEvents = listOf(event) }
         compose.mainClock.advanceTimeBy(500)
         val context = compose.activity
-        val username = compose.onNodeWithText("suyaprak").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
-        val description = compose.onNodeWithText(context.getString(R.string.chat_event_celebrates_months, 7))
-            .assertIsDisplayed().fetchSemanticsNode().boundsInRoot
-        val body = compose.onNodeWithText("suyaprak: sa").assertIsDisplayed().fetchSemanticsNode()
-        val bodyText = body.config[SemanticsProperties.Text].single()
-        assertTrue(bodyText.spanStyles.any { it.start == 0 && it.end == "suyaprak".length && it.item.color == Color.Black })
-        assertTrue(username.bottom <= description.top)
-        assertTrue(description.bottom <= body.boundsInRoot.top)
+        val locale = context.resources.configuration.locales[0]
+        val months = java.text.NumberFormat.getIntegerInstance(locale).format(7)
+        val line = context.getString(R.string.chat_event_subscribed_months, "suyaprak", months)
+        val ticker = compose.onAllNodesWithText(line).onFirst().assertIsDisplayed().fetchSemanticsNode()
+        val tickerText = ticker.config[SemanticsProperties.Text].single()
+        val username = tickerText.text.indexOf("suyaprak")
+        assertTrue(tickerText.spanStyles.any {
+            it.start == username && it.end == username + "suyaprak".length && it.item.color == Color.Black
+        })
+        compose.onNodeWithText("suyaprak: sa").assertDoesNotExist()
         val label = listOf(5_800L, 6_000L).joinToString(" / ") {
-            com.lechixy.kick.util.FormatUtils.formatCompactCount(it, context.resources.configuration.locales[0])
+            com.lechixy.kick.util.FormatUtils.formatCompactCount(it, locale)
         }
-        val progress = compose.onNodeWithText(label).assertIsDisplayed().fetchSemanticsNode().boundsInRoot
-        assertTrue(progress.left >= body.boundsInRoot.right)
+        compose.onNodeWithText(label).assertDoesNotExist()
     }
 
     @Test fun dropsButtonShowsItsTooltipAndEnablesOnlyWithAnActiveCampaign() {

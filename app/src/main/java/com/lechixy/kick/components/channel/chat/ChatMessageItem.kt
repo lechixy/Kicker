@@ -467,8 +467,6 @@ internal fun ChatCelebrationItem(
     streamerUsername: String?,
     streamerSlug: String?,
     modifier: Modifier = Modifier,
-    contentPadding: Dp = 10.dp,
-    trailingContent: (@Composable () -> Unit)? = null,
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
     val lightTheme = isLightChatTheme()
@@ -494,14 +492,13 @@ internal fun ChatCelebrationItem(
         bodyContent = message,
         bodyAuthor = ChatTextParser.EventTextSegment(name, isBold = true, color = userColor, username = username),
         subscriptionGoal = subscriptionGoal,
-        contentPadding = contentPadding,
+        contentPadding = 10.dp,
         fontSizeSp = fontSizeSp,
         stripeColor = userColor,
         onUsernameClick = onUsernameClick,
         streamerUsername = streamerUsername,
         streamerSlug = streamerSlug,
-        modifier = modifier,
-        trailingContent = trailingContent
+        modifier = modifier
     )
 }
 
