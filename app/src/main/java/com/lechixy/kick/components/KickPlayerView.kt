@@ -413,6 +413,13 @@ fun KickPlayerView(
         .collectAsStateWithLifecycle(SettingsKeys.AMBIENT_NAVIGATION_OPACITY.defaultValue)
     val preserveBlackBars by remember(settingsRepository) { settingsRepository.get(SettingsKeys.AMBIENT_PRESERVE_BLACK_BARS) }
         .collectAsStateWithLifecycle(SettingsKeys.AMBIENT_PRESERVE_BLACK_BARS.defaultValue)
+    val removeHorizontalBars by remember(settingsRepository) { settingsRepository.get(SettingsKeys.VIDEO_REMOVE_HORIZONTAL_BARS) }
+        .collectAsStateWithLifecycle(SettingsKeys.VIDEO_REMOVE_HORIZONTAL_BARS.defaultValue)
+    val removeVerticalBars by remember(settingsRepository) { settingsRepository.get(SettingsKeys.VIDEO_REMOVE_VERTICAL_BARS) }
+        .collectAsStateWithLifecycle(SettingsKeys.VIDEO_REMOVE_VERTICAL_BARS.defaultValue)
+    val detectColoredBars by remember(settingsRepository) { settingsRepository.get(SettingsKeys.VIDEO_DETECT_COLORED_BARS) }
+        .collectAsStateWithLifecycle(SettingsKeys.VIDEO_DETECT_COLORED_BARS.defaultValue)
+    val barOptions = VideoBarOptions(preserveBlackBars, removeHorizontalBars, removeVerticalBars, detectColoredBars)
     androidx.compose.runtime.SideEffect {
         ambient.intensity = ambientIntensity.coerceIn(SettingsKeys.AMBIENT_INTENSITY_RANGE) / 100f
         ambient.spread = ambientSpread.coerceIn(SettingsKeys.AMBIENT_SPREAD_RANGE) / 100f
@@ -706,15 +713,17 @@ fun KickPlayerView(
                     newPosition: Player.PositionInfo,
                     reason: Int,
                 ) {
-                    if (!latestIsLiveStream && p.currentMediaItem?.mediaId == stableId &&
+                    if (p.currentMediaItem?.mediaId == stableId &&
                         (reason == Player.DISCONTINUITY_REASON_SEEK || reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT)
                     ) {
                         ambientSeek = AmbientSeek(
                             sequence = (ambientSeek?.sequence ?: 0) + 1,
                             previousTimestamp = playerTexture?.surfaceTexture?.timestamp ?: 0L,
                         )
-                        positionMs = newPosition.positionMs.coerceAtLeast(0L)
-                        seekCallback(positionMs)
+                        if (!latestIsLiveStream) {
+                            positionMs = newPosition.positionMs.coerceAtLeast(0L)
+                            seekCallback(positionMs)
+                        }
                     }
                 }
 
@@ -963,8 +972,27 @@ fun KickPlayerView(
             ((fullscreenChatOverlayEnabled && overlayHasOpacity) || editingChatPosition)
     }
     val visibleChatBlurStyle = chatBlurStyle.takeIf { chatBlurBounds != null }
+    val playbackReady = hasRenderedFirstFrame && loadedMediaId == stableId && playbackError == null
+    val canCrop = playbackReady && !isMini && !isInPipMode
+    val playbackCrop = { if (canCrop) ambient.barLayout.crop else VideoBars.None }
+    fun fittedVideoSize(area: IntSize, crop: VideoBars): IntSize {
+        val texture = playerTexture ?: return area
+        if (texture.width <= 0 || texture.height <= 0) return area
+        val source = ComposeRect(0f, 0f, texture.width.toFloat(), texture.height.toFloat())
+        val fitted = videoCropGeometry(source, area, crop).fitted
+        return IntSize(fitted.width.roundToInt().coerceAtLeast(1), fitted.height.roundToInt().coerceAtLeast(1))
+    }
     fun renderedZoom(): PlayerVideoZoom {
-        val target = heldZoom ?: if (videoZoom.scale == 1f) videoZoom.copy(scale = minimumZoom.value) else videoZoom
+        val activeZoom = heldZoom ?: videoZoom
+        val crop = playbackCrop()
+        val target = when {
+            activeZoom.scale == 1f && heldZoom == null -> activeZoom.copy(scale = minimumZoom.value)
+            activeZoom.isFill && viewport.width > 0 && viewport.height > 0 ->
+                activeZoom.copy(scale = playerFillScale(viewport, fittedVideoSize(viewport, crop)))
+            activeZoom.normalizedTranslation != Offset.Zero ->
+                activeZoom.constrainPan(viewport, fittedVideoSize(viewport, crop))
+            else -> activeZoom
+        }
         val motion = zoomMotion ?: return target
         return motion.from.interpolateTo(target, motion.progress.value)
     }
@@ -989,8 +1017,7 @@ fun KickPlayerView(
     val fullscreenSettled by remember(isFullScreen, fullscreenProgress) {
         derivedStateOf { isFullScreen && (fullscreenProgress?.invoke() ?: 1f) >= 1f }
     }
-    val ambientVisible = trackAmbient && hasRenderedFirstFrame && loadedMediaId == stableId &&
-        playbackError == null && !clipModalOpen && (!fullscreenSettled || ambientFullscreen)
+    val ambientVisible = trackAmbient && playbackReady && !clipModalOpen && (!fullscreenSettled || ambientFullscreen)
     val useHostBackdrop = hostedAmbient != null && playerHost?.expansionSource == null
     CapturePlayerAmbient(
         state = ambient,
@@ -1003,7 +1030,8 @@ fun KickPlayerView(
         mediaUrl = activePlaybackUrl,
         firstFrame = ambientFirstFrame,
         seek = ambientSeek,
-        preserveBlackBars = preserveBlackBars,
+        barOptions = barOptions,
+        allowCrop = canCrop,
         keepFrameWhenHidden = hostedAmbient != null && isMini && !isInPipMode,
     )
     Box(
@@ -1027,14 +1055,15 @@ fun KickPlayerView(
                 if (gesturesEnabled) detectPlayerPinch(
                     onTransform = { centroid, pan, factor ->
                         heldZoom = null
-                        val texture = playerTexture
-                        val videoSize = if (texture != null && texture.width > 0 && texture.height > 0) {
-                            IntSize(texture.width, texture.height)
-                        } else size
+                        val crop = ambient.barLayout.crop
+                        val videoSize = fittedVideoSize(size, crop)
+                        val currentZoom = if (videoZoom.isFill) {
+                            videoZoom.copy(scale = playerFillScale(size, videoSize))
+                        } else videoZoom.constrainPan(size, videoSize)
                         val motion = zoomMotion
                         val fillSettled = motion == null || !motion.snappingToFill || motion.progress.value >= 0.9f
                         val (zoom, transition) = pinchZoom.transform(
-                            videoZoom, size, videoSize, centroid, pan, factor, fillSettled,
+                            currentZoom, size, videoSize, centroid, pan, factor, fillSettled,
                         )
                         when (transition) {
                             PlayerZoomTransition.Fill -> {
@@ -1116,8 +1145,11 @@ fun KickPlayerView(
             },
         contentAlignment = Alignment.Center
     ) {
-        if (!isMini && !preserveBlackBars && !useHostBackdrop && ambientVisible && ambient.bounds?.hasLetterboxSpace == true) {
-            PlayerAmbientBackdrop(ambient, modifier = Modifier.matchParentSize())
+        val cropped = !playbackCrop().isEmpty
+        if (ambientVisible && ambient.bounds?.hasLetterboxSpace == true &&
+            (if (preserveBlackBars) cropped else !useHostBackdrop)
+        ) {
+            PlayerAmbientBackdrop(ambient, modifier = Modifier.matchParentSize(), onlyCroppedSides = preserveBlackBars)
         }
         Box(Modifier.fillMaxSize().onSizeChanged { viewport = it }.clipToBounds()) {
             PlayerVideoSurface(
@@ -1125,6 +1157,7 @@ fun KickPlayerView(
                 Modifier.fillMaxSize(),
                 zoom = playbackZoom,
                 textureState = playerTextureState,
+                crop = playbackCrop,
             )
         }
 

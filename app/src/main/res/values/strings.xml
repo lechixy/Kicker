@@ -114,7 +114,13 @@
     <string name="player_ambient_chat_opacity">Chat background opacity</string>
     <string name="player_ambient_navigation_opacity">Navigation background opacity</string>
     <string name="player_ambient_preserve_black_bars">Preserve black bars</string>
-    <string name="player_ambient_preserve_black_bars_description">Keep player bars black and prevent light bleed from detected black video edges</string>
+    <string name="player_ambient_preserve_black_bars_description">Keep player padding black and block ambient light around detected video bars</string>
+    <string name="player_remove_horizontal_bars">Remove top and bottom bars</string>
+    <string name="player_remove_horizontal_bars_description">Crop detected bars from the video, even when ambient light is off</string>
+    <string name="player_remove_vertical_bars">Remove side bars</string>
+    <string name="player_remove_vertical_bars_description">Crop detected bars from the left and right edges of the video</string>
+    <string name="player_detect_colored_bars">Detect colored bars</string>
+    <string name="player_detect_colored_bars_description">Include solid-color bars when cropping or blocking ambient light</string>
     <string name="settings_backup_account_title">Kick sign-in stays on this device</string>
     <string name="settings_backup_account_description">Kick login details and sessions are never backed up. Signing out, clearing app data, or uninstalling removes the saved session. Sign in again after reinstalling, switching devices, or if your session expires</string>
 </resources>

@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.unit.dp
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.media3.common.MediaItem
@@ -57,6 +58,8 @@ import com.lechixy.kick.components.PlayerAmbientState
 import com.lechixy.kick.components.PlayerVideoSurface
 import com.lechixy.kick.components.PlayerVideoZoom
 import com.lechixy.kick.components.TrackAmbientVideoLayout
+import com.lechixy.kick.components.VideoBarOptions
+import com.lechixy.kick.components.VideoBars
 import com.lechixy.kick.components.channel.chat.FullscreenChatVideoFrame
 import com.lechixy.kick.components.channel.chat.VideoBackdropBlur
 import com.lechixy.kick.components.channel.chat.rememberLegacyFullscreenChatFrame
@@ -190,6 +193,81 @@ class PlayerAmbientPlaybackTest {
     }
 
     @Test
+    fun coloredBarsCanBeMaskedAndCroppedIndependentlyOfAmbient() =
+        withFixture("ambient-video-bars.mp4") { fixture ->
+            withPlayback(fixture, null) { playback ->
+                playback.onMain {
+                    darkTheme = true
+                    mode = PlayerAmbientMode.Dynamic
+                }
+                playback.await("colored top and side masks") {
+                    state.barLayout.mask.top > 0f && state.barLayout.mask.left > 0f
+                }
+                val raw = playback.onMain { checkNotNull(state.bounds).videoInWindow }
+                assertEquals(
+                    AndroidColor.BLACK,
+                    playback.readWindowPixel(raw.center.x.toInt(), raw.top.toInt() - 4),
+                )
+                assertTrue(AndroidColor.green(playback.readWindowPixel(raw.center.x.toInt(), raw.top.toInt() + 5)) > 130)
+
+                playback.onMain { barOptions = barOptions.copy(removeHorizontal = true) }
+                playback.await("horizontal crop and preserved side mask") {
+                    state.barLayout.crop.top > 0f && state.barLayout.crop.left == 0f &&
+                        state.barLayout.mask.left > 0f && state.barLayout.mask.top == 0f &&
+                        (state.frame as? AmbientFrame.Palette)?.colors?.get(1)?.red?.let { it > 0.65f } == true &&
+                        (state.bounds?.videoInWindow?.height ?: raw.height) < raw.height
+                }
+                val cropped = playback.onMain { checkNotNull(state.bounds).videoInWindow }
+                val x = cropped.center.x.toInt()
+                val y = cropped.top.toInt()
+                val glow = playback.readWindowPixel(x, y - 4)
+                assertTrue("Expected red ambient outside the crop, got ${Integer.toHexString(glow)}",
+                    AndroidColor.red(glow) in 21..155 && AndroidColor.red(glow) > AndroidColor.green(glow) + 15)
+                val newEdge = playback.readWindowPixel(x, y + 8)
+                assertTrue("Expected the cropped video edge to be red, got ${Integer.toHexString(newEdge)}",
+                    AndroidColor.red(newEdge) > 160 && AndroidColor.green(newEdge) < 80)
+
+                playback.onMain { mode = PlayerAmbientMode.Live }
+                playback.await("live projection from the new top edge") {
+                    val bitmap = (state.frame as? AmbientFrame.Projection)?.bitmap ?: return@await false
+                    AndroidColor.red(bitmap.getPixel(bitmap.width / 2, 0)) > 140 && state.barLayout.mask.left > 0f
+                }
+                val visibleCrop = playback.onMain { state.barLayout.crop }
+                playback.onMain { showAmbient = false }
+                playback.await("crop stays fitted when fullscreen hides ambient") {
+                    state.frame == null && state.barLayout.crop == visibleCrop
+                }
+                playback.onMain {
+                    mode = PlayerAmbientMode.Off
+                    barOptions = barOptions.copy(removeVertical = true)
+                }
+                playback.await("both axes cropped with ambient off") {
+                    state.frame == null && state.barLayout.crop.top > 0f && state.barLayout.crop.left > 0f
+                }
+                val fitted = playback.onMain { checkNotNull(state.bounds).videoInWindow }
+                val side = playback.readWindowPixel(fitted.left.toInt() + 20, fitted.center.y.toInt())
+                assertTrue("Expected the cropped side to be red, got ${Integer.toHexString(side)}",
+                    AndroidColor.red(side) > 160 && AndroidColor.blue(side) < 80)
+                playback.onMain { zoom = PlayerVideoZoom(scale = 1.2f) }
+                playback.await("zoom applies on top of the cropped fit") {
+                    (state.bounds?.videoInWindow?.width ?: 0f) > fitted.width * 1.19f
+                }
+                playback.onMain { zoom = PlayerVideoZoom() }
+                playback.onMain { allowCrop = false }
+                playback.await("full frame in a compact player") {
+                    state.barLayout.crop.isEmpty && state.bounds?.videoInWindow?.height == raw.height
+                }
+                playback.onMain { allowCrop = true }
+                playback.await("restored crop") { state.barLayout.crop.left > 0f }
+                playback.onMain { seekWhilePaused(3_500L) }
+                playback.await("no bars after a paused seek") {
+                    hasSeekFrame() && state.barLayout.crop.isEmpty && state.bounds?.videoInWindow?.height == raw.height
+                }
+                assertTrue(AndroidColor.green(playback.readWindowPixel(x - 10, raw.top.toInt() + 8)) > 125)
+            }
+        }
+
+    @Test
     fun comparesUiFramesAndVideoDropsAcrossAmbientModes() = withVideo { playback ->
         val cases = listOf(
             PlayerAmbientMode.Off to 30,
@@ -316,11 +394,11 @@ class PlayerAmbientPlaybackTest {
         }
     }
 
-    private fun withFixture(test: (File) -> Unit) {
+    private fun withFixture(asset: String = "ambient-edges-60fps.mp4", test: (File) -> Unit) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val fixture = File.createTempFile("ambient-edges", ".mp4", instrumentation.targetContext.cacheDir)
         try {
-            instrumentation.context.assets.open("ambient-edges-60fps.mp4").use { source ->
+            instrumentation.context.assets.open(asset).use { source ->
                 fixture.outputStream().use { source.copyTo(it) }
             }
             test(fixture)
@@ -338,7 +416,10 @@ class PlayerAmbientPlaybackTest {
             private set
         var fps by mutableIntStateOf(30)
         var darkTheme by mutableStateOf(false)
+        var showAmbient by mutableStateOf(true)
         var zoom by mutableStateOf(PlayerVideoZoom())
+        var barOptions by mutableStateOf(VideoBarOptions(preserve = true))
+        var allowCrop by mutableStateOf(true)
         var reduceNoise by mutableStateOf(false)
         var surfaceRevision by mutableIntStateOf(0)
         private var playing by mutableStateOf(false)
@@ -374,7 +455,8 @@ class PlayerAmbientPlaybackTest {
                     SideEffect { appliedMode = ambientMode }
                     TrackAmbientVideoLayout(state, texture, { zoom }) { coordinates }
                     CapturePlayerAmbient(
-                        state, texture, ambientMode, fps, firstFrame > 0, playing, "fixture", "fixture", firstFrame, seek,
+                        state, texture, ambientMode, fps, firstFrame > 0 && showAmbient, playing, "fixture", "fixture", firstFrame, seek,
+                        barOptions = barOptions, allowCrop = allowCrop && firstFrame > 0,
                     )
                     Box(Modifier.fillMaxSize().background(Color.Black).onGloballyPositioned {
                         coordinates = it
@@ -382,7 +464,11 @@ class PlayerAmbientPlaybackTest {
                     }) {
                         PlayerAmbientBackdrop(state, modifier = Modifier.matchParentSize())
                         key(surfaceRevision) {
-                            PlayerVideoSurface(player, playing, Modifier.fillMaxSize(), zoom = { zoom }, textureState = textureState)
+                            PlayerVideoSurface(
+                                player, playing, Modifier.fillMaxSize().clipToBounds(), zoom = { zoom },
+                                textureState = textureState,
+                                crop = { if (allowCrop) state.barLayout.crop else VideoBars.None },
+                            )
                         }
                         if (reduceNoise) VideoBackdropBlur(texture, emptyList(), reduceNoise = true)
                         if (showControls) {
@@ -413,6 +499,11 @@ class PlayerAmbientPlaybackTest {
         fun seekWhilePaused(positionMs: Long) {
             seek = AmbientSeek((seek?.sequence ?: 0) + 1, texture?.surfaceTexture?.timestamp ?: 0L)
             player.seekTo(positionMs)
+        }
+
+        fun hasSeekFrame(): Boolean {
+            val timestamp = texture?.surfaceTexture?.timestamp ?: 0L
+            return timestamp != 0L && timestamp != seek?.previousTimestamp
         }
 
         fun <T> onMain(block: Playback.() -> T): T {

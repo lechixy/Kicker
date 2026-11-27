@@ -53,6 +53,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -100,7 +101,9 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 import com.lechixy.kick.R
 import com.lechixy.kick.components.channel.offlineBannerCompactHeight
@@ -124,6 +127,11 @@ private const val MINI_PADDING_DP = 16f
 
 private const val NORM_THRESHOLD = 0.0005f
 private const val PX_THRESHOLD = 0.5f
+private const val PHONE_ROTATION_TIMEOUT_MS = 650L
+
+private data class FullscreenOrigin(val requestedOrientation: Int, val orientation: Int)
+
+private data class PlayerWindowRotation(val orientation: Int, val targetFrame: Float)
 
 private class ViewportMetrics {
     var containerW: Int = 0
@@ -131,11 +139,16 @@ private class ViewportMetrics {
     var safeArea: IntRect = IntRect.Zero
     var lastPlayerFrame: IntRect = IntRect.Zero
     var lastPlayerViewport: IntSize = IntSize.Zero
+    var orientation by mutableIntStateOf(Configuration.ORIENTATION_UNDEFINED)
+        private set
 
     fun update(cw: Int, ch: Int, area: IntRect) {
         containerW = cw
         containerH = ch
         safeArea = area
+        if (cw > 0 && ch > 0 && cw != ch) {
+            orientation = if (cw > ch) Configuration.ORIENTATION_LANDSCAPE else Configuration.ORIENTATION_PORTRAIT
+        }
     }
 }
 
@@ -167,6 +180,7 @@ fun PlayerHost(
     val context = LocalContext.current
     val activity = remember(context) { context.findActivity() }
     val configuration = LocalConfiguration.current
+    val isPhone = configuration.smallestScreenWidthDp in 1 until 600
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
     val mode = host.mode
@@ -198,7 +212,15 @@ fun PlayerHost(
     }
 
     val frameT = remember { Animatable(0f, visibilityThreshold = NORM_THRESHOLD) }
-    val fullscreenProgress = remember(frameT) { { frameT.value.coerceIn(0f, 1f) } }
+    val metrics = remember { ViewportMetrics() }
+    var fullscreenOrigin by remember { mutableStateOf<FullscreenOrigin?>(null) }
+    var phoneRotation by remember { mutableStateOf<PlayerWindowRotation?>(null) }
+    fun currentT(): Float {
+        val rotation = phoneRotation
+        return if (rotation != null && metrics.orientation == rotation.orientation) rotation.targetFrame else frameT.value
+    }
+    val fullscreenProgress = remember { { currentT().coerceIn(0f, 1f) } }
+    val phoneFullscreenVisible by remember { derivedStateOf { fullscreenProgress() >= 0.5f } }
     val theaterAnim = remember {
         Animatable(if (host.isTheaterMode) 1f else 0f, visibilityThreshold = NORM_THRESHOLD)
     }
@@ -219,22 +241,28 @@ fun PlayerHost(
         (mode == PlayerMode.Expanded || mode == PlayerMode.Fullscreen)) { events ->
         val startFrame = frameT.value
         val startAlpha = pageAlpha
+        val returnsToPortrait = isPhone && fullscreenOrigin?.orientation == Configuration.ORIENTATION_PORTRAIT &&
+            metrics.orientation == Configuration.ORIENTATION_LANDSCAPE
+        val movesFrame = mode != PlayerMode.Fullscreen ||
+            (!returnsToPortrait && phoneRotation == null && !frameT.isRunning)
         try {
-            frameT.stop()
+            if (movesFrame) frameT.stop()
             events.collect { event ->
                 backProgress = event.progress
                 backEdge = event.swipeEdge
-                if (mode == PlayerMode.Fullscreen) frameT.snapTo(1f - event.progress)
-                else {
-                    frameT.snapTo(-event.progress)
-                    pageAlpha = 1f - event.progress
+                if (movesFrame) {
+                    if (mode == PlayerMode.Fullscreen) frameT.snapTo(1f - event.progress)
+                    else {
+                        frameT.snapTo(-event.progress)
+                        pageAlpha = 1f - event.progress
+                    }
                 }
             }
             if (mode == PlayerMode.Fullscreen) host.setFullscreen(false) else host.minimize()
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
                 kotlinx.coroutines.coroutineScope {
-                    launch { frameT.animateTo(startFrame, tween(200)) }
+                    if (movesFrame) launch { frameT.animateTo(startFrame, tween(200)) }
                     launch { animate(pageAlpha, startAlpha, animationSpec = tween(200)) { v, _ -> pageAlpha = v } }
                     launch { animate(backProgress, 0f, animationSpec = tween(200)) { v, _ -> backProgress = v } }
                 }
@@ -246,7 +274,6 @@ fun PlayerHost(
         host.recording != null || loaded == null || loaded.livestream != null   // yüklenirken shell, canlıysa player, offline'da yok
     var dragScale by remember { mutableFloatStateOf(1f) }   // madde 3
     var playerDy by remember { mutableFloatStateOf(0f) }    // madde 4
-    val metrics = remember { ViewportMetrics() }
     val systemInsets = WindowInsets.systemBarsIgnoringVisibility.union(WindowInsets.displayCutout)
     val cutoutInsets = WindowInsets.displayCutout
 
@@ -347,24 +374,22 @@ fun PlayerHost(
     fun localSourceRect(rect: androidx.compose.ui.geometry.Rect): IntRect =
         rect.translate(-hostOrigin).roundToIntRect()
 
-    var orientationBeforeFullscreen by remember { mutableStateOf<Int?>(null) }
-    var enteredFullscreenFromPortrait by remember { mutableStateOf(false) }
-
-    DisposableEffect(activity) {
+    DisposableEffect(activity, isPhone) {
         val window = activity?.window
         val prevRotationAnim = window?.attributes?.rotationAnimation
         if (window != null) {
             val params = window.attributes
-            params.rotationAnimation = WindowManager.LayoutParams.ROTATION_ANIMATION_CROSSFADE
+            params.rotationAnimation = if (isPhone) WindowManager.LayoutParams.ROTATION_ANIMATION_ROTATE
+                else WindowManager.LayoutParams.ROTATION_ANIMATION_CROSSFADE
             window.attributes = params
         }
         onDispose {
             activity?.let { act ->
                 WindowCompat.getInsetsController(act.window, act.window.decorView)
                     .show(WindowInsetsCompat.Type.systemBars())
-                orientationBeforeFullscreen?.let { orientation ->
+                fullscreenOrigin?.let { origin ->
                     if (!act.isInPictureInPictureMode && !act.isFinishing && !act.isDestroyed) {
-                        act.requestedOrientation = orientation
+                        act.requestedOrientation = origin.requestedOrientation
                     }
                 }
                 if (prevRotationAnim != null) {
@@ -376,7 +401,7 @@ fun PlayerHost(
         }
     }
 
-    LaunchedEffect(targetT, pipVideoOnly, activity) {
+    LaunchedEffect(targetT, pipVideoOnly, activity, isPhone) {
         if (pipVideoOnly) return@LaunchedEffect
         val v = releaseVelocity
         releaseVelocity = 0f
@@ -388,26 +413,60 @@ fun PlayerHost(
         }
 
         val enteringFullscreen = targetT == 1f
-        val isPhone = configuration.smallestScreenWidthDp in 1 until 600
-        val isPortraitNow = configuration.orientation == Configuration.ORIENTATION_PORTRAIT
-        val allowLandscapeRequest = !isPhone || activity?.isInMultiWindowMode != true
-        val priorOrientation = orientationBeforeFullscreen
+        val priorOrientation = fullscreenOrigin
+        val canSetOrientation = activity != null && !activity.isInPictureInPictureMode &&
+            !activity.isFinishing && !activity.isDestroyed
+        val canRotateWindow = !isPhone || activity?.isInMultiWindowMode != true
         if (enteringFullscreen) {
             if (priorOrientation == null && activity != null) {
-                orientationBeforeFullscreen = activity.requestedOrientation
-                enteredFullscreenFromPortrait = isPortraitNow
+                fullscreenOrigin = FullscreenOrigin(activity.requestedOrientation, configuration.orientation)
             }
             controller?.hide(WindowInsetsCompat.Type.systemBars())
             fsScale = 1f
             fsDy = 0f
-        } else if (priorOrientation != null) {
+        }
+
+        val requestedOrientation = when {
+            !canSetOrientation -> null
+            !enteringFullscreen -> priorOrientation?.requestedOrientation
+            canRotateWindow -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+            else -> null
+        }
+        val destinationOrientation = if (enteringFullscreen) Configuration.ORIENTATION_LANDSCAPE else priorOrientation?.orientation
+        val rotates = canRotateWindow && requestedOrientation != null && destinationOrientation != null &&
+            destinationOrientation != Configuration.ORIENTATION_UNDEFINED && metrics.orientation != destinationOrientation
+
+        fun requestOrientation() {
+            if (requestedOrientation != null && activity != null && activity.requestedOrientation != requestedOrientation) {
+                activity.requestedOrientation = requestedOrientation
+            }
+        }
+
+        // Let the window animate rotation with the current video in place. The first
+        // layout in the new orientation can draw the destination using the same surface.
+        val rotated = if (isPhone && rotates) {
+            phoneRotation = PlayerWindowRotation(destinationOrientation, targetT)
+            try {
+                requestOrientation()
+                withTimeoutOrNull(PHONE_ROTATION_TIMEOUT_MS) {
+                    snapshotFlow { metrics.orientation }.first { it == destinationOrientation }
+                    frameT.snapTo(targetT)
+                    true
+                } == true
+            } finally {
+                phoneRotation = null
+            }
+        } else false
+
+        if (!enteringFullscreen && priorOrientation != null) {
             controller?.show(WindowInsetsCompat.Type.systemBars())
         }
 
-        val rotates = if (enteringFullscreen) isPortraitNow else
-            priorOrientation != null && enteredFullscreenFromPortrait && !isPortraitNow
         kotlinx.coroutines.coroutineScope {
-            if (enteringFullscreen && (dragScale != 1f || playerDy != 0f)) {
+            if (rotated) {
+                dragScale = 1f
+                playerDy = 0f
+            } else if (enteringFullscreen && (dragScale != 1f || playerDy != 0f)) {
                 launch {
                     val startScale = dragScale
                     val startOffset = playerDy
@@ -418,25 +477,11 @@ fun PlayerHost(
                 }
             }
             launch {
-                // Start moving the video before Android takes its rotation snapshot.
-                if (rotates && allowLandscapeRequest && ValueAnimator.areAnimatorsEnabled() &&
-                    frameT.value != targetT) delay(120)
-                if (activity != null && !activity.isInPictureInPictureMode &&
-                    !activity.isFinishing && !activity.isDestroyed) {
-                    val orientation = when {
-                        !enteringFullscreen -> priorOrientation
-                        allowLandscapeRequest -> ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                        else -> null
-                    }
-                    if (orientation != null && activity.requestedOrientation != orientation) {
-                        activity.requestedOrientation = orientation
-                    }
-                }
-                if (!enteringFullscreen) {
-                    orientationBeforeFullscreen = null
-                    enteredFullscreenFromPortrait = false
-                }
+                if (!isPhone && rotates && ValueAnimator.areAnimatorsEnabled() && frameT.value != targetT) delay(120)
+                if (!isPhone || !rotates) requestOrientation()
+                if (!enteringFullscreen) fullscreenOrigin = null
             }
+            if (rotated) return@coroutineScope
             if (v != 0f) {
                 frameT.animateTo(targetT, spring(
                     dampingRatio = Spring.DampingRatioNoBouncy,
@@ -545,8 +590,6 @@ fun PlayerHost(
         return IntRect(leftPx, topPx, leftPx + w.roundToInt(), topPx + h.roundToInt())
     }
 
-    fun currentT() = frameT.value
-
     fun fullRect(cw: Int, ch: Int, fsSafeArea: IntRect, followGesture: Boolean = true): IntRect {
         val chatOpen = host.chatOpenProgress.value.coerceIn(0f, 1f)
         val chatW = host.sideChatWidthPx(fsSafeArea.width, hasSideChat = true)
@@ -652,7 +695,11 @@ fun PlayerHost(
                             fullscreenProgress(),
                         )
                     }
-                    fitAmbientVideo(slot.translate(IntOffset(0, playerDy.roundToInt())), ambient.videoAspectRatio)
+                    fitAmbientVideo(
+                        slot.translate(IntOffset(0, playerDy.roundToInt())),
+                        ambient.videoAspectRatio,
+                        if (ambient.barLayout.crop.isEmpty) PlayerVideoZoom() else ambient.videoZoom,
+                    )
                 },
                 backdropColor = backdropColor,
                 opacity = {
@@ -1266,7 +1313,8 @@ fun PlayerHost(
                 ) {
                     PlayerSurface(
                         host = host,
-                        mode = mode,
+                        mode = if (!isPhone || mode == PlayerMode.Mini) mode
+                            else if (phoneFullscreenVisible) PlayerMode.Fullscreen else PlayerMode.Expanded,
                         livePlaybackAccess = livePlaybackAccess,
                         previewThumbnailUrl = previewThumbnailUrl,
                         isInPipMode = pipVideoOnly,

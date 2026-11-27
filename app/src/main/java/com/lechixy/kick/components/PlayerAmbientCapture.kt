@@ -5,10 +5,14 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.SurfaceTexture
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.view.PixelCopy
 import android.view.Surface
 import android.view.TextureView
@@ -28,6 +32,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.IntRect
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -46,10 +51,18 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 private const val DYNAMIC_INTERVAL_MS = 250
+private const val BAR_DETECTION_INTERVAL_MS = 250L
+private const val BAR_SAMPLE_LIMIT = 256
+private const val PROJECTION_SAMPLE_LIMIT = 96
 
 internal data class AmbientSeek(val sequence: Int, val previousTimestamp: Long)
 
-private data class AmbientDemand(val playing: Boolean, val seek: AmbientSeek?, val firstFrame: Int)
+private data class AmbientDemand(
+    val mode: PlayerAmbientMode,
+    val playing: Boolean,
+    val seek: AmbientSeek?,
+    val firstFrame: Int,
+)
 
 @Composable
 internal fun rememberAmbientPowerSaveMode(): Boolean {
@@ -85,7 +98,8 @@ internal fun CapturePlayerAmbient(
     firstFrame: Int,
     seek: AmbientSeek?,
     keepFrameWhenHidden: Boolean = false,
-    preserveBlackBars: Boolean = true,
+    barOptions: VideoBarOptions = VideoBarOptions(preserve = true),
+    allowCrop: Boolean = true,
 ) {
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val currentPlaying by rememberUpdatedState(playing)
@@ -93,38 +107,52 @@ internal fun CapturePlayerAmbient(
     val currentFirstFrame by rememberUpdatedState(firstFrame)
     val currentFps by rememberUpdatedState(liveFps)
     val keepCurrentFrame by rememberUpdatedState(keepFrameWhenHidden)
-    val source = remember(texture, mode, mediaId, mediaUrl, preserveBlackBars) { Any() }
-    LaunchedEffect(state, source, visible, keepFrameWhenHidden, lifecycle) {
+    val source = remember(texture, mediaId, mediaUrl, barOptions) { Any() }
+    val capturingAmbient = visible && mode != PlayerAmbientMode.Off
+    val cropping = allowCrop && barOptions.removesBars
+    val currentMode by rememberUpdatedState(if (capturingAmbient) mode else PlayerAmbientMode.Off)
+    val active = capturingAmbient || cropping
+    LaunchedEffect(state, source, active, cropping, keepFrameWhenHidden, lifecycle) {
         val owner = Any()
         state.captureOwner = owner
         if (!keepFrameWhenHidden || state.captureSource !== source) state.frame = null
+        state.barLayout = VideoBarLayout()
         state.captureSource = source
-        if (!visible || mode == PlayerAmbientMode.Off || texture == null) return@LaunchedEffect
+        if (!active || texture == null) return@LaunchedEffect
 
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
-            val capture = AmbientCapture(state, texture, preserveBlackBars)
+            val options = if (cropping) barOptions else barOptions.copy(removeHorizontal = false, removeVertical = false)
+            val capture = AmbientCapture(
+                state, texture, options,
+                detectBars = options.removesBars || options.preserve,
+            )
             var completedSeek: AmbientSeek? = null
             try {
                 snapshotFlow {
-                    if (currentPlaying) AmbientDemand(true, null, 0)
-                    else AmbientDemand(false, currentSeek, currentFirstFrame)
+                    AmbientDemand(currentMode, currentPlaying, currentSeek, if (currentPlaying) 0 else currentFirstFrame)
                 }.collectLatest { demand ->
+                    if (demand.mode == PlayerAmbientMode.Off) state.frame = null
+                    val pendingSeek = demand.seek?.takeUnless { it == completedSeek }
+                    if (pendingSeek != null) capture.resetFrame()
                     if (demand.playing) {
-                        completedSeek = currentSeek
-                        if (mode == PlayerAmbientMode.Dynamic) {
-                            capture.sampleDynamic()
-                        } else {
+                        capture.awaitSeek(pendingSeek)
+                        completedSeek = demand.seek
+                        if (demand.mode == PlayerAmbientMode.Live) {
                             capture.sampleLive { currentFps }
+                        } else {
+                            capture.sampleDynamic(demand.mode)
                         }
                     } else {
-                        val pendingSeek = demand.seek?.takeUnless { it == completedSeek }
-                        capture.samplePaused(mode, pendingSeek)
+                        capture.samplePaused(demand.mode, pendingSeek)
                         completedSeek = demand.seek
                     }
                 }
             } finally {
                 capture.close()
-                if (state.captureOwner === owner && !keepCurrentFrame) state.frame = null
+                if (state.captureOwner === owner) {
+                    state.barLayout = VideoBarLayout()
+                    if (!keepCurrentFrame) state.frame = null
+                }
             }
         }
     }
@@ -133,12 +161,28 @@ internal fun CapturePlayerAmbient(
 private class AmbientCapture(
     private val state: PlayerAmbientState,
     private val texture: TextureView,
-    private val preserveBlackBars: Boolean,
+    private val options: VideoBarOptions,
+    private val detectBars: Boolean,
 ) {
     private var surfaceTexture: SurfaceTexture? = null
     private var surfaceCopy: AmbientSurfaceCopy? = null
-    private var dynamicBitmap: Bitmap? = null
-    private val dynamicPixels by lazy { IntArray(32 * 32) }
+    private var buffer: Bitmap? = null
+    private var detectionBuffer: Bitmap? = null
+    private var detectionPixels = IntArray(0)
+    private var tracker = VideoBarTracker()
+    private var lastDetectionTime = -BAR_DETECTION_INTERVAL_MS
+    private var lastDetectionTimestamp = 0L
+    private var hasSample = false
+    private val projection = AmbientProjection()
+
+    fun resetFrame() {
+        tracker = VideoBarTracker()
+        lastDetectionTime = -BAR_DETECTION_INTERVAL_MS
+        lastDetectionTimestamp = 0L
+        hasSample = false
+        state.barLayout = VideoBarLayout()
+        state.frame = null
+    }
 
     private fun currentSurface(): SurfaceTexture? {
         val surface = texture.surfaceTexture?.takeIf { texture.isAvailable && !it.isReleased }
@@ -146,28 +190,28 @@ private class AmbientCapture(
             surfaceCopy?.close()
             surfaceCopy = null
             surfaceTexture = surface
-            state.frame = null
+            resetFrame()
         }
         return surface
     }
 
-    suspend fun sampleDynamic() {
+    suspend fun sampleDynamic(mode: PlayerAmbientMode) {
         while (true) {
             val previous = state.frame as? AmbientFrame.Palette
-            val next = currentSurface()?.let { readPalette(it) }
-            if (next == null) {
-                delay(DYNAMIC_INTERVAL_MS.toLong())
-            } else if (previous == null || state.frame == null ||
-                previous.colors == next.colors || previous.bars != next.bars
+            val previousLayout = state.barLayout
+            val result = currentSurface()?.let { readFrame(it, mode) }
+            val next = result?.frame as? AmbientFrame.Palette
+            if (result != null && previous != null && next != null && state.frame != null &&
+                previous.colors != next.colors && previousLayout == result.layout
             ) {
-                state.frame = next
-                delay(DYNAMIC_INTERVAL_MS.toLong())
-            } else {
                 animate(0f, 1f, animationSpec = tween(DYNAMIC_INTERVAL_MS, easing = LinearEasing)) { fraction, _ ->
                     state.frame = AmbientFrame.Palette(previous.colors.zip(next.colors) { start, end ->
                         lerp(start, end, fraction)
-                    }, next.bars)
+                    })
                 }
+            } else {
+                result?.let(::publish)
+                delay(DYNAMIC_INTERVAL_MS.toLong())
             }
         }
     }
@@ -184,81 +228,126 @@ private class AmbientCapture(
                 previousSurface = surface
             }
             if (cadence.accept(surface.timestamp, frameTime, fps())) {
-                if (!readProjection(surface)) cadence.retryCurrentFrame()
+                val result = readFrame(surface, PlayerAmbientMode.Live)
+                if (result == null) cadence.retryCurrentFrame() else publish(result)
             }
+        }
+    }
+
+    suspend fun awaitSeek(seek: AmbientSeek?) {
+        if (seek == null) return
+        while (true) {
+            withFrameNanos { it }
+            val timestamp = currentSurface()?.timestamp ?: continue
+            if (timestamp != 0L && timestamp != seek.previousTimestamp) return
         }
     }
 
     suspend fun samplePaused(mode: PlayerAmbientMode, seek: AmbientSeek?) {
         currentSurface()
-        if (seek == null && state.frame != null) return
+        val frameMatchesMode = when (mode) {
+            PlayerAmbientMode.Off -> true
+            PlayerAmbientMode.Dynamic -> state.frame is AmbientFrame.Palette
+            PlayerAmbientMode.Live -> state.frame is AmbientFrame.Projection
+        }
+        if (seek == null && hasSample && frameMatchesMode && state.barLayout == barLayout()) return
         withTimeoutOrNull(3_000L) {
             while (true) {
                 withFrameNanos { it }
                 val surface = currentSurface() ?: continue
                 val timestamp = surface.timestamp
-                if (timestamp == seek?.previousTimestamp) continue
-                val captured = if (mode == PlayerAmbientMode.Dynamic) {
-                    readPalette(surface)?.let { state.frame = it } != null
-                } else {
-                    readProjection(surface)
-                }
-                if (captured) break
+                if (timestamp == 0L || timestamp == seek?.previousTimestamp) continue
+                val result = readFrame(surface, mode, paused = true) ?: continue
+                publish(result)
+                break
             }
         }
     }
 
-    private suspend fun readPalette(surface: SurfaceTexture): AmbientFrame.Palette? {
-        val size = sampleSize(texture.width, texture.height, 32) ?: return null
-        val buffer = dynamicBitmap?.takeIf { it.width == size.width && it.height == size.height }
-            ?: Bitmap.createBitmap(size.width, size.height, Bitmap.Config.ARGB_8888).also { dynamicBitmap = it }
-        // Some devices can't read the texture layer until it draws again. The
-        // underlying video surface may already have the frame, even while paused.
-        if (!texture.copyAmbientBitmap(buffer)) {
+    private suspend fun readFrame(
+        surface: SurfaceTexture,
+        mode: PlayerAmbientMode,
+        paused: Boolean = false,
+    ): AmbientSample? {
+        val timestamp = surface.timestamp
+        if (timestamp == 0L) return null
+        val now = SystemClock.elapsedRealtime()
+        val shouldDetect = detectBars && (paused ||
+            (timestamp != lastDetectionTimestamp && now - lastDetectionTime >= BAR_DETECTION_INTERVAL_MS))
+        if (mode == PlayerAmbientMode.Off && !shouldDetect) return null
+        val limit = when {
+            shouldDetect -> BAR_SAMPLE_LIMIT
+            mode == PlayerAmbientMode.Live -> PROJECTION_SAMPLE_LIMIT
+            else -> 32
+        }
+        val size = sampleSize(texture.width, texture.height, limit) ?: return null
+        val cached = if (shouldDetect) detectionBuffer else buffer
+        val bitmap = cached?.takeIf { it.width == size.width && it.height == size.height }
+            ?: Bitmap.createBitmap(size.width, size.height, Bitmap.Config.ARGB_8888).also {
+                if (shouldDetect) detectionBuffer = it else buffer = it
+            }
+        if (mode == PlayerAmbientMode.Live || detectBars || !texture.copyAmbientBitmap(bitmap)) {
             val copy = surfaceCopy ?: AmbientSurfaceCopy(surface).also { surfaceCopy = it }
-            if (!state.liveCopyLock.withLock { copy.copyInto(buffer) }) return null
+            if (!state.liveCopyLock.withLock { copy.copyInto(bitmap) } && !texture.copyAmbientBitmap(bitmap)) return null
         }
         if (currentSurface() !== surface) return null
-        return paletteFrom(buffer)
+        if (shouldDetect) {
+            val (width, height) = size
+            if (detectionPixels.size < width * height) detectionPixels = IntArray(width * height)
+            lastDetectionTimestamp = timestamp
+            lastDetectionTime = now
+            val bars = withContext(Dispatchers.Default) {
+                bitmap.getPixels(detectionPixels, 0, width, 0, 0, width, height)
+                detectAmbientBlackBars(detectionPixels, width, height, options.detectColored, strict = paused)
+            }
+            if (currentSurface() !== surface) return null
+            tracker.update(bars.normalized(width, height), width, height, paused)
+        }
+        val layout = barLayout()
+        val area = layout.crop.bitmapBounds(size)
+        val frame = when (mode) {
+            PlayerAmbientMode.Off -> null
+            PlayerAmbientMode.Dynamic -> paletteFrom(bitmap, area, layout.mask)
+            PlayerAmbientMode.Live -> withContext(Dispatchers.Default) {
+                AmbientFrame.Projection(projection.blur(bitmap, area, layout.mask))
+            }
+        }
+        if (currentSurface() !== surface) return null
+        return AmbientSample(frame, layout)
     }
 
-    private fun paletteFrom(bitmap: Bitmap): AmbientFrame.Palette {
+    private fun barLayout() = VideoBarLayout(options.crop(tracker.bars), options.mask(tracker.bars))
+
+    private fun publish(sample: AmbientSample) {
+        hasSample = true
+        state.barLayout = sample.layout
+        state.frame = sample.frame
+    }
+
+    private fun paletteFrom(bitmap: Bitmap, area: IntRect, bars: VideoBars): AmbientFrame.Palette {
         val left = 0f..0.15f
         val center = 0.35f..0.65f
         val right = 0.85f..1f
         val first = 0f..0.3f
         val last = 0.7f..1f
-        val bars = if (preserveBlackBars) {
-            bitmap.getPixels(dynamicPixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
-            detectAmbientBlackBars(dynamicPixels, bitmap.width, bitmap.height)
-        } else {
-            AmbientBlackBars()
-        }
         return AmbientFrame.Palette(listOf(
-            if (bars.top > 0) Color.Black else bitmap.average(first, left),
-            if (bars.top > 0) Color.Black else bitmap.average(center, left),
-            if (bars.top > 0) Color.Black else bitmap.average(last, left),
-            if (bars.left > 0) Color.Black else bitmap.average(left, center),
-            if (bars.right > 0) Color.Black else bitmap.average(right, center),
-            if (bars.bottom > 0) Color.Black else bitmap.average(first, right),
-            if (bars.bottom > 0) Color.Black else bitmap.average(center, right),
-            if (bars.bottom > 0) Color.Black else bitmap.average(last, right),
-        ), bars)
-    }
-
-    private suspend fun readProjection(surface: SurfaceTexture): Boolean {
-        val size = sampleSize(texture.width, texture.height, 96) ?: return false
-        val copy = surfaceCopy ?: AmbientSurfaceCopy(surface).also { surfaceCopy = it }
-        val bitmap = state.liveCopyLock.withLock { copy.read(texture, size, preserveBlackBars) }
-        if (currentSurface() !== surface || bitmap == null) return false
-        state.frame = AmbientFrame.Projection(bitmap)
-        return true
+            if (bars.top > 0) Color.Black else bitmap.average(area, first, left),
+            if (bars.top > 0) Color.Black else bitmap.average(area, center, left),
+            if (bars.top > 0) Color.Black else bitmap.average(area, last, left),
+            if (bars.left > 0) Color.Black else bitmap.average(area, left, center),
+            if (bars.right > 0) Color.Black else bitmap.average(area, right, center),
+            if (bars.bottom > 0) Color.Black else bitmap.average(area, first, right),
+            if (bars.bottom > 0) Color.Black else bitmap.average(area, center, right),
+            if (bars.bottom > 0) Color.Black else bitmap.average(area, last, right),
+        ))
     }
 
     fun close() {
         surfaceCopy?.close()
     }
 }
+
+private data class AmbientSample(val frame: AmbientFrame?, val layout: VideoBarLayout)
 
 internal class AmbientFrameCadence {
     private var lastTimestamp = 0L
@@ -290,17 +379,24 @@ internal class AmbientFrameCadence {
 
 private data class AmbientSampleSize(val width: Int, val height: Int)
 
+private fun VideoBars.bitmapBounds(size: AmbientSampleSize) = IntRect(
+    (left * size.width).roundToInt(),
+    (top * size.height).roundToInt(),
+    size.width - (right * size.width).roundToInt(),
+    size.height - (bottom * size.height).roundToInt(),
+)
+
 private fun sampleSize(width: Int, height: Int, limit: Int): AmbientSampleSize? {
     if (width <= 0 || height <= 0) return null
     val scale = minOf(1f, limit.toFloat() / maxOf(width, height))
     return AmbientSampleSize((width * scale).roundToInt().coerceAtLeast(1), (height * scale).roundToInt().coerceAtLeast(1))
 }
 
-private fun Bitmap.average(xRange: ClosedFloatingPointRange<Float>, yRange: ClosedFloatingPointRange<Float>): Color {
-    val x0 = ((width - 1) * xRange.start).roundToInt()
-    val y0 = ((height - 1) * yRange.start).roundToInt()
-    val x1 = ((width - 1) * xRange.endInclusive).roundToInt()
-    val y1 = ((height - 1) * yRange.endInclusive).roundToInt()
+private fun Bitmap.average(area: IntRect, xRange: ClosedFloatingPointRange<Float>, yRange: ClosedFloatingPointRange<Float>): Color {
+    val x0 = area.left + ((area.width - 1) * xRange.start).roundToInt()
+    val y0 = area.top + ((area.height - 1) * yRange.start).roundToInt()
+    val x1 = area.left + ((area.width - 1) * xRange.endInclusive).roundToInt()
+    val y1 = area.top + ((area.height - 1) * yRange.endInclusive).roundToInt()
     var red = 0
     var green = 0
     var blue = 0
@@ -330,25 +426,6 @@ private fun TextureView.copyAmbientBitmap(bitmap: Bitmap): Boolean {
 private class AmbientSurfaceCopy(texture: SurfaceTexture) : AutoCloseable {
     private val surface = Surface(texture)
     private val completionHandler = Handler(Looper.getMainLooper())
-    private var buffer: Bitmap? = null
-    private var pixels = IntArray(0)
-    private var scratch = IntArray(0)
-
-    suspend fun read(
-        texture: TextureView,
-        size: AmbientSampleSize,
-        preserveBlackBars: Boolean,
-    ): Bitmap? {
-        val (width, height) = size
-        val bitmap = buffer?.takeIf { it.width == width && it.height == height }
-            ?: Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also {
-                buffer = it
-                pixels = IntArray(width * height)
-                scratch = IntArray(width * height)
-            }
-        if (!copyInto(bitmap) && !texture.copyAmbientBitmap(bitmap)) return null
-        return withContext(Dispatchers.Default) { blurProjection(bitmap, preserveBlackBars) }
-    }
 
     // Wait for PixelCopy to finish before cancellation can release the buffer or Surface.
     suspend fun copyInto(bitmap: Bitmap): Boolean {
@@ -363,71 +440,55 @@ private class AmbientSurfaceCopy(texture: SurfaceTexture) : AutoCloseable {
         return copied
     }
 
-    private fun blurProjection(bitmap: Bitmap, preserveBlackBars: Boolean): Bitmap {
-        val width = bitmap.width
-        val height = bitmap.height
-        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
-        val bars = if (preserveBlackBars) detectAmbientBlackBars(pixels, width, height) else AmbientBlackBars()
-        val radius = (maxOf(width, height) / 12).coerceAtLeast(1)
-        blurAmbientLines(pixels, scratch, height, width, width, 1, radius)
-        blurAmbientLines(scratch, pixels, width, height, 1, width, radius)
-        for (y in 0 until height) {
-            val row = y * width
-            if (y < bars.top || y >= height - bars.bottom) {
-                pixels.fill(android.graphics.Color.BLACK, row, row + width)
-            } else {
-                pixels.fill(android.graphics.Color.BLACK, row, row + bars.left)
-                pixels.fill(android.graphics.Color.BLACK, row + width - bars.right, row + width)
-            }
-        }
-        // Canvas may retain the image in its display list after the next capture starts.
-        return Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
-    }
-
     override fun close() = surface.release()
 }
 
-internal data class AmbientBlackBars(
-    val top: Int = 0,
-    val bottom: Int = 0,
-    val left: Int = 0,
-    val right: Int = 0,
-)
+private class AmbientProjection {
+    private var pixels = IntArray(0)
+    private var scratch = IntArray(0)
+    private var reducedBitmap: Bitmap? = null
+    private val canvas = Canvas()
+    private val filter = Paint(Paint.FILTER_BITMAP_FLAG)
 
-internal fun detectAmbientBlackBars(pixels: IntArray, width: Int, height: Int): AmbientBlackBars {
-    fun edge(start: Int, lineStride: Int, pixelStride: Int, length: Int, depth: Int): Int {
-        val maxBar = depth / 3
-        val minBar = (depth + 31) / 32
-        var darkLines = 0
-        for (line in 0..maxBar) {
-            var dark = 0
-            var bright = 0
-            val base = start + line * lineStride
-            for (position in 0 until length) {
-                val pixel = pixels[base + position * pixelStride]
-                val peak = maxOf(pixel shr 16 and 255, pixel shr 8 and 255, pixel and 255)
-                if (peak <= 20) dark++
-                if (peak >= 42) bright++
-            }
-            if (dark * 20 < length * 19) {
-                // A distinct boundary keeps dark scenes from being treated as letterboxing.
-                if (darkLines >= minBar && bright * 4 >= length) return darkLines
-                if (line - darkLines >= 1 || darkLines < minBar) return 0
-            } else if (line == darkLines) {
-                darkLines++
-            } else {
-                return 0
+    fun blur(bitmap: Bitmap, area: IntRect, mask: VideoBars): Bitmap {
+        val scale = minOf(1f, PROJECTION_SAMPLE_LIMIT.toFloat() / maxOf(bitmap.width, bitmap.height))
+        val width = (area.width * scale).roundToInt().coerceAtLeast(1)
+        val height = (area.height * scale).roundToInt().coerceAtLeast(1)
+        if (pixels.size < width * height) {
+            pixels = IntArray(width * height)
+            scratch = IntArray(width * height)
+        }
+        if (scale == 1f) {
+            bitmap.getPixels(pixels, 0, width, area.left, area.top, width, height)
+        } else {
+            // The higher-resolution detection frame uses the same projection budget as every other frame.
+            val reduced = reducedBitmap?.takeIf { it.width == width && it.height == height }
+                ?: Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { reducedBitmap = it }
+            canvas.setBitmap(reduced)
+            canvas.drawBitmap(
+                bitmap, Rect(area.left, area.top, area.right, area.bottom), Rect(0, 0, width, height), filter,
+            )
+            reduced.getPixels(pixels, 0, width, 0, 0, width, height)
+        }
+        // Avoid projecting the original color of a retained bar onto adjacent edges.
+        val content = mask.bitmapBounds(AmbientSampleSize(width, height))
+        if (!mask.isEmpty) {
+            for (y in 0 until height) {
+                val row = y * width
+                if (y < content.top || y >= content.bottom) {
+                    pixels.fill(android.graphics.Color.BLACK, row, row + width)
+                } else {
+                    pixels.fill(android.graphics.Color.BLACK, row, row + content.left)
+                    pixels.fill(android.graphics.Color.BLACK, row + content.right, row + width)
+                }
             }
         }
-        return 0
+        val radius = (maxOf(width, height) / 12).coerceAtLeast(1)
+        blurAmbientLines(pixels, scratch, height, width, width, 1, radius)
+        blurAmbientLines(scratch, pixels, width, height, 1, width, radius)
+        // Canvas may retain the image in its display list after the next capture starts.
+        return Bitmap.createBitmap(pixels, width, height, Bitmap.Config.ARGB_8888)
     }
-    if (width < 4 || height < 4) return AmbientBlackBars()
-    return AmbientBlackBars(
-        top = edge(0, width, 1, width, height),
-        bottom = edge((height - 1) * width, -width, 1, width, height),
-        left = edge(0, 1, width, height, width),
-        right = edge(width - 1, -1, width, height, width),
-    )
 }
 
 private fun blurAmbientLines(

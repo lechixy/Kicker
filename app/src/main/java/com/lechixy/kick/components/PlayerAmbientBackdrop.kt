@@ -40,6 +40,7 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.media3.ui.PlayerView
 import com.lechixy.kick.data.settings.model.SettingsKeys
@@ -50,6 +51,7 @@ import kotlinx.coroutines.sync.Mutex
 internal class PlayerAmbientState {
     var bounds by mutableStateOf<AmbientVideoBounds?>(null)
     var frame by mutableStateOf<AmbientFrame?>(null)
+    var barLayout by mutableStateOf(VideoBarLayout())
     var intensity by mutableFloatStateOf(1f)
     var spread by mutableFloatStateOf(1f)
     var fullscreenEnabled by mutableStateOf(true)
@@ -57,6 +59,7 @@ internal class PlayerAmbientState {
     var chatOpacity by mutableFloatStateOf(SettingsKeys.AMBIENT_CHAT_OPACITY.defaultValue / 100f)
     var navigationOpacity by mutableFloatStateOf(SettingsKeys.AMBIENT_NAVIGATION_OPACITY.defaultValue / 100f)
     var videoAspectRatio by mutableFloatStateOf(16f / 9f)
+    var videoZoom by mutableStateOf(PlayerVideoZoom())
     val liveCopyLock = Mutex()
     var captureOwner: Any? = null
     var captureSource: Any? = null
@@ -69,7 +72,7 @@ internal data class AmbientVideoBounds(
 )
 
 internal sealed interface AmbientFrame {
-    class Palette(val colors: List<Color>, val bars: AmbientBlackBars = AmbientBlackBars()) : AmbientFrame
+    class Palette(val colors: List<Color>) : AmbientFrame
     class Projection(val bitmap: Bitmap) : AmbientFrame
 }
 
@@ -114,22 +117,22 @@ internal fun PlayerAmbientState.updateBounds(
         bounds = null
         return
     }
-    val nativeBounds = android.graphics.Rect(0, 0, texture.width, texture.height)
-    player.offsetDescendantRectToMyCoords(texture, nativeBounds)
-    val video = zoom.mapBounds(Rect(
-        nativeBounds.left.toFloat(), nativeBounds.top.toFloat(),
-        nativeBounds.right.toFloat(), nativeBounds.bottom.toFloat(),
-    ), coordinates.size)
+    val source = player.untransformedVideoBounds(texture)
+    val geometry = videoCropGeometry(source, coordinates.size, barLayout.crop)
+    val video = zoom.mapBounds(geometry.fitted, coordinates.size)
     val window = Rect(coordinates.localToWindow(video.topLeft), coordinates.localToWindow(video.bottomRight))
     val hasSpace = video.left > 1 || video.top > 1 ||
         coordinates.size.width - video.right > 1 || coordinates.size.height - video.bottom > 1
     bounds = AmbientVideoBounds(video, window, hasSpace)
     val videoSize = player.player?.videoSize
-    videoAspectRatio = if (videoSize != null && videoSize.width > 0 && videoSize.height > 0) {
+    videoAspectRatio = if (!barLayout.crop.isEmpty) {
+        geometry.fitted.width / geometry.fitted.height
+    } else if (videoSize != null && videoSize.width > 0 && videoSize.height > 0) {
         videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height
     } else {
         video.width / video.height
     }
+    videoZoom = zoom
 }
 
 @Composable
@@ -142,7 +145,9 @@ internal fun TrackAmbientVideoLayout(
     val currentCoordinates by rememberUpdatedState(coordinates)
     val currentZoom by rememberUpdatedState(zoom)
     LaunchedEffect(state, texture) {
-        snapshotFlow { currentZoom() }.collect { state.updateBounds(texture, currentCoordinates(), it) }
+        snapshotFlow { currentZoom() to state.barLayout.crop }.collect { (zoom, _) ->
+            state.updateBounds(texture, currentCoordinates(), zoom)
+        }
     }
     DisposableEffect(state, texture) {
         val listener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
@@ -167,6 +172,7 @@ internal fun PlayerAmbientBackdrop(
     videoBounds: () -> Rect? = { state.bounds?.videoInPlayer },
     backdropColor: (() -> Color)? = null,
     opacity: () -> Float = { 1f },
+    onlyCroppedSides: Boolean = false,
 ) {
     val lightTheme = MaterialTheme.colorScheme.background.luminance() > 0.5f
     val paint = remember { Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG) }
@@ -217,15 +223,40 @@ internal fun PlayerAmbientBackdrop(
         } else {
             clipRect(video.left, video.top, video.right, video.bottom, ClipOp.Difference, drawGlow)
         }
+        val mask = state.barLayout.mask
+        val crop = state.barLayout.crop
+        if (onlyCroppedSides || !mask.isEmpty) {
+            val area = if (onlyCroppedSides) Rect(Offset.Zero, size) else glow.intersect(Rect(Offset.Zero, size))
+            if (!area.isEmpty) {
+                // Apply the opaque mask last so nearby colors and page tint cannot bleed into it.
+                if (mask.top > 0f || (onlyCroppedSides && crop.top == 0f)) {
+                    drawAmbientBlack(Rect(area.left, area.top, area.right, min(area.bottom, video.top)))
+                }
+                if (mask.bottom > 0f || (onlyCroppedSides && crop.bottom == 0f)) {
+                    drawAmbientBlack(Rect(area.left, max(area.top, video.bottom), area.right, area.bottom))
+                }
+                if (mask.left > 0f || (onlyCroppedSides && crop.left == 0f)) {
+                    drawAmbientBlack(Rect(area.left, area.top, min(area.right, video.left), area.bottom))
+                }
+                if (mask.right > 0f || (onlyCroppedSides && crop.right == 0f)) {
+                    drawAmbientBlack(Rect(max(area.left, video.right), area.top, area.right, area.bottom))
+                }
+            }
+        }
     }
 }
 
-internal fun fitAmbientVideo(slot: IntRect, aspectRatio: Float): Rect {
+private fun DrawScope.drawAmbientBlack(area: Rect) {
+    if (!area.isEmpty) drawRect(Color.Black, area.topLeft, area.size)
+}
+
+internal fun fitAmbientVideo(slot: IntRect, aspectRatio: Float, zoom: PlayerVideoZoom = PlayerVideoZoom()): Rect {
     val width = min(slot.width.toFloat(), slot.height * aspectRatio)
     val height = width / aspectRatio
-    val left = slot.left + (slot.width - width) / 2f
-    val top = slot.top + (slot.height - height) / 2f
-    return Rect(left, top, left + width, top + height)
+    val left = (slot.width - width) / 2f
+    val top = (slot.height - height) / 2f
+    return zoom.mapBounds(Rect(left, top, left + width, top + height), IntSize(slot.width, slot.height))
+        .translate(Offset(slot.left.toFloat(), slot.top.toFloat()))
 }
 
 private val ambientPaletteAnchors = listOf(

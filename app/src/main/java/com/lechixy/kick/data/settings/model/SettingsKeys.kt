@@ -142,6 +142,9 @@ object SettingsKeys {
         validator = { it in 0..100 })
     val AMBIENT_BATTERY_SAVER = SettingKey(booleanPreferencesKey("player_ambient_battery_saver"), true, SettingType.BooleanType)
     val AMBIENT_PRESERVE_BLACK_BARS = SettingKey(booleanPreferencesKey("player_ambient_preserve_black_bars"), false, SettingType.BooleanType)
+    val VIDEO_REMOVE_HORIZONTAL_BARS = SettingKey(booleanPreferencesKey("player_remove_horizontal_bars"), false, SettingType.BooleanType)
+    val VIDEO_REMOVE_VERTICAL_BARS = SettingKey(booleanPreferencesKey("player_remove_vertical_bars"), false, SettingType.BooleanType)
+    val VIDEO_DETECT_COLORED_BARS = SettingKey(booleanPreferencesKey("player_detect_colored_bars"), true, SettingType.BooleanType)
     val VIDEO_QUALITY = SettingKey(
         key = intPreferencesKey("video_quality"),
         defaultValue = 720,
@@ -291,6 +294,9 @@ object SettingsKeys {
             AMBIENT_NAVIGATION_OPACITY,
             AMBIENT_BATTERY_SAVER,
             AMBIENT_PRESERVE_BLACK_BARS,
+            VIDEO_REMOVE_HORIZONTAL_BARS,
+            VIDEO_REMOVE_VERTICAL_BARS,
+            VIDEO_DETECT_COLORED_BARS,
             VIDEO_QUALITY,
             RECOMMENDED_LIVESTREAM_LANGUAGE,
             CHAT_TIMESTAMPS,

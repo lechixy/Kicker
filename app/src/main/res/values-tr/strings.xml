@@ -111,7 +111,13 @@
     <string name="player_ambient_chat_opacity">Sohbet arka planı opaklığı</string>
     <string name="player_ambient_navigation_opacity">Gezinme arka planı opaklığı</string>
     <string name="player_ambient_preserve_black_bars">Siyah şeritleri koru</string>
-    <string name="player_ambient_preserve_black_bars_description">Oynatıcıdaki şeritleri siyah tut ve videoda algılanan siyah kenarlara ışığın taşmasını önle</string>
+    <string name="player_ambient_preserve_black_bars_description">Oynatıcı boşluklarını siyah tut ve videoda algılanan şeritlerin çevresindeki ortam ışığını engelle</string>
+    <string name="player_remove_horizontal_bars">Üst ve alt şeritleri kaldır</string>
+    <string name="player_remove_horizontal_bars_description">Ortam ışığı kapalıyken de videoda algılanan üst ve alt şeritleri kırp</string>
+    <string name="player_remove_vertical_bars">Yan şeritleri kaldır</string>
+    <string name="player_remove_vertical_bars_description">Videonun sol ve sağ kenarında algılanan şeritleri kırp</string>
+    <string name="player_detect_colored_bars">Renkli şeritleri algıla</string>
+    <string name="player_detect_colored_bars_description">Kırpma ve ortam ışığı için düz renkli şeritleri de algıla</string>
     <string name="settings_backup_account_title">Kick oturumunuz bu cihazda kalır</string>
     <string name="settings_backup_account_description">Kick giriş bilgileriniz ve oturumunuz asla yedeklenmez. Çıkış yapınca, uygulama verilerini temizleyince veya uygulamayı kaldırınca kayıtlı oturum silinir. Yeniden kurduğunuzda, cihaz değiştirdiğinizde veya oturumunuzun süresi dolduğunda tekrar giriş yapın</string>
 </resources>

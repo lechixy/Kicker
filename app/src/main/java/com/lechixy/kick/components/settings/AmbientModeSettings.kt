@@ -20,6 +20,7 @@ internal val ambientModeSearchTerms = listOf(
     R.string.player_ambient_through_ui, R.string.player_ambient_preserve_black_bars,
     R.string.player_ambient_battery_saver, R.string.player_ambient_chat_opacity,
     R.string.player_ambient_navigation_opacity,
+    R.string.player_remove_horizontal_bars, R.string.player_remove_vertical_bars, R.string.player_detect_colored_bars,
 )
 
 internal val PlayerAmbientMode.titleResource: Int
@@ -158,5 +159,23 @@ private fun AmbientModeControls(mode: PlayerAmbientMode) {
         title = stringResource(R.string.player_ambient_preserve_black_bars),
         description = stringResource(R.string.player_ambient_preserve_black_bars_description),
         icon = R.drawable.aspect_ratio_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+    )
+    SettingSwitch(
+        key = SettingsKeys.VIDEO_REMOVE_HORIZONTAL_BARS,
+        title = stringResource(R.string.player_remove_horizontal_bars),
+        description = stringResource(R.string.player_remove_horizontal_bars_description),
+        icon = R.drawable.aspect_ratio_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+    )
+    SettingSwitch(
+        key = SettingsKeys.VIDEO_REMOVE_VERTICAL_BARS,
+        title = stringResource(R.string.player_remove_vertical_bars),
+        description = stringResource(R.string.player_remove_vertical_bars_description),
+        icon = R.drawable.aspect_ratio_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
+    )
+    SettingSwitch(
+        key = SettingsKeys.VIDEO_DETECT_COLORED_BARS,
+        title = stringResource(R.string.player_detect_colored_bars),
+        description = stringResource(R.string.player_detect_colored_bars_description),
+        icon = R.drawable.palette_24dp_e3e3e3_fill0_wght400_grad0_opsz24,
     )
 }

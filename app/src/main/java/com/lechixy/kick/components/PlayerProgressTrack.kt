@@ -49,7 +49,7 @@ internal fun PlayerProgressTrack(progress: () -> Float, playing: Boolean, enable
         val end = (thumb - gap).coerceIn(0f, size.width)
         val trackStart = (thumb + gap).coerceIn(0f, size.width)
         val waveHeight = 4.dp.toPx() * amplitude.value.coerceIn(0f, 1f)
-        val wavelength = 24.dp.toPx()
+        val wavelength = 36.dp.toPx()
         withTransform({ if (rtl) scale(-1f, 1f, pivot = Offset(size.width / 2f, center)) }) {
             if (trackStart < size.width) drawLine(trackColor, Offset(trackStart, center),
                 Offset(size.width, center), strokeWidth = stroke, cap = StrokeCap.Round)

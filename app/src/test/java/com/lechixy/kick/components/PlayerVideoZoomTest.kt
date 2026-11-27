@@ -10,6 +10,19 @@ import org.junit.Test
 class PlayerVideoZoomTest {
     private val viewport = IntSize(400, 200)
 
+    @Test fun asymmetricBarCropFitsAndCentersTheContentBeforeZoom() {
+        val source = Rect(0f, 25f, 400f, 175f)
+        val crop = VideoBars(top = 0.2f, left = 0.25f)
+        val geometry = videoCropGeometry(source, viewport, crop)
+
+        assertEquals(Rect(100f, 55f, 400f, 175f), geometry.source)
+        assertEquals(0f, geometry.fitted.left, 0.001f)
+        assertEquals(20f, geometry.fitted.top, 0.001f)
+        assertEquals(180f, geometry.fitted.bottom, 0.001f)
+        assertEquals(1.25f, playerFillScale(viewport, IntSize(400, 160)), 0f)
+        assertEquals(geometry.fitted, PlayerVideoZoom().mapBounds(geometry.fitted, viewport))
+    }
+
     @Test fun offCenterPinchKeepsThePointUnderTheMovingCentroid() {
         val zoom = PlayerVideoZoom().transform(viewport, Offset(300f, 50f), Offset(20f, -20f), 2f)
 
